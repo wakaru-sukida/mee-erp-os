@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  DBKEY = 'db:adms-cal:v1';
+  _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); } K.dbPersist(this, this.DBKEY); }
+  state = { nav: 'cal-main', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {} };
+  componentDidMount() { if (this.K) { this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); }); }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._handleReq(); }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'calendar', hidden: false, screens: cfg[k].screens.map(([id, lb, ic]) => [id, lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb, ic]) }))); }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); else if (r.kind === 'scr') this.setScr(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; const m = this.curMode(); if (m !== this._lastMode) { this._lastMode = m; this.props.onMode(m); } }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+
+  CFG() {
+    return {
+      'cal-main': {
+        th: 'ปฏิทินองค์กร', ic: 'calendar',
+        screens: [['list', 'ปฏิทินองค์กร List — รายการปฏิทินองค์กร', 'list'], ['detail', 'ปฏิทินองค์กร Detail — รายละเอียดปฏิทินองค์กร', 'doc'], ['create', 'Create — สร้างใหม่', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
+        kpi: [['รายการทั้งหมด', '18', '—', 145], ['ใช้งานปกติ', '15', '—', 130], ['ต้องตรวจสอบ', '1', '—', 22]],
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อรายการ', k: 'a', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'สาขา', k: 'br' }, { h: 'ประเภท', k: 'wh' }, { h: 'สถานะ', k: 'uom' }],
+        rows: [
+          { no: 'CAL-0001', a: 'ปฏิทินองค์กร #1', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่ (สาทร)', wh: 'วันหยุด', uom: 'เผยแพร่', s: 'ใช้งาน' },
+          { no: 'CAL-0002', a: 'ปฏิทินองค์กร #2', co: 'บจก. มี เทรดดิ้ง', br: 'สำนักงานใหญ่ (ลาดพร้าว)', wh: 'กิจกรรม', uom: 'ร่าง', s: 'ใช้งาน' }
+        ],
+        form: [['ข้อมูลปฏิทินองค์กร', 'calendar', [['รหัส', 0, 'CAL-NEW'], ['ชื่อรายการ', 0, 'ชื่อรายการ'], ['บริษัท', 1, ['บมจ. มี กรุ๊ป','บจก. มี เทรดดิ้ง','บจก. มี โลจิสติกส์']], ['สาขา', 1, ['สำนักงานใหญ่ (สาทร)','สำนักงานใหญ่ (ลาดพร้าว)','สำนักงานใหญ่ (บางนา)']], ['ประเภท', 1, ["วันหยุด","กิจกรรม"]], ['สถานะ', 1, ["เผยแพร่","ร่าง"]]]]],
+        roMap: { 'รหัส': 'no', 'ชื่อรายการ': 'a', 'บริษัท': 'co', 'สาขา': 'br', 'ประเภท': 'wh', 'สถานะ': 'uom' },
+        acts: ['Create', 'Update', 'Delete', 'Export']
+      },
+      'cal-sub': {
+        th: 'กิจกรรมองค์กร', ic: 'calendar',
+        screens: [['list', 'กิจกรรมองค์กร', 'list']],
+        cols: [{ h: 'รายการ', k: 'a', b: true }, { h: 'รายละเอียด', k: 'd' }, { h: 'สถานะ', k: 's' }],
+        rows: [
+          { a: 'กิจกรรมองค์กร #1', d: 'รายละเอียดกิจกรรมองค์กร', s: 'ปกติ' },
+          { a: 'กิจกรรมองค์กร #2', d: 'รายละเอียดกิจกรรมองค์กร', s: 'ต้องติดตาม' }
+        ]
+      }
+    };
+  }
+  statusHue(s) { return ({ 'ใช้งาน': 130, 'ปิดใช้งาน': 22 })[s] || 130; }
+  STATUS_OPTS = ['ใช้งาน', 'ปิดใช้งาน'];
+
+  curNav() { return this.props.nav || this.state.nav; }
+  _setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: 'list', mode: 'view', edit: null, sel: null }); }
+  setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
+  dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
+  curScr() { return this.props.scr || this.state.scr; }
+  curMode() { return this.state.mode; }
+  isDirty() { const m = this.curMode(); return m === 'create' || m === 'edit'; }
+  enterCreate() { this.setState({ mode: 'create', edit: null, draft: {} }); this._goScr('create'); }
+  enterEdit(r) { this.setState({ mode: 'edit', edit: r, sel: r, draft: {} }); this._goScr('edit'); }
+  askConfirm(run) { this.setState({ confirm: run }); }
+  _goScr(v) { if (this.props.onScr) this.props.onScr(v); else this.setState({ scr: v }); }
+  goScr(v) { if (this.isDirty() && v !== 'detail' && v !== 'create' && v !== 'edit') { this.askConfirm(() => this._goScr(v)); return; } this._goScr(v); }
+  setScr(v) { this.goScr(v); }
+  doSave() {
+    const key = this.curNav();
+    const cfg = this.CFG()[key];
+    const er = this.state.edit;
+    const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
+    const dr = this.state.draft || {}, pre = mode + '|';
+    const base = er ? Object.assign({}, er) : Object.assign({}, (cfg.rows || [])[0]);
+    if (cfg.roMap && cfg.form) cfg.form.forEach(sc => sc[2].forEach(fld => { const lb = fld[0], mm = cfg.roMap[lb], v = dr[pre + lb]; if (v !== undefined && v !== '') { if (typeof mm === 'string') base[mm] = v; base['_f:' + lb] = v; } }));
+    const stV = dr[pre + 'สถานะ']; if (stV !== undefined && stV !== '') base.s = stV;
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = er ? cur.map(x => (x === er || (x.no != null && x.no === er.no)) ? base : x) : [base, ...cur]; return { db, draft: {}, mode: 'view', sel: base, edit: null }; });
+    this.toast(er ? 'บันทึกการแก้ไขแล้ว' : 'บันทึกเรียบร้อย');
+  }
+  confirmSave() { const r = this.state.confirm; this.doSave(); this.setState({ confirm: null, scr: 'detail' }, () => r && r()); }
+  confirmDiscard() { const r = this.state.confirm; this.setState({ confirm: null, draft: {}, mode: 'view', edit: null, scr: 'list' }, () => r && r()); this.toast('ยกเลิกการเปลี่ยนแปลง'); }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
+    const scr = this.curScr();
+    const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const _cbM = (this.K && this.K.liveCoBr) ? this.K.liveCoBr() : { COS: [], BR_MAP: {} };
+    const PROC_COMPANIES = _cbM.COS;
+    const PROC_BR_MAP = _cbM.BR_MAP;
+    const coSel = this.props.filterCo || this.state.filterCo || ((this.props.api && this.props.api.userCo && PROC_COMPANIES.indexOf(this.props.api.userCo) > -1) ? [this.props.api.userCo] : PROC_COMPANIES.slice());
+    const coAll = coSel.length === PROC_COMPANIES.length;
+    const brOpts = Array.from(new Set([].concat(...(coAll ? PROC_COMPANIES : coSel).map(o => PROC_BR_MAP[o] || []))));
+    const brSel = (this.props.filterBr || this.state.filterBr || ['สำนักงานใหญ่ (สาทร)']).filter(o => brOpts.indexOf(o) > -1);
+    const brSelFinal = brSel.length ? brSel : brOpts;
+    const brAll = brSelFinal.length === brOpts.length;
+    const rows = this.dbRows(nav, cfg.rows || []);
+    const selRow = this.state.sel || rows[0] || null;
+    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'ACTIONS'), list.map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+    let body;
+    if (scr === 'create' || scr === 'edit') {
+      const er = scr === 'edit' ? this.state.edit : null;
+      const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
+      const dr = this.state.draft || {}, pre = mode + '|';
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, er ? (er.a || er.no) : 'สร้างรายการใหม่'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, er ? 'โหมดแก้ไข (Edit)' : 'โหมดสร้างใหม่ (New)')), K.btn(T, 'กลับ', false, 'doc', () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }))], { marginBottom: 14, padding: '12px 16px' });
+      const secs = cfg.form.map(([title, ic, fields]) => { const coFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'co'); const brFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'br'); return K.formSec(T, title, ic, fields.map(([lb, ty, opt]) => {
+        const m = cfg.roMap && cfg.roMap[lb];
+        const ev = er ? (er['_f:' + lb] !== undefined ? er['_f:' + lb] : (m ? er[m] : null)) : null;
+        const dk = pre + lb;
+        const cur = dr[dk] !== undefined ? dr[dk] : (ev != null ? ev : '');
+        const _cbF = (this.K && this.K.liveCoBr) ? this.K.liveCoBr() : { COS: [], BR_MAP: {} };
+        const BR_MAP = _cbF.BR_MAP;
+        let effOpt = opt;
+        if (m === 'co' && Array.isArray(opt) && _cbF.COS.length) effOpt = _cbF.COS;
+        if (m === 'br' && Array.isArray(opt) && coFieldLb) {
+          const coLb = coFieldLb[0];
+          const coDk = pre + coLb;
+          const coM = cfg.roMap && cfg.roMap[coLb];
+          const coEv = er ? (er['_f:' + coLb] !== undefined ? er['_f:' + coLb] : (coM ? er[coM] : null)) : null;
+          const coCur = dr[coDk] !== undefined ? dr[coDk] : (coEv != null ? coEv : '');
+          effOpt = (coCur && BR_MAP[coCur]) ? BR_MAP[coCur] : (_cbF.COS.length ? [].concat.apply([], Object.keys(BR_MAP).map(k => BR_MAP[k] || [])) : opt);
+        }
+        const onCh = e => { const v = e.target.value; this.setState(s => ({ draft: (m === 'co' && brFieldLb) ? Object.assign({}, s.draft, { [dk]: v, [pre + brFieldLb[0]]: '' }) : Object.assign({}, s.draft, { [dk]: v }) })); };
+        const node = Array.isArray(opt)
+          ? h('select', { value: cur || '', onChange: onCh, style: Object.assign({}, K.inp(T), { cursor: 'pointer' }) }, [h('option', { key: '_', value: '' }, '— เลือก —'), ...effOpt.map(o => h('option', { key: o, value: o }, o))])
+          : h('input', { placeholder: typeof opt === 'string' ? opt : '', value: cur, onChange: onCh, style: K.inp(T) });
+        return K.field(T, lb, node, ty === 1);
+      })); });
+      const save = K.btn(T, 'บันทึก', true, 'check', () => { this.doSave(); this.goScr('detail'); });
+      const stDk = pre + 'สถานะ';
+      const stCur = dr[stDk] !== undefined ? dr[stDk] : (er ? (er.s || 'ใช้งาน') : 'ใช้งาน');
+      const statusFormEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, stCur, this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPTS.map(o => h('option', { key: o, value: o }, o)))))], { marginBottom: 14, padding: '12px 16px' });
+      body = [hdr, ...secs, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts || ['Export'])];
+    } else if (scr === 'detail' && cfg.roMap) {
+      const r = selRow;
+      if (!r) { this.setScr('list'); body = [null]; }
+      else {
+        const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.a || r.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only)')), h('div', { style: { display: 'flex', gap: 7, flexWrap: 'wrap' } }, K.btn(T, 'พิมพ์', false, 'doc', () => this.toast('พิมพ์')), K.btn(T, 'แก้ไข', true, 'doc', () => this.enterEdit(r)), K.btn(T, 'สร้างใหม่', false, 'plus', () => this.enterCreate())))], { marginBottom: 14, padding: '12px 16px' });
+        const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb]) => { const m = cfg.roMap[lb]; const ov = r['_f:' + lb]; const val = ov !== undefined ? ov : (m ? r[m] : ''); return K.field(T, lb, K.roField(T, val)); })));
+        const curSt = r.s || 'ใช้งาน';
+        const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือโหมดสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, curSt, this.statusHue(curSt))))], { marginBottom: 14, padding: '12px 16px' });
+        body = [hdr, ...secs, K.formSec(T, '\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e23\u0e30\u0e1a\u0e1a (System Info)', 'gauge', [K.field(T, '\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e40\u0e21\u0e37\u0e48\u0e2d (CreatedAt)', K.roField(T, ((v)=>{try{return v?new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}):'\u2014';}catch(e){return String(v);}})(r.createdAt||r.created_at))), K.field(T, '\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e42\u0e14\u0e22 (CreatedBy)', K.roField(T, r.createdBy||r.created_by||'\u2014')), K.field(T, '\u0e41\u0e01\u0e49\u0e44\u0e02\u0e25\u0e48\u0e32\u0e2a\u0e38\u0e14 (UpdatedAt)', K.roField(T, ((v)=>{try{return v?new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}):'\u2014';}catch(e){return String(v);}})(r.updatedAt||r.updated_at))), K.field(T, '\u0e41\u0e01\u0e49\u0e44\u0e02\u0e42\u0e14\u0e22 (UpdatedBy)', K.roField(T, r.updatedBy||r.updated_by||'\u2014'))]), statusEditor, actLegend(cfg.acts || ['Export'])];
+      }
+    } else {
+      const canEdit = !!(cfg.form && cfg.roMap);
+      const openDetail = (r) => { this.setState({ sel: r }); this.goScr('detail'); };
+      const statusCol = { h: 'สถานะ', render: r => K.pill(T, r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) };
+      const baseCols = cfg.cols.some(cc => cc.h === 'สถานะ') ? cfg.cols : cfg.cols.concat([statusCol]);
+      const cols = canEdit ? baseCols.concat([{ h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู'), h('button', { onClick: e => { e.stopPropagation(); this.enterEdit(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'แก้ไข')) }]) : baseCols;
+      const sortSt = this.state.sort || { key: 'no', dir: 'asc' };
+      const setSort = (key) => this.setState(s => { const cur = s.sort || { key: 'no', dir: 'asc' }; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: { key, dir } }; });
+      const sortedRows = sortSt.key ? rows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); }) : rows;
+      body = [cfg.kpi ? K.kpi(T, cfg.kpi) : null, K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.no || selRow.a) : null, (cfg.th || nav), canEdit && K.btn(T, 'สร้างใหม่', true, 'plus', () => this.enterCreate())), actLegend(cfg.acts || ['Export'])];
+    }
+
+    const controlled = typeof this.props.onScr === 'function';
+    const modal = this.state.confirm ? h('div', { key: 'cf', style: controlled ? { position: 'fixed', top: 38, left: 0, right: 0, bottom: 0, zIndex: 100000, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } : { position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+      h('div', { style: { background: c.dark ? 'oklch(0.23 0.014 265)' : '#fff', borderRadius: 14, border: `1px solid ${c.border}`, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: 400, maxWidth: '100%', padding: '22px 24px', fontFamily: c.font, color: c.text } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } }, h('span', { style: { width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('doc', 18)), h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'บันทึกการเปลี่ยนแปลง?')),
+        h('div', { style: { fontSize: 12.5, color: sub, lineHeight: 1.6, marginBottom: 18 } }, 'คุณกำลัง' + (this.state.edit ? 'แก้ไข' : 'สร้าง') + 'รายการและยังไม่ได้บันทึก ต้องการบันทึกก่อนออกจากหน้านี้หรือไม่?'),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' } }, K.btn(T, 'ยกเลิก', false, null, () => this.setState({ confirm: null })), K.btn(T, 'ไม่บันทึก', false, null, () => this.confirmDiscard()), K.btn(T, 'บันทึก', true, 'check', () => this.confirmSave())))) : null;
+    if (controlled) return { fg: c.text, view: h('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column' } }, h('div', { style: { display: 'flex', flexDirection: 'column' } }, body), modal) };
+
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const collapsed = !!this.state.sideCollapsed;
+    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'calendar']);
+    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
+      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th)); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const tabsEl = h('div', { style: { display: 'flex', gap: 6, rowGap: 0, flexWrap: 'wrap', borderBottom: `1px solid ${border}` } }, cfg.screens.filter(([id]) => id === 'create' ? this.curMode() === 'create' : id === 'edit' ? this.curMode() === 'edit' : true).map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb;
+      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const filterDd = (() => {
+      const ddOpenId = this.state.openDd || null;
+      const ddToggle = (id) => this.setState(s => ({ openDd: s.openDd === id ? null : id }));
+      const ddWrap = (id, label, active, content) => h('div', { key: 'dd-' + id, style: { position: 'relative', display: 'flex' } },
+        h('button', { type: 'button', onClick: () => ddToggle(id), style: { display: 'flex', alignItems: 'center', gap: 7, height: 30, width: '100%', fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 8, border: `1px solid ${c.border}`, background: active ? c.accSoft : c.win, color: active ? aTxt : c.text, cursor: 'pointer', fontFamily: c.font, whiteSpace: 'nowrap' } },
+          h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' } }, label), h('span', { style: { display: 'flex', color: sub } }, K.Icon('arrowdown', 13))),
+        ddOpenId === id ? h('div', { key: 'bd', onClick: () => this.setState({ openDd: null }), style: { position: 'fixed', inset: 0, zIndex: 199 } }) : null,
+        ddOpenId === id ? h('div', { key: 'pop', onClick: e => e.stopPropagation(), style: { position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', background: c.win, border: `1px solid ${c.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,20,35,.18)', padding: 6 } }, content) : null);
+      const coLabel = coAll ? 'บริษัท: ทั้งหมด' : (coSel.length === 1 ? coSel[0] : 'บริษัท (' + coSel.length + ')');
+      const coContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+        h('input', { type: 'checkbox', checked: coAll, ref: el => { if (el) el.indeterminate = coSel.length > 0 && !coAll; }, onChange: () => this.setState({ filterCo: coAll ? [] : PROC_COMPANIES.slice(), filterBr: [] }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+        .concat(PROC_COMPANIES.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: coSel.indexOf(o) > -1, onChange: () => { const next = coSel.indexOf(o) > -1 ? coSel.filter(x => x !== o) : coSel.concat([o]); this.setState({ filterCo: next, filterBr: [] }); }, style: { cursor: 'pointer' } }), h('span', null, o))));
+      const brLabel = brAll ? 'สาขา: ทั้งหมด' : (brSelFinal.length === 1 ? brSelFinal[0] : 'สาขา (' + brSelFinal.length + ')');
+      const brContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+        h('input', { type: 'checkbox', checked: brAll, ref: el => { if (el) el.indeterminate = brSelFinal.length > 0 && !brAll; }, onChange: () => this.setState({ filterBr: brAll ? [] : brOpts.slice() }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+        .concat(brOpts.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: brSelFinal.indexOf(o) > -1, onChange: () => { const next = brSelFinal.indexOf(o) > -1 ? brSelFinal.filter(x => x !== o) : brSelFinal.concat([o]); this.setState({ filterBr: next }); }, style: { cursor: 'pointer' } }), h('span', null, o))));
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, width: '100%' } }, ddWrap('co', coLabel, !coAll, coContent), ddWrap('br', brLabel, !brAll, brContent));
+    })();
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('calendar', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('calendar', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'ระบบบริหารปฏิทินองค์กร (CAL)')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns),
+        !collapsed ? h('div', { style: { flexShrink: 0, paddingTop: 10, marginTop: 6, borderTop: `1px solid ${border}` } }, filterDd) : null),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
+          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px', flexWrap: 'nowrap', position: 'relative' } }, h('div', { style: { minWidth: 0, overflow: 'hidden' } }, h('div', { style: { fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'L1 · ระบบบริหารงานส่วนกลาง (ADMS)  ›  L2 · ระบบบริหารปฏิทินองค์กร (CAL)  ›  L3 · ' + cfg.th)), h('div', { style: { flex: 1, minWidth: 12 } })),
+          h('div', { style: { padding: '0 14px' } }, tabsEl)),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view, modal) };
+  }
+}
+
+</script>
+</body>
+</html>

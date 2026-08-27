@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  DBKEY = 'db:itsa-audt:v1';
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  SHEETS_TABS = {'user-activity-log':'itsa-audt-user-activity-log','login-log':'itsa-audt-login-log','data-change-log':'itsa-audt-data-change-log','permission-audit':'itsa-audt-permission-audit','api-audit':'itsa-audt-api-audit','audit-report':'itsa-audt-audit-report'};
+  _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); if (K.sheetsBind && this.SHEETS_URL) K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS); } K.dbPersist(this, this.DBKEY); }
+  state = { nav: 'user-activity-log', scr: 'list', sel: null, mode: 'view', filt: 'ทั้งหมด', sort: { key: 'ts', dir: 'desc' } };
+  componentDidMount() { if (this.K) { this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); }); }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._reportSheetsStatus(); this._handleReq(); }
+  _reportSheetsStatus() { if (typeof this.props.onSheetsStatus !== 'function') return; const s2 = this.state.sheetsStatus; if (s2 !== this._lastSheetsStatus) { this._lastSheetsStatus = s2; this.props.onSheetsStatus(s2); } }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'clock', hidden: false, screens: cfg[k].screens.map(([id, lb, ic]) => [id, lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb, ic]) }))); }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); else if (r.kind === 'scr') this.setScr(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; if ('view' !== this._lastMode) { this._lastMode = 'view'; this.props.onMode('view'); } }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+
+  CFG() {
+    return {
+      'user-activity-log': {
+        th: 'บันทึกกิจกรรมผู้ใช้', ic: 'clock',
+        screens: [['list', 'Audit Log — บันทึกการตรวจสอบ', 'list'], ['detail', 'Audit Detail — รายละเอียดรายการ', 'doc']],
+        kpi: [['รายการทั้งหมด', '13', '—', 145], ['ล็อกอินล้มเหลว', '1', '—', 35], ['การลบข้อมูล', '1', '—', 35]],
+        cols: [{ h: 'เวลา', k: 'ts', b: true }, { h: 'ผู้ใช้งาน', k: 'user' }, { h: 'แผนก', k: 'dept' }, { h: 'การกระทำ', render: r => this.K.pill(this.T(), r.action, this.actHue(r.action)) }, { h: 'โมดูล', k: 'module' }, { h: 'เป้าหมาย', k: 'target' }],
+        rows: [
+          { no: 'AUD-01', ts: '2026-07-11 08:34:12', user: '-', dept: '-', action: 'login_failed', module: 'Auth', target: 'admin@meeerp.co.th', detail: 'admin@meeerp.co.th · ครั้งที่ 5/5' },
+          { no: 'AUD-02', ts: '2026-07-11 08:52:18', user: 'แอดมิน ระบบ', dept: 'ฝ่ายไอที', action: 'login', module: 'Auth', target: '-', detail: 'เข้าสู่ระบบสำเร็จ' },
+          { no: 'AUD-03', ts: '2026-07-11 09:05:42', user: 'แอดมิน ระบบ', dept: 'ฝ่ายไอที', action: 'view', module: 'ผู้ใช้งาน', target: 'วิชัย รักชาติ', detail: 'ดูข้อมูลผู้ใช้งาน' },
+          { no: 'AUD-04', ts: '2026-07-11 09:12:33', user: 'แอดมิน ระบบ', dept: 'ฝ่ายไอที', action: 'approve', module: 'ยานพาหนะ', target: 'REQ-2026-0002', detail: 'อนุมัติคำขอใช้รถ' },
+          { no: 'AUD-05', ts: '2026-07-11 09:18:00', user: 'ธนากร พลังงาน', dept: 'ฝ่ายการเงิน', action: 'create', module: 'ห้องประชุม', target: 'MRQ-2026-0011', detail: 'สร้างคำขอจองห้องประชุม' },
+          { no: 'AUD-06', ts: '2026-07-11 09:30:11', user: 'พิมพ์ชนก วงศ์ทอง', dept: 'ฝ่ายไอที', action: 'update', module: 'โปรไฟล์', target: 'พิมพ์ชนก วงศ์ทอง', detail: 'แก้ไขข้อมูลส่วนตัว' },
+          { no: 'AUD-07', ts: '2026-07-11 09:45:55', user: 'แอดมิน ระบบ', dept: 'ฝ่ายไอที', action: 'delete', module: 'ยานพาหนะ', target: 'VH-999', detail: 'ลบข้อมูลยานพาหนะ' },
+          { no: 'AUD-08', ts: '2026-07-11 10:00:02', user: 'ระบบ', dept: '-', action: 'backup', module: 'ระบบ', target: '-', detail: 'สำรองข้อมูลอัตโนมัติสำเร็จ' },
+          { no: 'AUD-09', ts: '2026-07-11 10:15:30', user: 'ศิริพร แจ่มใส', dept: 'ฝ่ายผลิต', action: 'export', module: 'รายงาน', target: '-', detail: 'ส่งออกรายงาน' },
+          { no: 'AUD-10', ts: '2026-07-11 10:22:41', user: 'แอดมิน ระบบ', dept: 'ฝ่ายไอที', action: 'update', module: 'ตั้งค่า', target: '-', detail: 'เปลี่ยนแปลงการตั้งค่าระบบ' },
+          { no: 'AUD-11', ts: '2026-07-10 17:30:00', user: 'แอดมิน ระบบ', dept: 'ฝ่ายไอที', action: 'update', module: 'สายงาน', target: 'ฝ่ายผลิต', detail: 'แก้ไขผังสายงาน' },
+          { no: 'AUD-12', ts: '2026-07-10 11:15:00', user: 'ธนากร พลังงาน', dept: 'ฝ่ายการเงิน', action: 'reject', module: 'ห้องประชุม', target: 'MRQ-2026-0009', detail: 'ปฏิเสธคำขอจองห้องประชุม' },
+          { no: 'AUD-13', ts: '2026-07-05 09:05:00', user: 'แอดมิน ระบบ', dept: 'ฝ่ายไอที', action: 'login', module: 'Auth', target: '-', detail: 'เข้าสู่ระบบสำเร็จ' }
+        ],
+        form: [['รายละเอียดการตรวจสอบ', 'clock', [['เวลา', 0, ''], ['ผู้ใช้งาน', 0, ''], ['แผนก', 0, ''], ['การกระทำ', 0, ''], ['โมดูล', 0, ''], ['เป้าหมาย', 0, ''], ['รายละเอียดเพิ่มเติม', 0, '']]]],
+        roMap: { 'เวลา': 'ts', 'ผู้ใช้งาน': 'user', 'แผนก': 'dept', 'การกระทำ': 'action', 'โมดูล': 'module', 'เป้าหมาย': 'target', 'รายละเอียดเพิ่มเติม': 'detail' },
+        acts: ['View', 'Export', 'Filter']
+      },
+      'login-log': {
+        th: 'บันทึกการเข้าสู่ระบบ', ic: 'clock',
+        screens: [['list', 'Login Log — บันทึกการเข้าสู่ระบบ', 'list']],
+        cols: [{ h: 'เวลา', k: 'ts', b: true }, { h: 'ผู้ใช้งาน', k: 'a' }, { h: 'ผลลัพธ์', k: 's' }],
+        rows: [
+          { ts: '2026-07-30 09:12', a: 'suda.k', s: 'สำเร็จ' },
+          { ts: '2026-07-30 09:15', a: 'unknown', s: 'ล้มเหลว' },
+          { ts: '2026-07-30 09:20', a: 'preecha.w', s: 'สำเร็จ' }
+        ]
+      },
+      'data-change-log': {
+        th: 'บันทึกการเปลี่ยนข้อมูล', ic: 'doc',
+        screens: [['list', 'Data Change Log — บันทึกการเปลี่ยนข้อมูล', 'list']],
+        cols: [{ h: 'เวลา', k: 'ts', b: true }, { h: 'ตาราง/ฟอร์ม', k: 'a' }, { h: 'ผู้แก้ไข', k: 'by' }],
+        rows: [
+          { ts: '2026-07-29 14:02', a: 'Sales Order #2451', by: 'preecha.w' },
+          { ts: '2026-07-29 11:40', a: 'Vendor Master #V-22', by: 'suda.k' }
+        ]
+      },
+      'permission-audit': {
+        th: 'ตรวจสอบสิทธิ์', ic: 'gauge',
+        screens: [['list', 'Permission Audit — ตรวจสอบสิทธิ์', 'list']],
+        cols: [{ h: 'ผู้ใช้งาน', k: 'a', b: true }, { h: 'รายละเอียด', k: 'd' }, { h: 'ผล', k: 's' }],
+        rows: [
+          { a: 'preecha.w', d: 'เข้าถึง ACCT เกินสิทธิ์ที่กำหนด', s: 'พบความเสี่ยง' },
+          { a: 'suda.k', d: 'สิทธิ์ตรงตามบทบาทที่กำหนด', s: 'ปกติ' }
+        ]
+      },
+      'api-audit': {
+        th: 'ตรวจสอบ API', ic: 'link',
+        screens: [['list', 'API Audit — ตรวจสอบ API', 'list']],
+        cols: [{ h: 'Endpoint', k: 'a', b: true }, { h: 'เรียกใช้ (ครั้ง)', k: 'cnt' }, { h: 'ผลลัพธ์', k: 's' }],
+        rows: [
+          { a: '/api/v2/orders', cnt: '1,204', s: 'ปกติ' },
+          { a: '/api/v2/auth', cnt: '88', s: 'พบ error 401 ผิดปกติ' }
+        ]
+      },
+      'audit-report': {
+        th: 'รายงานการตรวจสอบ', ic: 'report',
+        screens: [['list', 'Audit Report — รายงานการตรวจสอบ', 'list']],
+        cols: [{ h: 'รายงาน', k: 'a', b: true }, { h: 'ช่วงเวลา', k: 'd' }, { h: 'สร้างเมื่อ', k: 'ts' }],
+        rows: [ { a: 'สรุปการตรวจสอบรายเดือน', d: 'ก.ค. 2569', ts: '2026-08-01' }, { a: 'สรุปการตรวจสอบสิทธิ์ผู้ใช้', d: 'Q2 2569', ts: '2026-07-15' }, { a: 'สรุปเหตุการณ์ผิดปกติ', d: 'ก.ค. 2569', ts: '2026-07-31' } ]
+      }
+    };
+  }
+  actHue(a) { return ({ login: 130, login_failed: 22, create: 200, update: 35, delete: 22, approve: 145, reject: 22, view: 220, export: 265, backup: 190 })[a] || 220; }
+
+  curNav() { return this.props.nav || this.state.nav; }
+  setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: 'list', sel: null }); }
+  curScr() { return this.props.scr || this.state.scr; }
+  _goScr(v) { if (this.props.onScr) this.props.onScr(v); else this.setState({ scr: v }); }
+  setScr(v) { this._goScr(v); }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const sl = this.K.sheetsLoading ? this.K.sheetsLoading(this, 'ตรวจสอบระบบ · ITSA-AUDT') : null; if (sl) return sl;
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
+    const scr = this.curScr();
+    const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const rows = K.coBrFilter(this, cfg.rows);
+    const selRow = this.state.sel || rows[0] || null;
+    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'ACTIONS'), list.map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+    let body;
+    if (scr === 'detail') {
+      const r = selRow;
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only)')), K.btn(T, 'กลับรายการ', false, 'list', () => this.setScr('list')))], { marginBottom: 14, padding: '12px 16px' });
+      const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb]) => { const m = cfg.roMap[lb]; return K.field(T, lb, K.roField(T, r[m])); })));
+      body = [hdr, ...secs, actLegend(cfg.acts || ['Export'])];
+    } else {
+      const openDetail = (r) => { this.setState({ sel: r }); this.setScr('detail'); };
+      const modOpts = ['ทั้งหมด', ...Array.from(new Set(rows.map(r => r.module)))];
+      const curMod = this.state.filt || 'ทั้งหมด';
+      const fRows = curMod === 'ทั้งหมด' ? rows : rows.filter(r => r.module === curMod);
+      const sortSt = this.state.sort;
+      const setSort = (key) => this.setState(s => { const cur = s.sort; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: { key, dir } }; });
+      const sortedRows = fRows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); });
+      const cols = cfg.cols.concat([{ h: '', render: r => h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู') }]);
+      body = [cfg.kpi ? K.kpi(T, cfg.kpi) : null, h('div', { key: 'tb', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 } },
+        h('select', { value: curMod, onChange: e => this.setState({ filt: e.target.value }), style: Object.assign({}, K.inp(T), { width: 180, cursor: 'pointer' }) }, modOpts.map(o => h('option', { key: o, value: o }, o))),
+        h('div', { style: { flex: 1 } })),
+        K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.no || selRow.a) : null), actLegend(cfg.acts || ['Export'])];
+    }
+
+    const controlled = typeof this.props.onScr === 'function';
+    if (controlled) return { fg: c.text, view: h('div', { style: { display: 'flex', flexDirection: 'column' } }, body) };
+
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const collapsed = !!this.state.sideCollapsed;
+    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'clock']);
+    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
+      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th)); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const tabsEl = h('div', { style: { display: 'flex', gap: 6, rowGap: 0, flexWrap: 'wrap', borderBottom: `1px solid ${border}` } }, cfg.screens.filter(([id]) => id === 'create' ? this.curMode() === 'create' : id === 'edit' ? this.curMode() === 'edit' : true).map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb;
+      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon(cfg.ic || 'clock', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon(cfg.ic || 'clock', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, cfg.th)),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns), !collapsed ? h('div', { style: { flexShrink: 0, paddingTop: 10, marginTop: 6, borderTop: `1px solid ${border}` } }, K.coBrDropdown(this, T)) : null),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
+          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px' } }, h('div', { style: { minWidth: 0 } }, h('div', { style: { fontSize: 13.5, fontWeight: 700, lineHeight: 1.45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 } }, 'L1 · ระบบผู้ดูแลระบบไอที (ITSA)  ›  L2 · บริหารการตรวจสอบการใช้งาน (AUDT)  ›  L3 · ' + cfg.th)), (() => K.sheetsBadge(T, this.state.sheetsStatus))()),
+          h('div', { style: { padding: '0 14px' } }, tabsEl)),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view) };
+  }
+}
+</script>
+</body>
+</html>

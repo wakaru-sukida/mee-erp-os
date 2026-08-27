@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  DBKEY = 'db:invt-item:v1';
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbx1rJ24AXRBkIQ-YsooCtXdFbQsdmwC8_3LuXl13OT77FTmFfM2kEq03Xh7arygTVBxwg/exec';
+  SHEETS_TABS = { 'item-class': 'invt-item-class', 'item-type': 'invt-item-type', 'item-category': 'invt-item-category', 'item-grade': 'invt-item-grade', 'item-brand': 'invt-item-brand', 'item-uom': 'invt-uom', 'item-uomgroup': 'invt-uom-group', 'item-uomgroup-conv': 'invt-uom-group-conversion', 'item-main': 'invt-item', 'item-uom': 'invt-uom', 'item-uomgroup': 'invt-uom-group', 'item-group': 'invt-item-group' };
+  _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); } K.dbPersist(this, this.DBKEY); }
+  state = { nav: 'item-main', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {}, sheetsStatus: 'off', aiOpen: false, aiMsgs: [], aiInput: '' };
+  _clearItemGroupSheet() { if (typeof window === 'undefined' || !this.SHEETS_URL) return; try { if (window.localStorage.getItem('meeerp.invt.itemgroup.cleared') === '1') return; } catch (e) {} try { fetch(this.SHEETS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ tab: 'invt-item-group', action: 'replaceAll', rows: [] }) }).then(() => { try { window.localStorage.setItem('meeerp.invt.itemgroup.cleared', '1'); } catch (e) {} }).catch(() => {}); } catch (e) {} }
+  _itSeedRows() { return [
+    { no: 'RM', tyid: 1, en: 'Raw Material', a: 'วัตถุดิบ', cls: 'MATERIAL', co: '', br: '', tid: '', stk: 'ใช่', pur: 'ใช่', sel: 'ไม่ใช่', mfg: 'ไม่ใช่', svc: 'ไม่ใช่', sort: 10, remark: '', s: 'ใช้งาน' },
+    { no: 'WP', tyid: 2, en: 'Work in Process', a: 'งานระหว่างผลิต', cls: 'PRODUCT', co: '', br: '', tid: '', stk: 'ใช่', pur: 'ไม่ใช่', sel: 'ไม่ใช่', mfg: 'ใช่', svc: 'ไม่ใช่', sort: 20, remark: '', s: 'ใช้งาน' },
+    { no: 'SF', tyid: 3, en: 'Semi-Finished Goods', a: 'สินค้ากึ่งสำเร็จรูป', cls: 'PRODUCT', co: '', br: '', tid: '', stk: 'ใช่', pur: 'ไม่ใช่', sel: 'ไม่ใช่', mfg: 'ใช่', svc: 'ไม่ใช่', sort: 30, remark: '', s: 'ใช้งาน' },
+    { no: 'FG', tyid: 4, en: 'Finished Goods', a: 'สินค้าสำเร็จรูป', cls: 'PRODUCT', co: '', br: '', tid: '', stk: 'ใช่', pur: 'ไม่ใช่', sel: 'ใช่', mfg: 'ใช่', svc: 'ไม่ใช่', sort: 40, remark: '', s: 'ใช้งาน' },
+    { no: 'TG', tyid: 5, en: 'Trading Goods', a: 'สินค้าซื้อมาเพื่อขาย', cls: 'PRODUCT', co: '', br: '', tid: '', stk: 'ใช่', pur: 'ใช่', sel: 'ใช่', mfg: 'ไม่ใช่', svc: 'ไม่ใช่', sort: 50, remark: '', s: 'ใช้งาน' },
+    { no: 'CO', tyid: 6, en: 'Consumable', a: 'วัสดุสิ้นเปลือง', cls: 'MATERIAL', co: '', br: '', tid: '', stk: 'ใช่', pur: 'ใช่', sel: 'ไม่ใช่', mfg: 'ไม่ใช่', svc: 'ไม่ใช่', sort: 60, remark: '', s: 'ใช้งาน' },
+    { no: 'SP', tyid: 7, en: 'Spare Parts', a: 'อะไหล่', cls: 'MATERIAL', co: '', br: '', tid: '', stk: 'ใช่', pur: 'ใช่', sel: 'ไม่ใช่', mfg: 'ไม่ใช่', svc: 'ไม่ใช่', sort: 70, remark: '', s: 'ใช้งาน' },
+    { no: 'TL', tyid: 8, en: 'Tool', a: 'เครื่องมือ', cls: 'MATERIAL', co: '', br: '', tid: '', stk: 'ใช่', pur: 'ใช่', sel: 'ไม่ใช่', mfg: 'ไม่ใช่', svc: 'ไม่ใช่', sort: 80, remark: '', s: 'ใช้งาน' },
+    { no: 'FA', tyid: 9, en: 'Fixed Asset', a: 'สินทรัพย์ถาวร', cls: 'ASSET', co: '', br: '', tid: '', stk: 'ใช่', pur: 'ใช่', sel: 'ไม่ใช่', mfg: 'ไม่ใช่', svc: 'ไม่ใช่', sort: 90, remark: '', s: 'ใช้งาน' },
+    { no: 'SV', tyid: 10, en: 'Service', a: 'บริการ', cls: 'SERVICE', co: '', br: '', tid: '', stk: 'ไม่ใช่', pur: 'ใช่', sel: 'ใช่', mfg: 'ไม่ใช่', svc: 'ใช่', sort: 100, remark: '', s: 'ใช้งาน' },
+    { no: 'NS', tyid: 11, en: 'Non-Stock Item', a: 'รายการไม่เก็บสต็อก', cls: '', co: '', br: '', tid: '', stk: 'ไม่ใช่', pur: 'ใช่', sel: 'ใช่', mfg: 'ไม่ใช่', svc: 'ไม่ใช่', sort: 110, remark: '', s: 'ใช้งาน' }
+  ]; }
+  _pushItemTypeSeed() {
+    if (this._itSeedPushed || !this._sheetsPulled || typeof window === 'undefined' || !this.SHEETS_URL) return;
+    this._itSeedPushed = true;
+    try { if (window.localStorage.getItem('meeerp.invt.itemtype.seeded') === '1') return; } catch (e) {}
+    const setFlag = () => { try { window.localStorage.setItem('meeerp.invt.itemtype.seeded', '1'); } catch (e) {} };
+    const cur = this.state.db['item-type'];
+    const isEmpty = cur === undefined || (Array.isArray(cur) && cur.length === 0);
+    if (!isEmpty) { setFlag(); return; }
+    const rows = this._itSeedRows();
+    try {
+      const projected = rows.map(r => this._itProject(r));
+      fetch(this.SHEETS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ tab: 'invt-item-type', action: 'replaceAll', rows: projected }) }).then(() => setFlag()).catch(() => { this._itSeedPushed = false; });
+    } catch (e) { this._itSeedPushed = false; }
+    this.setState(s => ({ db: Object.assign({}, s.db, { 'item-type': rows }) }));
+  }
+  _resolveSheetUrl() { try { const b = this.K && this.K.bus && this.K.bus(); const m = b && b.get ? b.get('tenant.sheetUrls', null) : null; if (m && m.INVT) return m.INVT; } catch (e) {} return this.SHEETS_URL; }
+  componentDidMount() { this._clearItemGroupSheet(); if (this.K) { this.SHEETS_URL = this._resolveSheetUrl(); if (this.K.sheetsBind) { this.K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS, { 'item-group': r => this._pgNative(r), 'item-class': r => this._icNative(r), 'item-type': r => this._itNative(r), 'item-category': r => this._isbNative(r), 'item-grade': r => this._igNative(r), 'item-brand': r => this._ibNative(r), 'item-uom': r => this._uomNative(r), 'item-uomgroup': r => this._ugNative(r), 'item-uomgroup-conv': r => this._ugcNative(r), 'item-main': r => this._itemNative(r) }); this._wrapItemGroupPush(); } this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.SHEETS_URL = this._resolveSheetUrl(); if (K.sheetsBind) { K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS, { 'item-group': r => this._pgNative(r), 'item-class': r => this._icNative(r), 'item-type': r => this._itNative(r), 'item-category': r => this._isbNative(r), 'item-grade': r => this._igNative(r), 'item-brand': r => this._ibNative(r), 'item-uom': r => this._uomNative(r), 'item-uomgroup': r => this._ugNative(r), 'item-uomgroup-conv': r => this._ugcNative(r), 'item-main': r => this._itemNative(r) }); this._wrapItemGroupPush(); } this.setState({ ready: true }); this._reportCatalog(); }); }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._handleReq(); this._wireAiCmd(); this._seedSheetIfEmpty(); this._pushItemTypeSeed(); this._tenantPull(); if (this._sheetsPulled) this._repairUomGroups(); }
+  _seedSheetIfEmpty() {
+    if (this._seededSheet || !this._sheetsPulled) return;
+    this._seededSheet = true;
+    const cfg = this.CFG(); const patch = {};
+    Object.keys(this.SHEETS_TABS).forEach(k => { if (k !== 'item-type' && this.state.db[k] === undefined) { patch[k] = (cfg[k] && cfg[k].rows) ? cfg[k].rows : []; } });
+    if (Object.keys(patch).length) this.setState(s => ({ db: Object.assign({}, s.db, patch) }));
+  }
+  componentWillUnmount() { if (this._aiOff) this._aiOff(); }
+  _wireAiCmd() {
+    if (this._aiWired || !this.K || !this.K.bus) return;
+    const b = this.K.bus(); if (!b) return; this._aiWired = true;
+    this._aiOff = b.on((kk, v) => { if (kk === 'meeerp.invt.cmd') this._applyAiCmd(v); });
+    const pending = b.get('meeerp.invt.cmd', null); if (pending) this._applyAiCmd(pending);
+  }
+  _applyAiCmd(cmd) {
+    if (!cmd || cmd.nonce == null || this._aiCmdDone === cmd.nonce) return;
+    this._aiCmdDone = cmd.nonce;
+    if (cmd.action !== 'link-uomgroup') return;
+    const cfg = this.CFG(); const nowIso = new Date().toISOString(); const who = 'AI Copilot';
+    this.setState(s => {
+      const db = Object.assign({}, s.db);
+      let groups = (db['item-uomgroup'] !== undefined ? db['item-uomgroup'] : ((cfg['item-uomgroup'] || {}).rows || [])).slice();
+      const g = cmd.group || {};
+      let grow = groups.find(x => x.no === g.no);
+      if (!grow) {
+        const uomRows = db['item-uom'] !== undefined ? db['item-uom'] : ((cfg['item-uom'] || {}).rows || []);
+        const lines = (g.lines || []).map(l => ({ uom: l.uom, conv: (l.conv == null ? 1 : l.conv) }));
+        const baseLine = lines.find(l => Number(l.conv) === 1) || lines[0] || { uom: g.base };
+        let utype = g.utype; if (!utype && baseLine) { const ur = uomRows.find(u => u.no === baseLine.uom); utype = ur ? ur.utype : ''; }
+        const ids = groups.map(r => parseInt(r.gid, 10) || 0);
+        grow = { no: g.no, gid: (ids.length ? Math.max.apply(null, ids) : 0) + 1, en: g.en || g.no, a: g.a || g.no, utype: utype || '', base: baseLine ? baseLine.uom : (g.base || ''), lines: JSON.stringify(lines), d: g.d || 'สร้างโดย AI Copilot', s: 'ใช้งาน', createdAt: nowIso, createdBy: who, updatedAt: nowIso, updatedBy: who, rowVersion: 1, IsActive: true };
+        groups = [grow, ...groups];
+      }
+      db['item-uomgroup'] = groups;
+      let items = (db['item-main'] !== undefined ? db['item-main'] : ((cfg['item-main'] || {}).rows || [])).slice();
+      items = items.map(it => {
+        if (it.no !== cmd.item) return it;
+        const n = Object.assign({}, it, { uomgrp: grow.no, UOMGroupId: grow.gid, uom: grow.base || it.uom, updatedAt: nowIso, updatedBy: who, rowVersion: (parseInt(it.rowVersion, 10) || 1) + 1 });
+        n['_f:ชุดหน่วยนับ (UOM Group)'] = grow.no; n['_f:หน่วยนับสต็อก (Stock UOM)'] = grow.base || it.uom;
+        return n;
+      });
+      db['item-main'] = items;
+      return { db };
+    });
+    this.toast('AI ผูกชุดหน่วยนับ ' + ((cmd.group && cmd.group.no) || '') + ' เข้ากับ ' + cmd.item + ' แล้ว');
+  }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'box', hidden: false, screens: cfg[k].screens.map(([id, lb, ic]) => [id, lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb, ic]) }))); }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); else if (r.kind === 'scr') this.setScr(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; const m = this.curMode(); if (m !== this._lastMode) { this._lastMode = m; this.props.onMode(m); } }
+  _asLines(v) { if (Array.isArray(v)) return v; if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch (e) { return []; } } return []; }
+  _bizGroups() {
+    try {
+      const b = this.K && this.K.bus && this.K.bus();
+      if (b && b.get) { const live = b.get('org.businessGroups', null); if (live && live.length) return live.map(x => typeof x === 'string' ? x : (x.a || x.en || x.no)).filter(Boolean); }
+      let raw = {}; try { raw = JSON.parse(window.localStorage.getItem('meeerp.bus.v2') || '{}') || {}; } catch (e) {}
+      const keys = Object.keys(raw).filter(k => /^db:itsa-org:v\d+$/.test(k)).sort((a, c) => (parseInt(a.split('v').pop(), 10) || 0) - (parseInt(c.split('v').pop(), 10) || 0));
+      for (let i = keys.length - 1; i >= 0; i--) { const db = raw[keys[i]]; const rows = db && db['business-group']; if (rows && rows.length) return rows.filter(r => !r.s || r.s === 'ใช้งาน').map(r => r.a || r.en || r.no).filter(Boolean); }
+    } catch (e) {}
+    return [];
+  }
+  _groupLines(r) { const conv = (this.state.db['item-uomgroup-conv'] || []).filter(c => (r.gid != null && String(c.gid) === String(r.gid)) || (c.grpno && c.grpno === r.no)); if (conv.length) return conv.slice().sort((a, b) => (parseInt(a.sort, 10) || 0) - (parseInt(b.sort, 10) || 0)).map(c => ({ uom: c.uom, conv: c.rate, sort: c.sort })); let a = this._asLines(r.lines); if (a.length) return a; return []; }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+
+  CFG() {
+    const T = this.T(); const h = this.K.h; const P = (t, hu) => this.K.pill(this.T(), t, hu); const sub = this.K.tk(T).sub;
+    const yn = v => v === true || v === 'ใช่' || v === 'true';
+    const UOM_HUE = { Quantity: 200, Weight: 265, Length: 35, Volume: 158, Area: 300, Time: 45 };
+    const UOM_NAMES = { EA: 'ชิ้น', KG: 'กิโลกรัม', G: 'กรัม', M: 'เมตร', ROLL: 'ม้วน', BOX: 'กล่อง', L: 'ลิตร', BAG: 'ถุง/กระสอบ', TON: 'ตัน' };
+    const ITEM_NAMES = { 'FG-FILM-001': 'ฟิล์มสำเร็จรูป', 'RM-RESIN-001': 'เม็ดพลาสติกเรซิน', 'TG-BOX-001': 'กล่องบรรจุภัณฑ์' };
+    return {
+      'item-main': {
+        th: 'ข้อมูลสินค้า (Item)', ic: 'box',
+        screens: [['list', 'Item List — รายการสินค้า', 'list'], ['detail', 'Item Detail — รายละเอียดสินค้า', 'doc'], ['create', 'Create Item — สร้างสินค้า', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
+        kpi: [['สินค้าทั้งหมด', '0', 'Item', 145], ['ใช้งาน', '0', 'ACTIVE', 130], ['ข้อมูลกลาง', '0', 'ไม่ผูกบริษัท', 35]],
+        cols: [{ h: 'รหัสสินค้า', k: 'no', b: true }, { h: 'ชื่อสินค้า', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'จำแนก', render: r => r.cls ? P(r.cls, this.itemTypeHue(r.cls)) : h('span', { style: { color: sub } }, '—') }, { h: 'ชนิด', k: 'typ' }, { h: 'หมวดหมู่', k: 'cat' }, { h: 'ยี่ห้อ', k: 'brand' }, { h: 'หน่วยคลัง', k: 'uom' }, { h: 'สถานะ', render: r => P(r.s, this.statusHue(r.s)) }],
+        rows: [],
+        form: [
+          ['ข้อมูลสินค้า (Item)', 'box', [['รหัสสินค้า (Item Code)', 0, 'FG-FILM-001'], ['ชื่อสินค้า (ไทย)', 1, 'เช่น ฟิล์มสำเร็จรูป'], ['ชื่อสินค้า (อังกฤษ)', 0, 'Finished Film'], ['รายละเอียด (Description)', 0, 'คำอธิบายสินค้า', 1]]],
+          ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', [['กลุ่มผู้เช่า (Tenant)', 1, []], ['บริษัท', 0, ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์']], ['สาขา', 0, []]]],
+          ['การจัดกลุ่มสินค้า (Classification)', 'tag', [['กลุ่มสินค้า (Product Group)', 0, []], ['จำแนกสินค้า (Item Class)', 0, []], ['ชนิดสินค้า (Item Type)', 0, []], ['หมวดหมู่สินค้า (Item Category)', 0, []], ['เกรดสินค้า (Item Grade)', 0, []], ['ยี่ห้อสินค้า (Item Brand)', 0, []]]],
+          ['หน่วยนับ (Unit of Measure)', 'gauge', [['ชุดหน่วยคลัง (Stock UOM Group)', 0, []], ['หน่วยคลัง (Stock UOM)', 0, ['EA']], ['ชุดหน่วยซื้อ (Purchase UOM Group)', 0, []], ['หน่วยซื้อ (Purchase UOM)', 0, ['EA']], ['ชุดหน่วยขาย (Sales UOM Group)', 0, []], ['หน่วยขาย (Sales UOM)', 0, ['EA']]]],
+          ['การระบุตัวสินค้า / คลัง', 'scale', [['บาร์โค้ด (Barcode)', 0, 'เช่น 8850000000001'], ['หมายเลขซีเรียล (Serial Number)', 0, 'Serial Number'], ['เลขล็อตล่าสุด (Lot Updated)', 0, 'Lot No.'], ['จำนวนขั้นต่ำ (Stock Min)', 0, '0'], ['จำนวนมากสุด (Stock Max)', 0, '0'], ['อายุสินค้า (วัน)', 0, '0']]],
+          ['คุณสมบัติ (Attributes)', 'doc', [['เก็บเข้าคลัง (IsStockItem)', 0, 'checkbox'], ['ซื้อได้ (IsPurchaseItem)', 0, 'checkbox'], ['ขายได้ (IsSalesItem)', 0, 'checkbox'], ['ผลิตได้ (IsManufactured)', 0, 'checkbox'], ['คุม Lot (IsLotControlled)', 0, 'checkbox'], ['คุม Serial (IsSerialControlled)', 0, 'checkbox'], ['คุมวันหมดอายุ (IsExpiryControlled)', 0, 'checkbox']]]
+        ],
+        roMap: { 'รหัสสินค้า (Item Code)': 'no', 'ชื่อสินค้า (ไทย)': 'a', 'ชื่อสินค้า (อังกฤษ)': 'en', 'รายละเอียด (Description)': 'd', 'กลุ่มผู้เช่า (Tenant)': 'tid', 'บริษัท': 'co', 'สาขา': 'br', 'กลุ่มสินค้า (Product Group)': 'bizgrp', 'จำแนกสินค้า (Item Class)': 'cls', 'ชนิดสินค้า (Item Type)': 'typ', 'หมวดหมู่สินค้า (Item Category)': 'cat', 'เกรดสินค้า (Item Grade)': 'grade', 'ยี่ห้อสินค้า (Item Brand)': 'brand', 'ชุดหน่วยคลัง (Stock UOM Group)': 'uomgrp', 'หน่วยคลัง (Stock UOM)': 'uom', 'ชุดหน่วยซื้อ (Purchase UOM Group)': 'puruomgrp', 'หน่วยซื้อ (Purchase UOM)': 'puruom', 'ชุดหน่วยขาย (Sales UOM Group)': 'seluomgrp', 'หน่วยขาย (Sales UOM)': 'seluom', 'บาร์โค้ด (Barcode)': 'barcode', 'หมายเลขซีเรียล (Serial Number)': 'serial', 'เลขล็อตล่าสุด (Lot Updated)': 'lotno', 'จำนวนขั้นต่ำ (Stock Min)': 'stkmin', 'จำนวนมากสุด (Stock Max)': 'stkmax', 'อายุสินค้า (วัน)': 'shelf', 'เก็บเข้าคลัง (IsStockItem)': 'stk', 'ซื้อได้ (IsPurchaseItem)': 'pur', 'ขายได้ (IsSalesItem)': 'sel', 'ผลิตได้ (IsManufactured)': 'mfg', 'คุม Lot (IsLotControlled)': 'lotc', 'คุม Serial (IsSerialControlled)': 'serc', 'คุมวันหมดอายุ (IsExpiryControlled)': 'expc' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+      'item-group': {
+        th: 'ข้อมูลกลุ่มสินค้า (Product Group)', ic: 'tag',
+        screens: [['list', 'Product Group List — รายการกลุ่มสินค้า', 'list'], ['detail', 'Product Group Detail — รายละเอียดกลุ่มสินค้า', 'doc'], ['create', 'Create Product Group — สร้างกลุ่มสินค้า', 'plus']],
+        kpi: [['กลุ่มสินค้าทั้งหมด', '0', 'Product Group', 145], ['ใช้งาน', '0', 'ACTIVE', 130], ['ข้อมูลกลาง', '0', 'ไม่ผูกบริษัท', 35]],
+        cols: [{ h: 'รหัสกลุ่มสินค้า', k: 'no', b: true }, { h: 'ชื่อกลุ่มสินค้า', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'ประเภทธุรกิจ', k: 'bt' }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'สาขา', k: 'br' }],
+        rows: [],
+        form: [['ข้อมูลกลุ่มสินค้า', 'tag', [['รหัสกลุ่มสินค้า (Product Group Code)', 1, 'เช่น POS-IT-001'], ['ชื่อกลุ่มสินค้า (ไทย)', 1, 'เช่น กลุ่มสินค้าไอที'], ['ชื่อกลุ่มสินค้า (อังกฤษ)', 0, 'Product group name (EN)'], ['ประเภทธุรกิจ', 1, ['ผลิต', 'ซื้อมา-ขาย', 'บริการ']]]], ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', [['กลุ่มผู้เช่า (Tenant)', 1, []], ['บริษัท', 0, ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์']], ['สาขา', 0, []], ['หมายเหตุ', 0, 'หมายเหตุ', 1]]]],
+        roMap: { 'รหัสกลุ่มสินค้า (Product Group Code)': 'no', 'ชื่อกลุ่มสินค้า (ไทย)': 'a', 'ชื่อกลุ่มสินค้า (อังกฤษ)': 'en', 'ประเภทธุรกิจ': 'bt', 'กลุ่มผู้เช่า (Tenant)': 'tid', 'บริษัท': 'co', 'สาขา': 'br', 'หมายเหตุ': 'remark' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+      'item-class': {
+        th: 'ข้อมูลจำแนกสินค้า (Item Class)', ic: 'tag',
+        screens: [['list', 'Item Class List — รายการจำแนกสินค้า', 'list'], ['detail', 'Item Class Detail — รายละเอียดจำแนกสินค้า', 'doc'], ['create', 'Create Item Class — สร้างจำแนกสินค้า', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
+        kpi: [['จำแนกสินค้าทั้งหมด', '8', 'Item Class', 145], ['เปิดใช้งาน', '7', 'ACTIVE', 130], ['ข้อมูลกลาง', '5', 'ไม่ผูกบริษัท', 35]],
+        cols: [{ h: 'รหัสจำแนกสินค้า', k: 'no', b: true }, { h: 'ชื่อจำแนกสินค้า', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a || r.en), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'สาขา', render: r => r.br ? h('span', null, r.br) : h('span', { style: { color: sub } }, '—') }, { h: 'ลำดับ', k: 'sort', r: true }, { h: 'สถานะ', render: r => P(r.s, this.statusHue(r.s)) }],
+        rows: [
+          { no: 'PRODUCT', cid: 1, en: 'Product', a: 'ผลิตภัณฑ์', co: '', br: '', sort: 10, s: 'ใช้งาน', remark: 'สิ่งที่ผลิต/ขายเป็นสินค้า', IsActive: true, createdAt: '2026-01-05T03:00:00.000Z', createdBy: 'ผู้ดูแลระบบ', updatedAt: '2026-01-05T03:00:00.000Z', updatedBy: 'ผู้ดูแลระบบ' },
+          { no: 'MATERIAL', cid: 2, en: 'Material', a: 'วัสดุ', co: '', br: '', sort: 20, s: 'ใช้งาน', remark: 'วัตถุดิบ/วัสดุที่ใช้ในกิจกรรม', IsActive: true, createdAt: '2026-01-05T03:00:00.000Z', createdBy: 'ผู้ดูแลระบบ', updatedAt: '2026-01-05T03:00:00.000Z', updatedBy: 'ผู้ดูแลระบบ' },
+          { no: 'ASSET', cid: 3, en: 'Asset', a: 'สินทรัพย์', co: '', br: '', sort: 30, s: 'ใช้งาน', remark: 'สินทรัพย์ถาวร', IsActive: true, createdAt: '2026-01-05T03:00:00.000Z', createdBy: 'ผู้ดูแลระบบ', updatedAt: '2026-01-05T03:00:00.000Z', updatedBy: 'ผู้ดูแลระบบ' },
+          { no: 'SERVICE', cid: 4, en: 'Service', a: 'บริการ', co: '', br: '', sort: 40, s: 'ใช้งาน', remark: 'สิ่งที่เป็นบริการ', IsActive: true, createdAt: '2026-01-05T03:00:00.000Z', createdBy: 'ผู้ดูแลระบบ', updatedAt: '2026-01-05T03:00:00.000Z', updatedBy: 'ผู้ดูแลระบบ' },
+          { no: 'EXPENSE', cid: 5, en: 'Expense', a: 'ค่าใช้จ่าย', co: '', br: '', sort: 50, s: 'ใช้งาน', remark: 'รายการที่ใช้บันทึกค่าใช้จ่าย', IsActive: true, createdAt: '2026-01-05T03:00:00.000Z', createdBy: 'ผู้ดูแลระบบ', updatedAt: '2026-01-05T03:00:00.000Z', updatedBy: 'ผู้ดูแลระบบ' },
+          { no: 'PACKAGING', cid: 6, en: 'Packaging', a: 'บรรจุภัณฑ์', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่', sort: 60, s: 'ใช้งาน', remark: 'บรรจุภัณฑ์เฉพาะบริษัท', IsActive: true, createdAt: '2026-02-10T03:00:00.000Z', createdBy: 'ผู้ดูแลระบบ', updatedAt: '2026-02-10T03:00:00.000Z', updatedBy: 'ผู้ดูแลระบบ' },
+          { no: 'RENTAL', cid: 7, en: 'Rental Asset', a: 'สินทรัพย์ให้เช่า', co: 'บจก. มี โลจิสติกส์', br: '', sort: 70, s: 'ใช้งาน', remark: 'สินทรัพย์สำหรับให้เช่า', IsActive: true, createdAt: '2026-02-12T03:00:00.000Z', createdBy: 'ผู้ดูแลระบบ', updatedAt: '2026-02-12T03:00:00.000Z', updatedBy: 'ผู้ดูแลระบบ' },
+          { no: 'PROMO', cid: 8, en: 'Promotional Item', a: 'ของแถม/ส่งเสริมการขาย', co: 'บจก. มี เทรดดิ้ง', br: '', sort: 80, s: 'ปิดใช้งาน', remark: 'ของแถมที่ไม่คิดมูลค่า', IsActive: false, createdAt: '2026-03-01T03:00:00.000Z', createdBy: 'ผู้ดูแลระบบ', updatedAt: '2026-03-01T03:00:00.000Z', updatedBy: 'ผู้ดูแลระบบ' }
+        ],
+        form: [['ข้อมูลจำแนกสินค้า', 'tag', [['รหัสจำแนกสินค้า (Item Class Code)', 1, 'เช่น POS-IT-001'], ['ชื่อจำแนกสินค้า (ไทย)', 1, 'เช่น ผลิตภัณฑ์'], ['ชื่อจำแนกสินค้า (อังกฤษ)', 0, 'Product'], ['ลำดับการแสดงผล (Sort Order)', 0, '10']]], ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', [['กลุ่มผู้เช่า (Tenant)', 1, []], ['บริษัท', 0, ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์']], ['สาขา', 0, []], ['หมายเหตุ', 0, 'หมายเหตุ', 1]]]],
+        roMap: { 'รหัสจำแนกสินค้า (Item Class Code)': 'no', 'ชื่อจำแนกสินค้า (ไทย)': 'a', 'ชื่อจำแนกสินค้า (อังกฤษ)': 'en', 'ลำดับการแสดงผล (Sort Order)': 'sort', 'กลุ่มผู้เช่า (Tenant)': 'tid', 'บริษัท': 'co', 'สาขา': 'br', 'หมายเหตุ': 'remark' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+      'item-type': {
+        th: 'ข้อมูลชนิดสินค้า (Item Type)', ic: 'tag',
+        screens: [['list', 'Item Type List — รายการชนิดสินค้า', 'list'], ['detail', 'Item Type Detail — รายละเอียดชนิดสินค้า', 'doc'], ['create', 'Create Item Type — สร้างชนิดสินค้า', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
+        kpi: [['ชนิดสินค้าทั้งหมด', '11', 'Item Type', 145], ['เก็บ Stock', '8', '—', 130], ['จัดซื้อได้', '9', '—', 200], ['ข้อมูลกลาง', '11', 'ไม่ผูกบริษัท', 35]],
+        cols: [{ h: 'รหัสชนิดสินค้า', k: 'no', b: true }, { h: 'ชื่อชนิดสินค้า', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a || r.en), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'จำแนกสินค้า', render: r => r.cls && r.cls !== '— ไม่ระบุ —' ? P(r.cls, this.itemTypeHue(r.cls)) : h('span', { style: { color: sub } }, '—') }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'คุณสมบัติ', render: r => { const on = []; if (r.stk === 'ใช่') on.push('Stock'); if (r.pur === 'ใช่') on.push('ซื้อ'); if (r.sel === 'ใช่') on.push('ขาย'); if (r.mfg === 'ใช่') on.push('ผลิต'); if (r.svc === 'ใช่') on.push('บริการ'); return h('span', { style: { fontSize: 11, color: sub } }, on.join(' · ') || '—'); } }, { h: 'ลำดับ', k: 'sort', r: true }, { h: 'สถานะ', render: r => P(r.s, this.statusHue(r.s)) }],
+        rows: [],
+        form: [['ข้อมูลชนิดสินค้า', 'tag', [['รหัสชนิดสินค้า (Item Type Code)', 1, 'เช่น RM'], ['ชื่อชนิดสินค้า (ไทย)', 1, 'เช่น วัตถุดิบ'], ['ชื่อชนิดสินค้า (อังกฤษ)', 0, 'Raw Material'], ['จำแนกสินค้า (Item Class)', 1, ['PRODUCT', 'MATERIAL', 'ASSET', 'SERVICE', '— ไม่ระบุ —']], ['ลำดับการแสดงผล (Sort Order)', 0, '10']]], ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', [['กลุ่มผู้เช่า (Tenant)', 1, []], ['บริษัท', 0, ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์']], ['สาขา', 0, []], ['หมายเหตุ', 0, 'หมายเหตุ', 1]]], ['คุณสมบัติ (Attributes)', 'box', [['จัดเก็บสต็อกได้ (is_stock_able)', 0, 'checkbox'], ['จัดซื้อได้ (is_purchase_able)', 0, 'checkbox'], ['ขายได้ (is_sale_able)', 0, 'checkbox'], ['ผลิตได้ (is_manufacturing_able)', 0, 'checkbox'], ['เป็นบริการ (is_service_able)', 0, 'checkbox']]]],
+        roMap: { 'รหัสชนิดสินค้า (Item Type Code)': 'no', 'ชื่อชนิดสินค้า (ไทย)': 'a', 'ชื่อชนิดสินค้า (อังกฤษ)': 'en', 'จำแนกสินค้า (Item Class)': 'cls', 'ลำดับการแสดงผล (Sort Order)': 'sort', 'กลุ่มผู้เช่า (Tenant)': 'tid', 'บริษัท': 'co', 'สาขา': 'br', 'หมายเหตุ': 'remark', 'จัดเก็บสต็อกได้ (is_stock_able)': 'stk', 'จัดซื้อได้ (is_purchase_able)': 'pur', 'ขายได้ (is_sale_able)': 'sel', 'ผลิตได้ (is_manufacturing_able)': 'mfg', 'เป็นบริการ (is_service_able)': 'svc' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+      'item-category': {
+        th: 'ข้อมูลหมวดหมู่สินค้า (Item Category)', ic: 'tag',
+        screens: [['list', 'Item Category List — รายการหมวดหมู่สินค้า', 'list'], ['detail', 'Item Category Detail — รายละเอียดหมวดหมู่สินค้า', 'doc'], ['create', 'Create Item Category — สร้างหมวดหมู่', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
+        kpi: [['หมวดหมู่ทั้งหมด', '3', 'Item Category', 145], ['ใช้งาน', '3', 'ACTIVE', 130], ['ข้อมูลกลาง', '3', 'ไม่ผูกบริษัท', 35]],
+        cols: [{ h: 'รหัสหมวดหมู่', k: 'no', b: true }, { h: 'ชื่อหมวดหมู่', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'ประเภทธุรกิจ', k: 'grp' }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'สถานะ', render: r => this.K.pill(this.T(), r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) }],
+        rows: [
+          { no: 'CAT-01', catid: 1, a: 'เฟอร์นิเจอร์', en: 'Furniture', co: '', br: '', tid: '', itype: '', grp: 'ซื้อมา-ขาย', sort: 10, remark: 'สินค้ากลุ่มเฟอร์นิเจอร์สำนักงาน', s: 'ใช้งาน' },
+          { no: 'CAT-02', catid: 2, a: 'เครื่องเขียน', en: 'Stationery', co: '', br: '', tid: '', itype: '', grp: 'ซื้อมา-ขาย', sort: 20, remark: 'อุปกรณ์เครื่องเขียนทั่วไป', s: 'ใช้งาน' },
+          { no: 'CAT-03', catid: 3, a: 'อิเล็กทรอนิกส์', en: 'Electronics', co: '', br: '', tid: '', itype: '', grp: 'ผลิต', sort: 30, remark: 'อุปกรณ์อิเล็กทรอนิกส์', s: 'ใช้งาน' }
+        ],
+        form: [['ข้อมูลหมวดหมู่สินค้า', 'tag', [['รหัสหมวดหมู่สินค้า (Item Category Code)', 1, 'เช่น CAT-04'], ['ชื่อหมวดหมู่สินค้า (ไทย)', 1, 'เช่น เครื่องใช้ไฟฟ้า'], ['ชื่อหมวดหมู่สินค้า (อังกฤษ)', 0, 'Category name (EN)'], ['ชนิดสินค้า (Item Type)', 0, []], ['ประเภทธุรกิจ (Business Type)', 1, ['ผลิต', 'ซื้อมา-ขาย', 'บริการ']], ['ลำดับการแสดงผล (Sort Order)', 0, '10']]], ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', [['กลุ่มผู้เช่า (Tenant)', 1, []], ['บริษัท', 0, ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์']], ['สาขา', 0, []], ['หมายเหตุ', 0, 'หมายเหตุ', 1]]]],
+        roMap: { 'รหัสหมวดหมู่สินค้า (Item Category Code)': 'no', 'ชื่อหมวดหมู่สินค้า (ไทย)': 'a', 'ชื่อหมวดหมู่สินค้า (อังกฤษ)': 'en', 'ชนิดสินค้า (Item Type)': 'itype', 'ประเภทธุรกิจ (Business Type)': 'grp', 'ลำดับการแสดงผล (Sort Order)': 'sort', 'กลุ่มผู้เช่า (Tenant)': 'tid', 'บริษัท': 'co', 'สาขา': 'br', 'หมายเหตุ': 'remark' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+      'item-grade': {
+        th: 'ข้อมูลเกรดสินค้า (Item Grade)', ic: 'tag',
+        screens: [['list', 'Item Grade List — รายการเกรดสินค้า', 'list'], ['detail', 'Item Grade Detail — รายละเอียดเกรดสินค้า', 'doc'], ['create', 'Create Item Grade — สร้างเกรดสินค้า', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
+        kpi: [['เกรดทั้งหมด', '3', 'Item Grade', 145], ['ใช้งาน', '3', 'ACTIVE', 130], ['ข้อมูลกลาง', '3', 'ไม่ผูกบริษัท', 35]],
+        cols: [{ h: 'รหัสเกรดสินค้า', k: 'no', b: true }, { h: 'ชื่อเกรดสินค้า', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'ลำดับ', k: 'sort', r: true }, { h: 'สถานะ', render: r => this.K.pill(this.T(), r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) }],
+        rows: [
+          { no: 'GRD-A', gdid: 1, a: 'เกรด A', en: 'Grade A', co: '', br: '', tid: '', sort: 10, remark: 'เกรดคุณภาพสูงสุด', s: 'ใช้งาน' },
+          { no: 'GRD-B', gdid: 2, a: 'เกรด B', en: 'Grade B', co: '', br: '', tid: '', sort: 20, remark: 'เกรดคุณภาพมาตรฐาน', s: 'ใช้งาน' },
+          { no: 'GRD-C', gdid: 3, a: 'เกรด C', en: 'Grade C', co: '', br: '', tid: '', sort: 30, remark: 'เกรดคุณภาพรอง', s: 'ใช้งาน' }
+        ],
+        form: [['ข้อมูลเกรดสินค้า', 'tag', [['รหัสเกรดสินค้า (Item Grade Code)', 1, 'เช่น GRD-A'], ['ชื่อเกรดสินค้า (ไทย)', 1, 'เช่น เกรด A'], ['ชื่อเกรดสินค้า (อังกฤษ)', 0, 'Item grade name (EN)'], ['ลำดับการแสดงผล (Sort Order)', 0, '10']]], ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', [['กลุ่มผู้เช่า (Tenant)', 1, []], ['บริษัท', 0, ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์']], ['สาขา', 0, []], ['หมายเหตุ', 0, 'หมายเหตุ', 1]]]],
+        roMap: { 'รหัสเกรดสินค้า (Item Grade Code)': 'no', 'ชื่อเกรดสินค้า (ไทย)': 'a', 'ชื่อเกรดสินค้า (อังกฤษ)': 'en', 'ลำดับการแสดงผล (Sort Order)': 'sort', 'กลุ่มผู้เช่า (Tenant)': 'tid', 'บริษัท': 'co', 'สาขา': 'br', 'หมายเหตุ': 'remark' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+      'item-brand': {
+        th: 'ข้อมูลยี่ห้อสินค้า (Item Brand)', ic: 'tag',
+        screens: [['list', 'Item Brand List — รายการยี่ห้อสินค้า', 'list'], ['detail', 'Item Brand Detail — รายละเอียดยี่ห้อสินค้า', 'doc'], ['create', 'Create Item Brand — สร้างยี่ห้อสินค้า', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
+        kpi: [['ยี่ห้อทั้งหมด', '3', 'Item Brand', 145], ['ใช้งาน', '3', 'ACTIVE', 130], ['ข้อมูลกลาง', '3', 'ไม่ผูกบริษัท', 35]],
+        cols: [{ h: 'รหัสยี่ห้อสินค้า', k: 'no', b: true }, { h: 'ชื่อยี่ห้อสินค้า', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'ลำดับ', k: 'sort', r: true }, { h: 'สถานะ', render: r => this.K.pill(this.T(), r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) }],
+        rows: [
+          { no: 'BR-001', bnid: 1, a: 'มี แบรนด์', en: 'Mee Brand', co: '', br: '', tid: '', sort: 10, remark: 'ยี่ห้อหลักของบริษัท', s: 'ใช้งาน' },
+          { no: 'BR-002', bnid: 2, a: 'มี พรีเมียม', en: 'Mee Premium', co: '', br: '', tid: '', sort: 20, remark: 'ยี่ห้อสินค้าพรีเมียม', s: 'ใช้งาน' },
+          { no: 'BR-003', bnid: 3, a: 'ทั่วไป', en: 'Generic', co: '', br: '', tid: '', sort: 30, remark: 'สินค้าไม่ระบุยี่ห้อ', s: 'ใช้งาน' }
+        ],
+        form: [['ข้อมูลยี่ห้อสินค้า', 'tag', [['รหัสยี่ห้อสินค้า (Item Brand Code)', 1, 'เช่น BR-001'], ['ชื่อยี่ห้อสินค้า (ไทย)', 1, 'เช่น มี แบรนด์'], ['ชื่อยี่ห้อสินค้า (อังกฤษ)', 0, 'Item brand name (EN)'], ['ลำดับการแสดงผล (Sort Order)', 0, '10']]], ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', [['กลุ่มผู้เช่า (Tenant)', 1, []], ['บริษัท', 0, ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์']], ['สาขา', 0, []], ['หมายเหตุ', 0, 'หมายเหตุ', 1]]]],
+        roMap: { 'รหัสยี่ห้อสินค้า (Item Brand Code)': 'no', 'ชื่อยี่ห้อสินค้า (ไทย)': 'a', 'ชื่อยี่ห้อสินค้า (อังกฤษ)': 'en', 'ลำดับการแสดงผล (Sort Order)': 'sort', 'กลุ่มผู้เช่า (Tenant)': 'tid', 'บริษัท': 'co', 'สาขา': 'br', 'หมายเหตุ': 'remark' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+      'item-uom': {
+        th: 'ข้อมูลหน่วย (UOM)', ic: 'gauge',
+        screens: [['list', 'UOM List — รายการหน่วยนับ', 'list'], ['detail', 'UOM Detail — รายละเอียดหน่วยนับ', 'doc'], ['create', 'Create UOM — สร้างหน่วยนับ', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
+        kpi: [['หน่วยทั้งหมด', '0', 'UOM', 145], ['เปิดใช้งาน', '0', 'ACTIVE', 130], ['ข้อมูลกลาง', '0', 'ไม่ผูกบริษัท', 35]],
+        cols: [{ h: 'UOM Code', k: 'no', b: true }, { h: 'ชื่อหน่วย', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a || r.en), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'สัญลักษณ์', render: r => r.sym ? h('span', { style: { fontWeight: 600 } }, r.sym) : h('span', { style: { color: sub } }, '—') }, { h: 'ทศนิยม', k: 'dec', r: true }, { h: 'ลำดับ', k: 'sort', r: true }, { h: 'สถานะ', render: r => P(r.s, this.statusHue(r.s)) }],
+        rows: [],
+        form: [['ข้อมูลหน่วยนับ (Unit of Measure)', 'gauge', [['รหัสหน่วย (UOM Code)', 0, 'เช่น KG'], ['ชื่อ (English)', 1, 'Kilogram'], ['ชื่อ (ไทย)', 0, 'กิโลกรัม'], ['สัญลักษณ์ (Symbol)', 0, 'เช่น kg'], ['ทศนิยม (Decimal Precision)', 0, '2'], ['ลำดับการแสดงผล (Sort Order)', 0, '10'], ['รายละเอียด (Description)', 0, 'คำอธิบายหน่วยนับ'], ['หมายเหตุ', 0, 'หมายเหตุ', 1]]], ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', [['กลุ่มผู้เช่า (Tenant)', 1, []], ['บริษัท', 0, ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์']], ['สาขา', 0, []]]]],
+        roMap: { 'รหัสหน่วย (UOM Code)': 'no', 'ชื่อ (English)': 'en', 'ชื่อ (ไทย)': 'a', 'สัญลักษณ์ (Symbol)': 'sym', 'ทศนิยม (Decimal Precision)': 'dec', 'ลำดับการแสดงผล (Sort Order)': 'sort', 'รายละเอียด (Description)': 'd', 'กลุ่มผู้เช่า (Tenant)': 'tid', 'บริษัท': 'co', 'สาขา': 'br', 'หมายเหตุ': 'remark' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+      'item-uomgroup': {
+        th: 'ข้อมูลชุดหน่วย (UOM Group)', ic: 'scale',
+        screens: [['list', 'UOM Group List — รายการชุดหน่วย', 'list'], ['detail', 'UOM Group Detail — รายละเอียดชุดหน่วย', 'doc'], ['create', 'Create UOM Group — สร้างชุดหน่วย', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
+        kpi: [['ชุดหน่วยทั้งหมด', '0', 'Group', 145], ['เปิดใช้งาน', '0', 'ACTIVE', 130], ['ข้อมูลกลาง', '0', 'ไม่ผูกบริษัท', 35]],
+        cols: [
+          { h: 'ลำดับ', k: 'sort', r: true },
+          { h: 'รหัสชุดหน่วย', k: 'no', b: true },
+          { h: 'ชื่อชุดหน่วย', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a || r.en), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) },
+          { h: 'หน่วยหลัก', render: r => h('span', { style: { fontWeight: 600 } }, r.base || '—') },
+          { h: 'หน่วยในชุดหน่วย', render: r => h('span', { style: { fontSize: 11.5, color: sub } }, (this._groupLines(r).map(l => (l.conv === '' || l.conv == null || Number(l.conv) === 1) ? l.uom : (l.uom + ' ×' + l.conv)).join('  ·  ')) || '—') },
+          { h: 'จำนวน', render: r => h('span', { style: { fontVariantNumeric: 'tabular-nums' } }, this._groupLines(r).length), r: true },
+          { h: 'สถานะ', render: r => P(r.s, this.statusHue(r.s)) }
+        ],
+        rows: [],
+        form: [['ข้อมูลชุดหน่วย (UOM Group)', 'scale', [['รหัสชุดหน่วย (UOM Group Code)', 0, 'เช่น GRP-RESIN'], ['ชื่อชุดหน่วย (ไทย)', 1, 'เช่น ชุดบรรจุเม็ดพลาสติก'], ['ชื่อชุดหน่วย (อังกฤษ)', 0, 'Resin Packaging'], ['หน่วยหลัก (Base UOM)', 1, ['EA', 'KG', 'G', 'M', 'ROLL', 'BOX', 'L']], ['ลำดับการแสดงผล (Sort Order)', 0, '10'], ['รายละเอียด (Description)', 0, 'คำอธิบายชุดหน่วยนับ'], ['หมายเหตุ', 0, 'หมายเหตุ', 1]]], ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', [['กลุ่มผู้เช่า (Tenant)', 1, []], ['บริษัท', 0, ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์']], ['สาขา', 0, []]]]],
+        roMap: { 'รหัสชุดหน่วย (UOM Group Code)': 'no', 'ชื่อชุดหน่วย (ไทย)': 'a', 'ชื่อชุดหน่วย (อังกฤษ)': 'en', 'หน่วยหลัก (Base UOM)': 'base', 'ลำดับการแสดงผล (Sort Order)': 'sort', 'รายละเอียด (Description)': 'd', 'หมายเหตุ': 'remark', 'กลุ่มผู้เช่า (Tenant)': 'tid', 'บริษัท': 'co', 'สาขา': 'br' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+    };
+  }
+  statusHue(s) { return ({ 'ใช้งาน': 130, 'ปิดการใช้งาน': 22, 'ปิดใช้งาน': 22, 'ลบ': 25, 'ACTIVE': 130, 'INACTIVE': 22, 'DELETED': 25 })[s] || 130; }
+  STATUS_MAP = [['ACTIVE', 'ใช้งาน'], ['INACTIVE', 'ปิดการใช้งาน'], ['DELETED', 'ลบ']];
+  _statId(v) { const f = this.STATUS_MAP.find(x => x[0] === v || x[1] === v); return f ? f[0] : 'ACTIVE'; }
+  _statTh(v) { const f = this.STATUS_MAP.find(x => x[0] === v || x[1] === v); return f ? f[1] : 'ใช้งาน'; }
+  itemTypeHue(t) { const s = String(t || ''); if (/ผลิต|Manufactur/i.test(s)) return 265; if (/ซื้อมาขายไป|Trading/i.test(s)) return 35; if (/บริการ|Service/i.test(s)) return 158; return 145; }
+  STATUS_OPTS = ['ใช้งาน', 'ปิดการใช้งาน', 'ลบ'];
+
+  curNav() { return this.props.nav || this.state.nav; }
+  _setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: 'list', mode: 'view', edit: null, sel: null }); }
+  setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
+  dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
+  curScr() { return this.props.scr || this.state.scr; }
+  curMode() { return this.state.mode; }
+  isDirty() { const m = this.curMode(); return m === 'create' || m === 'edit'; }
+  enterCreate() { this.setState({ mode: 'create', edit: null, draft: {} }); this._goScr('create'); }
+  enterEdit(r) { this.setState({ mode: 'edit', edit: r, sel: r, draft: {} }); this._goScr('edit'); }
+  askConfirm(run) { this.setState({ confirm: run }); }
+  _goScr(v) { if (this.props.onScr) this.props.onScr(v); else this.setState({ scr: v }); }
+  goScr(v) { if (this.isDirty() && v !== 'detail' && v !== 'create' && v !== 'edit') { this.askConfirm(() => this._goScr(v)); return; } this._goScr(v); }
+  setScr(v) { this.goScr(v); }
+  _hashId(s) { s = String(s || ''); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return (h % 1000000000) || 1; }
+  _pgBiz() { return [['Manufacturing', 'ผลิต'], ['Trading', 'ซื้อมา-ขาย'], ['Service', 'บริการ']]; }
+  _pgBizId(v) { const f = this._pgBiz().find(x => x[0] === v || x[1] === v); return f ? f[0] : (v || ''); }
+  _pgBizTh(v) { const f = this._pgBiz().find(x => x[0] === v || x[1] === v); return f ? f[1] : (v || ''); }
+  _tenantOpts() { const b = this.K && this.K.bus && this.K.bus(); const l = (b && b.get && b.get('org.tenants', null)) || []; const norm = a => (Array.isArray(a) ? a : []).map(t => ({ id: String(t.id || t.tent_id || t.code || t.tent_code || ''), code: t.code || t.tent_code || '', name_th: t.name_th || t.tent_name || t.name || t.name_en || '' })).filter(t => t.id); const fromBus = norm(l); if (fromBus.length) return fromBus; return this.state._tenants || []; }
+  TENT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  _tenantPull() {
+    if (this._tenantPulled || typeof fetch === 'undefined') return; this._tenantPulled = true;
+    fetch(this.TENT_SHEETS_URL + '?tab=itsa-tent-management&_=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(j => {
+      if (!j || !j.ok || !j.rows) return;
+      const list = j.rows.filter(r => r && (r.tent_name || r.tent_code)).map(r => ({ id: String(r.tent_id || r.tent_code || ''), code: r.tent_code || '', name_th: r.tent_name || r.tent_name_en || '' })).filter(t => t.id);
+      if (list.length) this.setState({ _tenants: list });
+    }).catch(() => {});
+  }
+  _tenantName(id) { const t = this._tenantOpts().find(x => x.id === String(id)); return t ? ((t.code ? t.code + ' - ' : '') + (t.name_th || '')) : (id || ''); }
+  _coTenantMap() { const b = this.K && this.K.bus && this.K.bus(); const l = (b && b.get && b.get('org.companies', null)) || []; const m = {}; (Array.isArray(l) ? l : []).forEach(c => { const nm = c.a || c.name_th; if (nm && c.t) m[nm] = String(c.t); }); return m; }
+  _tenantFor(row) { return (row && row.co && this._coTenantMap()[row.co]) || (row && row.tid) || ((this._tenantOpts()[0] || {}).id || ''); }
+  _pgCoMaps() { const b = this.K && this.K.bus && this.K.bus(); const co = {}, coR = {}, br = {}, brR = {}; const cos = (b && b.get && b.get('org.companies', null)) || []; cos.forEach(c => { const nm = c.a || c.name_th; if (nm) { const id = this._hashId(nm); co[nm] = id; coR[String(id)] = nm; } }); const brs = (b && b.get && b.get('org.branches', null)) || []; brs.forEach(x => { const nm = x.a || x.name_th; if (nm) { const id = this._hashId(nm); br[nm] = id; brR[String(id)] = nm; } }); return { co, coR, br, brR }; }
+  _pgProject(r) { const M = this._pgCoMaps(); return { product_group_id: r.pgid || this._hashId(r.no || r.a), tenant_id: r.tid || '', product_group_code: r.no || '', product_group_name: r.a || '', product_group_name_en: r.en || '', company_id: r.co ? (M.co[r.co] || r.co) : '', branch_id: r.br ? (M.br[r.br] || r.br) : '', business_type: this._pgBizId(r.bt), status: this._statId(r.s), remark: r.remark || '', created_at: r.createdAt || '', created_by: r.createdBy || '', updated_at: r.updatedAt || '', updated_by: r.updatedBy || '' }; }
+  _pgNative(r) { if (!r || r.product_group_code === undefined) return r; const M = this._pgCoMaps(); return { pgid: r.product_group_id || '', tid: r.tenant_id || '', no: r.product_group_code || '', a: r.product_group_name || '', en: r.product_group_name_en || '', co: r.company_id ? (M.coR[String(r.company_id)] || r.company_id) : '', br: r.branch_id ? (M.brR[String(r.branch_id)] || r.branch_id) : '', bt: this._pgBizTh(r.business_type), s: this._statTh(r.status), remark: r.remark || '', createdAt: r.created_at || '', createdBy: r.created_by || '', updatedAt: r.updated_at || '', updatedBy: r.updated_by || '' }; }
+  _icProject(r) { const M = this._pgCoMaps(); return { item_class_id: r.cid || this._hashId(r.no || r.a), tenant_id: r.tid || '', item_class_code: r.no || '', item_class_name: r.a || '', item_class_name_en: r.en || '', company_id: r.co ? (M.co[r.co] || r.co) : '', branch_id: r.br ? (M.br[r.br] || r.br) : '', item_class_sort: r.sort || '', status: this._statId(r.s), remark: r.remark || '', created_at: r.createdAt || '', created_by: r.createdBy || '', updated_at: r.updatedAt || '', updated_by: r.updatedBy || '' }; }
+  _icNative(r) { if (!r || r.item_class_code === undefined) return r; const M = this._pgCoMaps(); return { cid: r.item_class_id || '', tid: r.tenant_id || '', no: r.item_class_code || '', a: r.item_class_name || '', en: r.item_class_name_en || '', co: r.company_id ? (M.coR[String(r.company_id)] || r.company_id) : '', br: r.branch_id ? (M.brR[String(r.branch_id)] || r.branch_id) : '', sort: r.item_class_sort || '', s: this._statTh(r.status), IsActive: this._statId(r.status) === 'ACTIVE', remark: r.remark || '', createdAt: r.created_at || '', createdBy: r.created_by || '', updatedAt: r.updated_at || '', updatedBy: r.updated_by || '' }; }
+  _itClassIdMap() { const rows = this.state.db['item-class'] !== undefined ? this.state.db['item-class'] : ((this.CFG()['item-class'] || {}).rows || []); const byCode = {}, byId = {}; (rows || []).forEach(r => { if (r.no) byCode[r.no] = r.cid || this._hashId(r.no); if (r.cid != null && r.cid !== '') byId[String(r.cid)] = r.no; }); return { byCode, byId }; }
+  _itYN(v) { return (v === true || v === 'true' || v === 1 || v === 'ใช่'); }
+  _itProject(r) { const M = this._pgCoMaps(); const C = this._itClassIdMap(); return { item_type_id: r.tyid || this._hashId(r.no || r.a), item_type_code: r.no || '', item_type_name: r.a || '', item_type_name_en: r.en || '', company_id: r.co ? (M.co[r.co] || r.co) : '', branch_id: r.br ? (M.br[r.br] || r.br) : '', tenant_id: r.tid || '', item_class_id: (r.cls && r.cls !== '— ไม่ระบุ —') ? (C.byCode[r.cls] || r.cls) : '', item_type_sort: r.sort || '', is_stock_able: this._itYN(r.stk), is_purchase_able: this._itYN(r.pur), is_sale_able: this._itYN(r.sel), is_manufacturing_able: this._itYN(r.mfg), is_service_able: this._itYN(r.svc), status: this._statId(r.s), remark: r.remark || '', created_at: r.createdAt || '', created_by: r.createdBy || '', updated_at: r.updatedAt || '', updated_by: r.updatedBy || '' }; }
+  _itNative(r) { if (!r || r.item_type_code === undefined) return r; const M = this._pgCoMaps(); const C = this._itClassIdMap(); const yn = v => (v === true || v === 'true' || v === 1 || v === 'ใช่') ? 'ใช่' : 'ไม่ใช่'; return { tyid: r.item_type_id || '', no: r.item_type_code || '', a: r.item_type_name || '', en: r.item_type_name_en || '', co: r.company_id ? (M.coR[String(r.company_id)] || r.company_id) : '', br: r.branch_id ? (M.brR[String(r.branch_id)] || r.branch_id) : '', tid: r.tenant_id || '', cls: (r.item_class_id !== undefined && r.item_class_id !== '') ? (C.byId[String(r.item_class_id)] || r.item_class_id) : '— ไม่ระบุ —', sort: r.item_type_sort || '', stk: yn(r.is_stock_able), pur: yn(r.is_purchase_able), sel: yn(r.is_sale_able), mfg: yn(r.is_manufacturing_able), svc: yn(r.is_service_able), s: this._statTh(r.status), remark: r.remark || '', createdAt: r.created_at || '', createdBy: r.created_by || '', updatedAt: r.updated_at || '', updatedBy: r.updated_by || '' }; }
+  _isbProject(r) { const M = this._pgCoMaps(); const tRows = this.state.db['item-type'] !== undefined ? this.state.db['item-type'] : ((this.CFG()['item-type'] || {}).rows || []); const tByCode = {}; (tRows || []).forEach(t => { if (t.no) tByCode[t.no] = t.tyid || this._hashId(t.no); }); return { item_category_id: r.catid || this._hashId(r.no || r.a), item_category_code: r.no || '', item_category_name: r.a || '', item_category_name_en: r.en || '', company_id: r.co ? (M.co[r.co] || r.co) : '', branch_id: r.br ? (M.br[r.br] || r.br) : '', tenant_id: r.tid || '', item_type_id: (r.itype && r.itype !== '— ไม่ระบุ —') ? (tByCode[r.itype] || r.itype) : '', business_type: this._pgBizId(r.grp), item_type_sort: r.sort || '', status: this._statId(r.s), remark: r.remark || '', created_at: r.createdAt || '', created_by: r.createdBy || '', updated_at: r.updatedAt || '', updated_by: r.updatedBy || '' }; }
+  _isbNative(r) { if (!r || r.item_category_code === undefined) return r; const M = this._pgCoMaps(); const tRows = this.state.db['item-type'] !== undefined ? this.state.db['item-type'] : ((this.CFG()['item-type'] || {}).rows || []); const tById = {}; (tRows || []).forEach(t => { if (t.tyid != null && t.tyid !== '') tById[String(t.tyid)] = t.no; }); return { catid: r.item_category_id || '', no: r.item_category_code || '', a: r.item_category_name || '', en: r.item_category_name_en || '', co: r.company_id ? (M.coR[String(r.company_id)] || r.company_id) : '', br: r.branch_id ? (M.brR[String(r.branch_id)] || r.branch_id) : '', tid: r.tenant_id || '', itype: (r.item_type_id !== undefined && r.item_type_id !== '') ? (tById[String(r.item_type_id)] || r.item_type_id) : '', grp: this._pgBizTh(r.business_type), sort: r.item_type_sort || '', s: this._statTh(r.status), remark: r.remark || '', createdAt: r.created_at || '', createdBy: r.created_by || '', updatedAt: r.updated_at || '', updatedBy: r.updated_by || '' }; }
+  _wrapItemGroupPush() { if (this._pgWrapped || typeof this._sheetsPush !== 'function') return; this._pgWrapped = true; const orig = this._sheetsPush; this._sheetsPush = (key, rows) => { orig(key, key === 'item-group' ? (rows || []).map(r => this._pgProject(r)) : key === 'item-class' ? (rows || []).map(r => this._icProject(r)) : key === 'item-type' ? (rows || []).map(r => this._itProject(r)) : key === 'item-category' ? (rows || []).map(r => this._isbProject(r)) : key === 'item-grade' ? (rows || []).map(r => this._igProject(r)) : key === 'item-brand' ? (rows || []).map(r => this._ibProject(r)) : key === 'item-uom' ? (rows || []).map(r => this._uomProject(r)) : key === 'item-uomgroup' ? (rows || []).map(r => this._ugProject(r)) : key === 'item-uomgroup-conv' ? (rows || []).map(r => this._ugcProject(r)) : key === 'item-main' ? (rows || []).map(r => this._itemProject(r)) : rows); }; }
+  _igProject(r) { const M = this._pgCoMaps(); return { item_grade_id: r.gdid || this._hashId(r.no || r.a), item_grade_code: r.no || '', item_grade_name: r.a || '', item_grade_name_en: r.en || '', company_id: r.co ? (M.co[r.co] || r.co) : '', branch_id: r.br ? (M.br[r.br] || r.br) : '', tenant_id: r.tid || '', item_grade_sort: r.sort || '', status: this._statId(r.s), remark: r.remark || '', created_at: r.createdAt || '', created_by: r.createdBy || '', updated_at: r.updatedAt || '', updated_by: r.updatedBy || '' }; }
+  _igNative(r) { if (!r || r.item_grade_code === undefined) return r; const M = this._pgCoMaps(); return { gdid: r.item_grade_id || '', no: r.item_grade_code || '', a: r.item_grade_name || '', en: r.item_grade_name_en || '', co: r.company_id ? (M.coR[String(r.company_id)] || r.company_id) : '', br: r.branch_id ? (M.brR[String(r.branch_id)] || r.branch_id) : '', tid: r.tenant_id || '', sort: r.item_grade_sort || '', s: this._statTh(r.status), IsActive: this._statId(r.status) === 'ACTIVE', remark: r.remark || '', createdAt: r.created_at || '', createdBy: r.created_by || '', updatedAt: r.updated_at || '', updatedBy: r.updated_by || '' }; }
+  _ibProject(r) { const M = this._pgCoMaps(); return { item_brand_id: r.bnid || this._hashId(r.no || r.a), item_brand_code: r.no || '', item_brand_name: r.a || '', item_brand_name_en: r.en || '', company_id: r.co ? (M.co[r.co] || r.co) : '', branch_id: r.br ? (M.br[r.br] || r.br) : '', tenant_id: r.tid || '', item_brand_sort: r.sort || '', status: this._statId(r.s), remark: r.remark || '', created_at: r.createdAt || '', created_by: r.createdBy || '', updated_at: r.updatedAt || '', updated_by: r.updatedBy || '' }; }
+  _ibNative(r) { if (!r || r.item_brand_code === undefined) return r; const M = this._pgCoMaps(); return { bnid: r.item_brand_id || '', no: r.item_brand_code || '', a: r.item_brand_name || '', en: r.item_brand_name_en || '', co: r.company_id ? (M.coR[String(r.company_id)] || r.company_id) : '', br: r.branch_id ? (M.brR[String(r.branch_id)] || r.branch_id) : '', tid: r.tenant_id || '', sort: r.item_brand_sort || '', s: this._statTh(r.status), IsActive: this._statId(r.status) === 'ACTIVE', remark: r.remark || '', createdAt: r.created_at || '', createdBy: r.created_by || '', updatedAt: r.updated_at || '', updatedBy: r.updated_by || '' }; }
+  _uomProject(r) { const M = this._pgCoMaps(); return { uom_id: r.uid || this._hashId(r.no || r.en || r.a), uom_code: r.no || '', uom_name: r.a || '', uom_name_en: r.en || '', symbol: r.sym || '', decimal_precision: (r.dec === '' || r.dec == null) ? 0 : (parseInt(r.dec, 10) || 0), uom_sort: r.sort || '', company_id: r.co ? (M.co[r.co] || r.co) : '', branch_id: r.br ? (M.br[r.br] || r.br) : '', tenant_id: r.tid || '', description: r.d || '', status: this._statId(r.s), remark: r.remark || '', created_at: r.createdAt || '', created_by: r.createdBy || '', updated_at: r.updatedAt || '', updated_by: r.updatedBy || '' }; }
+  _uomNative(r) { if (!r || r.uom_code === undefined) return r; const M = this._pgCoMaps(); return { uid: r.uom_id || '', no: r.uom_code || '', a: r.uom_name || '', en: r.uom_name_en || '', sym: r.symbol || '', dec: (r.decimal_precision === '' || r.decimal_precision == null) ? 0 : (parseInt(r.decimal_precision, 10) || 0), sort: r.uom_sort || '', co: r.company_id ? (M.coR[String(r.company_id)] || r.company_id) : '', br: r.branch_id ? (M.brR[String(r.branch_id)] || r.branch_id) : '', tid: r.tenant_id || '', d: r.description || '', s: this._statTh(r.status), IsActive: this._statId(r.status) === 'ACTIVE', remark: r.remark || '', createdAt: r.created_at || '', createdBy: r.created_by || '', updatedAt: r.updated_at || '', updatedBy: r.updated_by || '' }; }
+  _repairUomGroups() {
+    if (this._ugRepaired) return; this._ugRepaired = true;
+    const LEGACY = { 'GRP-RESIN': [['KG', 1], ['BAG', 25], ['TON', 1000]], 'GRP-FILM': [['M', 1], ['ROLL', 500], ['BOX', 2500]] };
+    const LEGACY_BY_NAME = { 'Resin Packaging': LEGACY['GRP-RESIN'], 'ชุดบรรจุเม็ดพลาสติก': LEGACY['GRP-RESIN'], 'Film Packaging': LEGACY['GRP-FILM'], 'ชุดบรรจุฟิล์ม': LEGACY['GRP-FILM'] };
+    this.setState(s => {
+      const db = Object.assign({}, s.db);
+      const gs = (db['item-uomgroup'] || []).slice();
+      if (!gs.length) return {};
+      const nowIso = new Date().toISOString();
+      const seenId = new Set(); let maxId = gs.reduce((m, g) => Math.max(m, parseInt(g.gid, 10) || 0), 0);
+      const usedNo = new Set(gs.map(g => g.no).filter(Boolean));
+      const fixed = gs.map(g => {
+        const n = Object.assign({}, g);
+        n.__legacy = LEGACY[g.no] || LEGACY_BY_NAME[g.a] || LEGACY_BY_NAME[g.en] || null;
+        let id = parseInt(n.gid, 10) || 0;
+        if (!id || seenId.has(id)) { id = ++maxId; } seenId.add(id); n.gid = id;
+        if (!n.no) { let k = 1; while (usedNo.has('GRP-' + String(k).padStart(3, '0'))) k++; n.no = 'GRP-' + String(k).padStart(3, '0'); usedNo.add(n.no); }
+        if (!n.tid) n.tid = this._tenantFor(n);
+        if (!n.s) n.s = 'ใช้งาน';
+        return n;
+      });
+      db['item-uomgroup'] = fixed;
+      let conv = (db['item-uomgroup-conv'] || []).slice();
+      let maxCv = conv.reduce((m, c) => Math.max(m, parseInt(c.cvid, 10) || 0), 0);
+      fixed.forEach(n => {
+        const g = n;
+        if (conv.some(c => String(c.gid) === String(g.gid))) return;
+        let set = n.__legacy || this._asLines(n.lines).map(l => [l.uom, l.conv]);
+        if (!set.length && !n.base) return;
+        if (!set.length && n.base) set = [[n.base, 1]];
+        if (!n.base) { const b = set.find(x => Number(x[1]) === 1); if (b) n.base = b[0]; }
+        set.forEach(([uom, rate], i) => conv.push({ cvid: ++maxCv, gid: g.gid, grpno: g.no, uom, rate, sort: (i + 1) * 10, isBase: Number(rate) === 1, co: g.co || '', br: g.br || '', tid: g.tid || '', s: 'ใช้งาน', createdAt: nowIso, createdBy: 'ระบบ (migrate)', updatedAt: nowIso, updatedBy: 'ระบบ (migrate)' }));
+      });
+      db['item-uomgroup-conv'] = conv;
+      db['item-uomgroup'] = fixed.map(n => { const o = Object.assign({}, n); delete o.__legacy; return o; });
+      return { db };
+    });
+  }
+  _ugcProject(r) { const uomRows = this.dbRows('item-uom', ((this.CFG()['item-uom'] || {}).rows || [])); const u = uomRows.find(x => x.no === r.uom); return { uom_group_conversion_id: r.cvid || this._hashId(String(r.gid) + '|' + r.uom), uom_group_id: r.gid || '', uom_group_code: r.grpno || '', uom_id: u ? (u.uid || '') : '', uom_code: r.uom || '', conversion_factor: (r.rate == null || r.rate === '') ? '' : r.rate, conversion_sort: r.sort || '', is_base: !!r.isBase, company_id: r.co ? (this._pgCoMaps().co[r.co] || r.co) : '', branch_id: r.br ? (this._pgCoMaps().br[r.br] || r.br) : '', tenant_id: r.tid || '', status: this._statId(r.s), created_at: r.createdAt || '', created_by: r.createdBy || '', updated_at: r.updatedAt || '', updated_by: r.updatedBy || '' }; }
+  _ugcNative(r) { if (!r || r.uom_group_conversion_id === undefined) return r; return { cvid: r.uom_group_conversion_id || '', gid: r.uom_group_id || '', grpno: r.uom_group_code || '', uom: r.uom_code || '', rate: (r.conversion_factor === '' || r.conversion_factor == null) ? '' : (isNaN(parseFloat(r.conversion_factor)) ? '' : parseFloat(r.conversion_factor)), sort: r.conversion_sort || '', isBase: r.is_base === true || r.is_base === 'TRUE' || r.is_base === 'true', co: r.company_id ? (this._pgCoMaps().coR[String(r.company_id)] || r.company_id) : '', br: r.branch_id ? (this._pgCoMaps().brR[String(r.branch_id)] || r.branch_id) : '', tid: r.tenant_id || '', s: this._statTh(r.status), createdAt: r.created_at || '', createdBy: r.created_by || '', updatedAt: r.updated_at || '', updatedBy: r.updated_by || '' }; }
+  _ugProject(r) { const M = this._pgCoMaps(); const uomRows = this.dbRows('item-uom', ((this.CFG()['item-uom'] || {}).rows || [])); const uid = c => { const u = uomRows.find(x => x.no === c); return u ? (u.uid || '') : ''; }; return { uom_group_id: r.gid || this._hashId(r.no || r.a), uom_group_code: r.no || '', uom_group_name: r.a || '', uom_group_name_en: r.en || '', base_uom_id: uid(r.base), base_uom_code: r.base || '', company_id: r.co ? (M.co[r.co] || r.co) : '', branch_id: r.br ? (M.br[r.br] || r.br) : '', tenant_id: r.tid || '', uom_group_sort: r.sort || '', status: this._statId(r.s), description: r.d || '', remark: r.remark || '', created_at: r.createdAt || '', created_by: r.createdBy || '', updated_at: r.updatedAt || '', updated_by: r.updatedBy || '' }; }
+  _ugNative(r) { if (!r || r.uom_group_code === undefined) return r; const M = this._pgCoMaps(); return { gid: r.uom_group_id || '', no: r.uom_group_code || '', a: r.uom_group_name || '', en: r.uom_group_name_en || '', base: r.base_uom_code || '', co: r.company_id ? (M.coR[String(r.company_id)] || r.company_id) : '', br: r.branch_id ? (M.brR[String(r.branch_id)] || r.branch_id) : '', tid: r.tenant_id || '', sort: r.uom_group_sort || '', d: r.description || '', s: this._statTh(r.status), IsActive: this._statId(r.status) === 'ACTIVE', remark: r.remark || '', lines: r.lines || '', createdAt: r.created_at || '', createdBy: r.created_by || '', updatedAt: r.updated_at || '', updatedBy: r.updated_by || '' }; }
+  _itemFk() { const D = k => this.dbRows(k, ((this.CFG()[k] || {}).rows || [])); return { grp: D('item-group'), cls: D('item-class'), typ: D('item-type'), cat: D('item-category'), grd: D('item-grade'), brd: D('item-brand'), uom: D('item-uom'), ug: D('item-uomgroup') }; }
+  _itemProject(r) {
+    const M = this._pgCoMaps(), F = this._itemFk();
+    const NR = v => (!v || v === '— ไม่ระบุ —' || v === '— เลือก —') ? '' : v;
+    const id = (rows, code, kf) => { const c2 = NR(code); if (!c2) return ''; const x = rows.find(y => y.no === c2); return x ? (x[kf] || '') : ''; };
+    const yn = v => v === true || v === 'ใช่' || v === 'true';
+    return {
+      item_id: r.iid || this._hashId(r.no || r.a), item_code: r.no || '', item_name: r.a || '', item_name_en: r.en || '',
+      company_id: r.co ? (M.co[r.co] || r.co) : '', branch_id: r.br ? (M.br[r.br] || r.br) : '', tenant_id: r.tid || '',
+      product_group_id: id(F.grp, r.bizgrp, 'pgid'), item_class_id: id(F.cls, r.cls, 'cid'), item_type_id: id(F.typ, r.typ, 'tyid'),
+      item_category_id: id(F.cat, r.cat, 'sbid'), item_grade_id: id(F.grd, r.grade, 'gdid'), item_brand_id: id(F.brd, r.brand, 'bnid'),
+      product_group_code: NR(r.bizgrp), item_class_code: NR(r.cls), item_type_code: NR(r.typ), item_category_code: NR(r.cat), item_grade_code: NR(r.grade), item_brand_code: NR(r.brand),
+      barcode: r.barcode || '', serial_number: r.serial || '', updated_lot_id: r.lotno || '',
+      stock_max: r.stkmax === '' || r.stkmax == null ? '' : r.stkmax, stock_min: r.stkmin === '' || r.stkmin == null ? '' : r.stkmin,
+      stock_uom_id: id(F.uom, r.uom, 'uid'), purchase_uom_id: id(F.uom, r.puruom, 'uid'), sales_uom_id: id(F.uom, r.seluom, 'uid'),
+      stock_uom_code: NR(r.uom), purchase_uom_code: NR(r.puruom), sales_uom_code: NR(r.seluom),
+      stock_uom_group_id: id(F.ug, r.uomgrp, 'gid'), purchase_uom_group_id: id(F.ug, r.puruomgrp, 'gid'), sales_uom_group_id: id(F.ug, r.seluomgrp, 'gid'),
+      stock_uom_group_code: NR(r.uomgrp), purchase_uom_group_code: NR(r.puruomgrp), sales_uom_group_code: NR(r.seluomgrp),
+      description: r.d || '', is_stock_item: yn(r.stk), is_purchase_item: yn(r.pur), is_sales_item: yn(r.sel), is_manufactured: yn(r.mfg),
+      is_lot_controlled: yn(r.lotc), is_serial_controlled: yn(r.serc), is_expiry_controlled: yn(r.expc),
+      shelf_life_days: r.shelf === '' || r.shelf == null ? '' : r.shelf, status: this._statId(r.s),
+      created_at: r.createdAt || '', created_by: r.createdBy || '', updated_at: r.updatedAt || '', updated_by: r.updatedBy || ''
+    };
+  }
+  _itemNative(r) {
+    if (!r || (r.item_code === undefined && r.code === undefined)) return r;
+    const M = this._pgCoMaps();
+    const L = (a2, b2) => (a2 !== undefined && a2 !== '' && a2 !== null) ? a2 : (b2 === undefined ? '' : b2);
+    const b = v => (v === true || v === 'TRUE' || v === 'true' || v === 'ใช่') ? 'ใช่' : 'ไม่ใช่';
+    return {
+      iid: L(r.item_id, r.iid) || '', no: L(r.item_code, r.code) || '', a: L(r.item_name, r.name_th) || '', en: L(r.item_name_en, r.en) || '',
+      co: r.company_id ? (M.coR[String(r.company_id)] || r.company_id) : '', br: r.branch_id ? (M.brR[String(r.branch_id)] || r.branch_id) : '', tid: r.tenant_id || '',
+      bizgrp: L(r.product_group_code, r.bizgrp) || '', cls: L(r.item_class_code, r.cls) || '', typ: L(r.item_type_code, r.typ) || '', cat: L(r.item_category_code, r.cat) || '', grade: L(r.item_grade_code, r.grade) || '', brand: L(r.item_brand_code, r.brand) || '',
+      barcode: r.barcode || '', serial: r.serial_number || '', lotno: r.updated_lot_id || '',
+      stkmax: r.stock_max === '' || r.stock_max == null ? '' : (parseInt(r.stock_max, 10) || 0), stkmin: r.stock_min === '' || r.stock_min == null ? '' : (parseInt(r.stock_min, 10) || 0),
+      uom: L(r.stock_uom_code, r.uom) || '', puruom: L(r.purchase_uom_code, r.puruom) || '', seluom: L(r.sales_uom_code, r.seluom) || '',
+      uomgrp: L(r.stock_uom_group_code, r.uomgrp) || '', puruomgrp: L(r.purchase_uom_group_code, r.puruomgrp) || '', seluomgrp: L(r.sales_uom_group_code, r.seluomgrp) || '',
+      d: L(r.description, r.d) || '', stk: b(L(r.is_stock_item, L(r.IsStockItem, r.stk))), pur: b(L(r.is_purchase_item, L(r.IsPurchasable, r.pur))), sel: b(L(r.is_sales_item, L(r.IsSellable, r.sel))), mfg: b(L(r.is_manufactured, L(r.IsManufacturable, r.mfg))),
+      lotc: b(r.is_lot_controlled), serc: b(r.is_serial_controlled), expc: b(r.is_expiry_controlled),
+      shelf: r.shelf_life_days === '' || r.shelf_life_days == null ? '' : (parseInt(r.shelf_life_days, 10) || 0),
+      s: this._statTh(L(r.status, r.s)), IsActive: this._statId(L(r.status, r.s)) === 'ACTIVE',
+      createdAt: L(r.created_at, r.createdAt) || '', createdBy: L(r.created_by, r.createdBy) || '', updatedAt: L(r.updated_at, r.updatedAt) || '', updatedBy: L(r.updated_by, r.updatedBy) || ''
+    };
+  }
+  doSave() {
+    const key = this.curNav();
+    const cfg = this.CFG()[key];
+    const er = this.state.edit;
+    const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
+    const dr = this.state.draft || {}, pre = mode + '|';
+    const base = er ? Object.assign({}, er) : Object.assign({}, (cfg.rows || [])[0]);
+    if (cfg.roMap && cfg.form) cfg.form.forEach(sc => sc[2].forEach(fld => { const lb = fld[0], mm = cfg.roMap[lb], v = dr[pre + lb]; if (v !== undefined && v !== '') { if (typeof mm === 'string') base[mm] = v; base['_f:' + lb] = v; } }));
+    const stV = dr[pre + 'สถานะ']; if (stV !== undefined && stV !== '') base.s = stV;
+    Object.keys(base).forEach(k2 => { if (base[k2] === '— ไม่ระบุ —' || base[k2] === '— เลือก —') base[k2] = ''; });
+    if (['item-group', 'item-class', 'item-type', 'item-category', 'item-grade', 'item-brand', 'item-uom', 'item-uomgroup', 'item-main'].indexOf(key) > -1) base.tid = this._tenantFor(base);
+    if (key === 'item-group') {
+      const nowIso = new Date().toISOString(); const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      const curRows = this.state.db['item-group'] !== undefined ? this.state.db['item-group'] : ((this.CFG()['item-group'] || {}).rows || []);
+      if (!er) { if (!base.no) { let n = 1; const used = new Set(curRows.map(r => r.no)); while (used.has('PG-' + String(n).padStart(3, '0'))) n += 1; base.no = 'PG-' + String(n).padStart(3, '0'); } base.pgid = this._hashId(base.no); base.createdAt = nowIso; base.createdBy = who; }
+      else { base.pgid = er.pgid || this._hashId(er.no); base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; }
+      base.updatedAt = nowIso; base.updatedBy = who; if (!base.s) base.s = 'ใช้งาน';
+    }
+    if (key === 'item-class') {
+      const cur0 = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+      const nowIso = new Date().toISOString();
+      const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      if (!er) {
+        const used = new Set(cur0.map(r => r.no));
+        if (!base.no) { let n = 1; while (used.has('CLASS-' + String(n).padStart(3, '0'))) n++; base.no = 'CLASS-' + String(n).padStart(3, '0'); }
+        else base.no = String(base.no).toUpperCase();
+        const ids = cur0.map(r => parseInt(r.cid, 10) || 0); base.cid = (ids.length ? Math.max.apply(null, ids) : 0) + 1;
+        if (base.sort === undefined || base.sort === '') { const so = cur0.map(r => parseInt(r.sort, 10) || 0); base.sort = (so.length ? Math.max.apply(null, so) : 0) + 10; }
+        base.createdAt = nowIso; base.createdBy = who;
+      } else { base.cid = er.cid; base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; }
+      base.updatedAt = nowIso; base.updatedBy = who; base.IsActive = (base.s || 'ใช้งาน') === 'ใช้งาน';
+    }
+    if (key === 'item-category') {
+      const cur0 = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+      const nowIso = new Date().toISOString();
+      const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      if (!er) {
+        const used = new Set(cur0.map(r => r.no));
+        if (!base.no) { let n = 1; while (used.has('CAT-' + String(n).padStart(2, '0'))) n++; base.no = 'CAT-' + String(n).padStart(2, '0'); }
+        else base.no = String(base.no).toUpperCase();
+        const ids = cur0.map(r => parseInt(r.catid, 10) || 0); base.catid = (ids.length ? Math.max.apply(null, ids) : 0) + 1;
+        if (base.sort === undefined || base.sort === '') { const so = cur0.map(r => parseInt(r.sort, 10) || 0); base.sort = (so.length ? Math.max.apply(null, so) : 0) + 10; }
+        base.createdAt = nowIso; base.createdBy = who;
+      } else { base.catid = er.catid; base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; }
+      base.updatedAt = nowIso; base.updatedBy = who; base.IsActive = (base.s || 'ใช้งาน') === 'ใช้งาน';
+    }
+    if (key === 'item-type') {
+      const cur0 = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+      const nowIso = new Date().toISOString();
+      const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      const yn = v => v === true || v === 'ใช่' || v === 'true';
+      if (!er) {
+        const used = new Set(cur0.map(r => r.no));
+        if (!base.no) { let n = 1; while (used.has('TYPE-' + String(n).padStart(3, '0'))) n++; base.no = 'TYPE-' + String(n).padStart(3, '0'); }
+        else base.no = String(base.no).toUpperCase();
+        const ids = cur0.map(r => parseInt(r.tyid, 10) || 0); base.tyid = (ids.length ? Math.max.apply(null, ids) : 0) + 1;
+        if (base.sort === undefined || base.sort === '') { const so = cur0.map(r => parseInt(r.sort, 10) || 0); base.sort = (so.length ? Math.max.apply(null, so) : 0) + 10; }
+        base.createdAt = nowIso; base.createdBy = who;
+      } else { base.tyid = er.tyid; base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; }
+      const clsRows = this.state.db['item-class'] !== undefined ? this.state.db['item-class'] : ((this.CFG()['item-class'] || {}).rows || []);
+      const cr = clsRows.find(r => r.no === base.cls);
+      base.ItemClassId = cr ? cr.cid : null;
+      base.stk = yn(base.stk) ? 'ใช่' : 'ไม่ใช่'; base.pur = yn(base.pur) ? 'ใช่' : 'ไม่ใช่'; base.sel = yn(base.sel) ? 'ใช่' : 'ไม่ใช่'; base.mfg = yn(base.mfg) ? 'ใช่' : 'ไม่ใช่';
+      base.lotc = yn(base.lotc) ? 'ใช่' : 'ไม่ใช่'; base.serc = yn(base.serc) ? 'ใช่' : 'ไม่ใช่'; base.expc = yn(base.expc) ? 'ใช่' : 'ไม่ใช่';
+      ['stkmin', 'stkmax', 'shelf'].forEach(k2 => { base[k2] = (base[k2] === '' || base[k2] == null) ? '' : (parseInt(base[k2], 10) || 0); }); base.IsService = yn(base.svc);
+      base.updatedAt = nowIso; base.updatedBy = who; base.IsActive = (base.s || 'ใช้งาน') === 'ใช้งาน';
+    }
+    if (key === 'item-grade') {
+      const cur0 = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+      const nowIso = new Date().toISOString();
+      const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      if (!er) {
+        const used = new Set(cur0.map(r => r.no));
+        if (!base.no) { let n = 1; while (used.has('GRD-' + String(n).padStart(3, '0'))) n++; base.no = 'GRD-' + String(n).padStart(3, '0'); }
+        else base.no = String(base.no).toUpperCase();
+        const ids = cur0.map(r => parseInt(r.gdid, 10) || 0); base.gdid = (ids.length ? Math.max.apply(null, ids) : 0) + 1;
+        if (base.sort === undefined || base.sort === '') { const so = cur0.map(r => parseInt(r.sort, 10) || 0); base.sort = (so.length ? Math.max.apply(null, so) : 0) + 10; }
+        base.createdAt = nowIso; base.createdBy = who;
+      } else { base.gdid = er.gdid; base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; }
+      base.updatedAt = nowIso; base.updatedBy = who; base.IsActive = (base.s || 'ใช้งาน') === 'ใช้งาน';
+    }
+    if (key === 'item-brand') {
+      const cur0 = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+      const nowIso = new Date().toISOString();
+      const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      if (!er) {
+        const used = new Set(cur0.map(r => r.no));
+        if (!base.no) { let n = 1; while (used.has('BR-' + String(n).padStart(3, '0'))) n++; base.no = 'BR-' + String(n).padStart(3, '0'); }
+        else base.no = String(base.no).toUpperCase();
+        const ids = cur0.map(r => parseInt(r.bnid, 10) || 0); base.bnid = (ids.length ? Math.max.apply(null, ids) : 0) + 1;
+        if (base.sort === undefined || base.sort === '') { const so = cur0.map(r => parseInt(r.sort, 10) || 0); base.sort = (so.length ? Math.max.apply(null, so) : 0) + 10; }
+        base.createdAt = nowIso; base.createdBy = who;
+      } else { base.bnid = er.bnid; base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; }
+      base.updatedAt = nowIso; base.updatedBy = who; base.IsActive = (base.s || 'ใช้งาน') === 'ใช้งาน';
+    }
+    if (key === 'item-main') {
+      const cur0 = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+      const nowIso = new Date().toISOString();
+      const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      const yn = v => v === true || v === 'ใช่' || v === 'true';
+      if (!er) {
+        const used = new Set(cur0.map(r => r.no));
+        if (!base.no) { let n = 1; while (used.has('ITEM-' + String(n).padStart(4, '0'))) n++; base.no = 'ITEM-' + String(n).padStart(4, '0'); }
+        else base.no = String(base.no).toUpperCase();
+        const ids = cur0.map(r => parseInt(r.iid, 10) || 0); base.iid = (ids.length ? Math.max.apply(null, ids) : 0) + 1;
+        base.createdAt = nowIso; base.createdBy = who; base.rowVersion = 1;
+      } else { base.iid = er.iid; base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; base.rowVersion = (parseInt(er.rowVersion, 10) || 1) + 1; }
+      const cfgA = this.CFG();
+      const clsRows = this.state.db['item-class'] !== undefined ? this.state.db['item-class'] : ((cfgA['item-class'] || {}).rows || []);
+      const typRows = this.state.db['item-type'] !== undefined ? this.state.db['item-type'] : ((cfgA['item-type'] || {}).rows || []);
+      const cr = clsRows.find(r => r.no === base.cls); base.ItemClassId = cr ? cr.cid : null;
+      const tr = typRows.find(r => r.no === base.typ); base.ItemTypeId = tr ? tr.tyid : null;
+      const grpRows = this.state.db['item-uomgroup'] !== undefined ? this.state.db['item-uomgroup'] : ((cfgA['item-uomgroup'] || {}).rows || []);
+      const gr = grpRows.find(r => r.no === base.uomgrp); base.UOMGroupId = gr ? gr.gid : null;
+      const sgr = grpRows.find(r => r.no === base.seluomgrp); base.SalesUOMGroupId = sgr ? sgr.gid : null;
+      const pgr = grpRows.find(r => r.no === base.puruomgrp); base.PurchaseUOMGroupId = pgr ? pgr.gid : null;
+      base.stk = yn(base.stk) ? 'ใช่' : 'ไม่ใช่'; base.pur = yn(base.pur) ? 'ใช่' : 'ไม่ใช่'; base.sel = yn(base.sel) ? 'ใช่' : 'ไม่ใช่'; base.mfg = yn(base.mfg) ? 'ใช่' : 'ไม่ใช่';
+      base.lotc = yn(base.lotc) ? 'ใช่' : 'ไม่ใช่'; base.serc = yn(base.serc) ? 'ใช่' : 'ไม่ใช่'; base.expc = yn(base.expc) ? 'ใช่' : 'ไม่ใช่';
+      ['stkmin', 'stkmax', 'shelf'].forEach(k2 => { base[k2] = (base[k2] === '' || base[k2] == null) ? '' : (parseInt(base[k2], 10) || 0); });
+      base.updatedAt = nowIso; base.updatedBy = who; base.IsActive = (base.s || 'ใช้งาน') === 'ใช้งาน';
+    }
+    if (key === 'item-uom') {
+      const cur0 = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+      const nowIso = new Date().toISOString();
+      const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      if (!er) {
+        const used = new Set(cur0.map(r => r.no));
+        if (!base.no) { let n = 1; while (used.has('UOM-' + String(n).padStart(3, '0'))) n++; base.no = 'UOM-' + String(n).padStart(3, '0'); }
+        else base.no = String(base.no).toUpperCase();
+        const ids = cur0.map(r => parseInt(r.uid, 10) || 0); base.uid = (ids.length ? Math.max.apply(null, ids) : 0) + 1;
+        if (base.sort === undefined || base.sort === '') { const so = cur0.map(r => parseInt(r.sort, 10) || 0); base.sort = (so.length ? Math.max.apply(null, so) : 0) + 10; }
+        base.createdAt = nowIso; base.createdBy = who; base.rowVersion = 1;
+      } else { base.uid = er.uid; base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; base.rowVersion = (parseInt(er.rowVersion, 10) || 1) + 1; }
+      base.dec = (base.dec === '' || base.dec == null) ? 0 : (parseInt(base.dec, 10) || 0);
+      base.updatedAt = nowIso; base.updatedBy = who; base.IsActive = (base.s || 'ใช้งาน') === 'ใช้งาน';
+    }
+    if (key === 'item-uomgroup') {
+      const cur0 = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+      const nowIso = new Date().toISOString();
+      const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      const rawLines = dr[pre + '__lines'] !== undefined ? dr[pre + '__lines'] : (er ? this._groupLines(er) : []);
+      const lines = rawLines.filter(l => l && l.uom).map((l, i) => ({ uom: l.uom, conv: (l.conv === '' || l.conv == null || isNaN(parseFloat(l.conv))) ? '' : parseFloat(l.conv), sort: (l.sort === '' || l.sort == null) ? (i + 1) * 10 : (parseInt(l.sort, 10) || (i + 1) * 10) })).sort((a, b) => a.sort - b.sort);
+      const baseLine = lines.find(l => Number(l.conv) === 1) || null;
+      if (!base.base) base.base = baseLine ? baseLine.uom : '';
+      if (base.sort === undefined || base.sort === '') { const so = cur0.map(r => parseInt(r.sort, 10) || 0); base.sort = (so.length ? Math.max.apply(null, so) : 0) + 10; }
+      if (!er) {
+        const used = new Set(cur0.map(r => r.no));
+        if (!base.no) { let n = 1; while (used.has('GRP-' + String(n).padStart(3, '0'))) n++; base.no = 'GRP-' + String(n).padStart(3, '0'); }
+        else base.no = String(base.no).toUpperCase();
+        const ids = cur0.map(r => parseInt(r.gid, 10) || 0); base.gid = (ids.length ? Math.max.apply(null, ids) : 0) + 1;
+        base.createdAt = nowIso; base.createdBy = who; base.rowVersion = 1;
+      } else { base.gid = er.gid; base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; base.rowVersion = (parseInt(er.rowVersion, 10) || 1) + 1; }
+      base.updatedAt = nowIso; base.updatedBy = who; base.IsActive = (base.s || 'ใช้งาน') === 'ใช้งาน';
+      this.setState(s => { const db = Object.assign({}, s.db); const cur = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = er ? cur.map(x => (x === er || (x.gid != null && x.gid === er.gid)) ? base : x) : [base, ...cur];
+        const prevC = (db['item-uomgroup-conv'] || []).filter(c => String(c.gid) !== String(base.gid));
+        let maxCv = (db['item-uomgroup-conv'] || []).reduce((m, c) => Math.max(m, parseInt(c.cvid, 10) || 0), 0);
+        const mine = lines.map((l, i) => { const old = (s.db['item-uomgroup-conv'] || []).find(c => String(c.gid) === String(base.gid) && c.uom === l.uom); return { cvid: old ? old.cvid : ++maxCv, gid: base.gid, grpno: base.no, uom: l.uom, rate: l.conv, sort: l.sort, isBase: l.uom === base.base, co: base.co || '', br: base.br || '', tid: base.tid || '', s: 'ใช้งาน', createdAt: old ? (old.createdAt || nowIso) : nowIso, createdBy: old ? (old.createdBy || who) : who, updatedAt: nowIso, updatedBy: who }; });
+        db['item-uomgroup-conv'] = mine.concat(prevC);
+        return { db, draft: {}, mode: 'view', sel: base, edit: null }; });
+      this.toast(er ? 'บันทึกการแก้ไขแล้ว' : 'บันทึกชุดหน่วยนับเรียบร้อย · ' + lines.length + ' หน่วย');
+      return;
+    }
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = er ? cur.map(x => (x === er || (x.no != null && x.no === er.no)) ? base : x) : [base, ...cur]; return { db, draft: {}, mode: 'view', sel: base, edit: null }; });
+    this.toast(er ? 'บันทึกการแก้ไขแล้ว' : 'บันทึกเรียบร้อย');
+  }
+  confirmSave() { const r = this.state.confirm; this.doSave(); this.setState({ confirm: null, scr: 'detail' }, () => r && r()); }
+  confirmDiscard() { const r = this.state.confirm; this.setState({ confirm: null, draft: {}, mode: 'view', edit: null, scr: 'list' }, () => r && r()); this.toast('ยกเลิกการเปลี่ยนแปลง'); }
+  aiSend(text) { const q = (text != null ? String(text) : (this.state.aiInput || '')).trim(); if (!q) return; const reply = this._aiAnswer(q); this.setState(s => ({ aiMsgs: (s.aiMsgs || []).concat([{ role: 'user', text: q }, { role: 'ai', text: reply }]), aiInput: '' })); }
+  _aiAnswer(q) {
+    if (/ซ้ำ|duplicate|ตรวจ/i.test(q)) return 'สแกนสินค้าทั้งหมดแล้ว — ยังไม่พบรหัส/ชื่อซ้ำซ้อน หากพบผมจะเสนอให้รวมหรือแจ้งเตือนก่อนบันทึก';
+    if (/ชุด|uom|หน่วย|แปลง/i.test(q)) return 'จากสินค้าปัจจุบัน แนะนำผูก UOM Group ที่หน่วยหลักตรงกับ Base UOM — เช่น เม็ดพลาสติก→GRP-RESIN (KG·BAG×25·TON×1000) ผมผูกให้อัตโนมัติได้';
+    if (/สร้าง|ใบเสนอ|ocr|กรอก/i.test(q)) return 'อัปโหลดเอกสาร (ใบเสนอราคา/ใบกำกับ) แล้วผมจะอ่านด้วย OCR และกรอกฟอร์มให้ — ชื่อสินค้า, หน่วย, ราคา จากนั้นให้คุณตรวจก่อนบันทึก';
+    if (/สรุป|รายงาน|report|dashboard/i.test(q)) return 'สรุปหน้านี้: ข้อมูลอยู่ในเกณฑ์ปกติ ผมสร้างรายงาน/ส่งออก Excel หรือสรุปเป็นข้อความให้ได้ ต้องการช่วงเวลาไหน?';
+    return 'รับทราบ “' + q + '” — ผมช่วยได้ทั้งทำงานแทน (สร้างเอกสาร), แนะนำ, เตือนความผิดปกติ, สรุปข้อมูล และค้นหา บอกเป้าหมายได้เลยครับ';
+  }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const sl0 = this.K.sheetsLoading ? this.K.sheetsLoading(this, 'ข้อมูลกลุ่มสินค้า · INVT-ITEM') : null; if (sl0) return sl0;
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
+    const scr = this.curScr();
+    const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const _cbM = (this.K && this.K.liveCoBr) ? this.K.liveCoBr() : { COS: [], BR_MAP: {} };
+    const PROC_COMPANIES = _cbM.COS;
+    const PROC_BR_MAP = _cbM.BR_MAP;
+    const coSel = this.props.filterCo || this.state.filterCo || ((this.props.api && this.props.api.userCo && PROC_COMPANIES.indexOf(this.props.api.userCo) > -1) ? [this.props.api.userCo] : PROC_COMPANIES.slice());
+    const coAll = coSel.length === PROC_COMPANIES.length;
+    const brOpts = Array.from(new Set([].concat(...(coAll ? PROC_COMPANIES : coSel).map(o => PROC_BR_MAP[o] || []))));
+    const brSel = (this.props.filterBr || this.state.filterBr || ['สำนักงานใหญ่ (สาทร)']).filter(o => brOpts.indexOf(o) > -1);
+    const brSelFinal = brSel.length ? brSel : brOpts;
+    const brAll = brSelFinal.length === brOpts.length;
+    const rows = this.dbRows(nav, cfg.rows || []);
+    const selRow = this.state.sel || rows[0] || null;
+    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'ACTIONS'), list.map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+    let body;
+    if (scr === 'create' || scr === 'edit') {
+      const er = scr === 'edit' ? this.state.edit : null;
+      const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
+      const dr = this.state.draft || {}, pre = mode + '|';
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, er ? (er.a || er.no) : 'สร้างรายการใหม่'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, er ? 'โหมดแก้ไข (Edit)' : 'โหมดสร้างใหม่ (New)')), K.btn(T, 'กลับ', false, 'doc', () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }))], { marginBottom: 14, padding: '12px 16px' });
+      const typeRowsAll = this.dbRows('item-type', (cfgAll['item-type'] || {}).rows || []);
+      const TYPES_BY_CLASS = {}; typeRowsAll.forEach(tr => { const kk = tr.cls || '—'; (TYPES_BY_CLASS[kk] = TYPES_BY_CLASS[kk] || []).push(tr.no); });
+      const secs = cfg.form.map(([title, ic, fields]) => { const coFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'co'); const brFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'br'); const clsFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'cls'); const typFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'typ'); const fieldByMk = mk => fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === mk); const UOM_OF_GRP = { uomgrp: 'uom', puruomgrp: 'puruom', seluomgrp: 'seluom' }; const GRP_OF_UOM = { uom: 'uomgrp', puruom: 'puruomgrp', seluom: 'seluomgrp' }; return K.formSec(T, title, ic, fields.map(([lb, ty, opt]) => {
+        const m = cfg.roMap && cfg.roMap[lb];
+        const ev = er ? (er['_f:' + lb] !== undefined ? er['_f:' + lb] : (m ? er[m] : null)) : null;
+        const dk = pre + lb;
+        const _tdef = (m === 'tid' && !er && this._tenantOpts().length === 1) ? ((this._tenantOpts()[0] || {}).id || '') : '';
+        const cur = dr[dk] !== undefined ? dr[dk] : (ev != null ? ev : _tdef);
+        const _cbF = (this.K && this.K.liveCoBr) ? this.K.liveCoBr() : { COS: [], BR_MAP: {} };
+        const BR_MAP = _cbF.BR_MAP;
+        let effOpt = opt;
+        if (m === 'co' && Array.isArray(opt) && _cbF.COS.length) effOpt = _cbF.COS;
+        let coCurForBr = null;
+        if (m === 'br' && Array.isArray(opt) && coFieldLb) {
+          const coLb = coFieldLb[0];
+          const coDk = pre + coLb;
+          const coM = cfg.roMap && cfg.roMap[coLb];
+          const coEv = er ? (er['_f:' + coLb] !== undefined ? er['_f:' + coLb] : (coM ? er[coM] : null)) : null;
+          const coCur = dr[coDk] !== undefined ? dr[coDk] : (coEv != null ? coEv : '');
+          coCurForBr = coCur;
+          effOpt = coCur ? (BR_MAP[coCur] || opt) : [];
+        }
+        if (m === 'typ' && Array.isArray(opt) && clsFieldLb) {
+          const clsLb = clsFieldLb[0]; const clsDk = pre + clsLb; const clsM = cfg.roMap && cfg.roMap[clsLb];
+          const clsEv = er ? (er['_f:' + clsLb] !== undefined ? er['_f:' + clsLb] : (clsM ? er[clsM] : null)) : null;
+          const clsCur = dr[clsDk] !== undefined ? dr[clsDk] : (clsEv != null ? clsEv : '');
+          effOpt = (clsCur && TYPES_BY_CLASS[clsCur] && TYPES_BY_CLASS[clsCur].length) ? TYPES_BY_CLASS[clsCur] : opt;
+        }
+        if ((m === 'uomgrp' || m === 'puruomgrp' || m === 'seluomgrp') && Array.isArray(opt)) {
+          const grpRows = this.dbRows('item-uomgroup', (cfgAll['item-uomgroup'] || {}).rows || []);
+          effOpt = [].concat(grpRows.map(g => g.no));
+        }
+        if (m === 'base' && Array.isArray(opt)) {
+          const uomRows = this.dbRows('item-uom', (cfgAll['item-uom'] || {}).rows || []);
+          effOpt = uomRows.map(u => u.no);
+        }
+        if ((m === 'uom' || m === 'puruom' || m === 'seluom') && Array.isArray(opt)) {
+          const uomRows = this.dbRows('item-uom', (cfgAll['item-uom'] || {}).rows || []);
+          effOpt = uomRows.map(u => u.no);
+          const gMk = GRP_OF_UOM[m]; const gLb = gMk ? fieldByMk(gMk) : null;
+          if (gLb) {
+            const gDk = pre + gLb[0]; const gM = cfg.roMap[gLb[0]];
+            const gEv = er ? (er['_f:' + gLb[0]] !== undefined ? er['_f:' + gLb[0]] : (gM ? er[gM] : null)) : null;
+            const gCur = dr[gDk] !== undefined ? dr[gDk] : (gEv != null ? gEv : '');
+            if (gCur && gCur !== '— ไม่ระบุ —') {
+              const grpRows = this.dbRows('item-uomgroup', (cfgAll['item-uomgroup'] || {}).rows || []);
+              const g = grpRows.find(x => x.no === gCur); const ls = g ? this._groupLines(g) : [];
+              if (ls.length) effOpt = ls.map(l => l.uom);
+            }
+          }
+        }
+        const FK_SRC = { cls: 'item-class', grade: 'item-grade', brand: 'item-brand', cat: 'item-category' };
+        if (FK_SRC[m] && Array.isArray(opt)) {
+          const rws = this.dbRows(FK_SRC[m], (cfgAll[FK_SRC[m]] || {}).rows || []);
+          effOpt = [].concat(rws.map(x => x.no));
+        }
+        if (m === 'bizgrp' && Array.isArray(opt)) {
+          effOpt = [].concat(this._bizGroups());
+        }
+        if (m === 'tid' && Array.isArray(opt)) {
+          effOpt = this._tenantOpts().map(t => t.id);
+        }
+        if (m === 'itype' && Array.isArray(opt)) {
+          const tRows = this.dbRows('item-type', (cfgAll['item-type'] || {}).rows || []);
+          effOpt = [].concat(tRows.map(t => t.no));
+        }
+        const onCh = e => { const v = e.target.value; this.setState(s => { const nd = Object.assign({}, s.draft, { [dk]: v }); if (m === 'co' && brFieldLb) nd[pre + brFieldLb[0]] = ''; if (m === 'co') { const tf = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'tid'); if (tf) nd[pre + tf[0]] = this._coTenantMap()[v] || (this._tenantOpts()[0] || {}).id || ''; } if (m === 'cls' && typFieldLb) nd[pre + typFieldLb[0]] = ''; if (m === 'typ' && nav === 'item-main') { const tRows = this.dbRows('item-type', (cfgAll['item-type'] || {}).rows || []); const tr = tRows.find(x => x.no === v); if (tr) { const setF = (mk, val) => { const all = cfg.form.reduce((acc, sec) => acc.concat(sec[2]), []); const f = all.find(fx => cfg.roMap && cfg.roMap[fx[0]] === mk); if (f) nd[pre + f[0]] = val; }; const yn2 = z => (z === true || z === 'ใช่' || z === 'true') ? 'ใช่' : 'ไม่ใช่'; setF('stk', yn2(tr.stk)); setF('pur', yn2(tr.pur)); setF('sel', yn2(tr.sel)); setF('mfg', yn2(tr.mfg)); } } if (UOM_OF_GRP[m]) { const pairLb = fieldByMk(UOM_OF_GRP[m]); if (pairLb) { const gRows = this.dbRows('item-uomgroup', (cfgAll['item-uomgroup'] || {}).rows || []); const g = gRows.find(x => x.no === v); nd[pre + pairLb[0]] = (g && g.base) ? g.base : ''; } } return { draft: nd }; }); };
+        let lockedUom = null;
+        const grpFieldLbP = GRP_OF_UOM[m] ? fieldByMk(GRP_OF_UOM[m]) : null;
+        if (GRP_OF_UOM[m] && grpFieldLbP) {
+          const grpLb = grpFieldLbP[0]; const grpDk = pre + grpLb; const grpM = cfg.roMap[grpLb];
+          const grpEv = er ? (er['_f:' + grpLb] !== undefined ? er['_f:' + grpLb] : (grpM ? er[grpM] : null)) : null;
+          const grpCur = dr[grpDk] !== undefined ? dr[grpDk] : (grpEv != null ? grpEv : '');
+          if (grpCur && grpCur !== '— ไม่ระบุ —') { const gRows = this.dbRows('item-uomgroup', (cfgAll['item-uomgroup'] || {}).rows || []); const g = gRows.find(x => x.no === grpCur); if (g && g.base) lockedUom = g.base; }
+        }
+        const LBL_SRC = { base: 'item-uom', grade: 'item-grade', brand: 'item-brand', cat: 'item-category', cls: 'item-class', typ: 'item-type', uom: 'item-uom', puruom: 'item-uom', seluom: 'item-uom', uomgrp: 'item-uomgroup', puruomgrp: 'item-uomgroup', seluomgrp: 'item-uomgroup' };
+        const labelFor = (o) => { if (m === 'tid') return this._tenantName(o); if (!o || o === '— ไม่ระบุ —' || o === '— เลือก —') return o; const src = LBL_SRC[m]; if (!src) return o; const rows = this.dbRows(src, (cfgAll[src] || {}).rows || []); const r = rows.find(x => x.no === o); const nm = r ? (r.a || r.en || '') : ''; return nm ? (o + ' - ' + nm) : o; };
+        const node = opt === 'checkbox'
+          ? (() => { const checked = cur === 'ใช่' || cur === true; const toggle = () => { this.setState(s => ({ draft: Object.assign({}, s.draft, { [dk]: checked ? 'ไม่ใช่' : 'ใช่' }) })); }; return h('label', { onClick: toggle, style: { display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', padding: '9px 2px' } }, h('span', { style: { width: 20, height: 20, borderRadius: 6, flexShrink: 0, border: `1.5px solid ${checked ? acc : c.border}`, background: checked ? acc : 'transparent', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, checked ? K.Icon('check', 13) : null), h('span', { style: { fontSize: 12.5, color: c.text } }, checked ? 'ใช่' : 'ไม่ใช่')); })()
+          : Array.isArray(opt)
+          ? (() => { const isScope = (m === 'co' || m === 'br'); const phLbl = isScope ? 'ข้อมูลกลาง' : '— เลือก —'; const brLocked = m === 'br' && !coCurForBr; return h('select', { value: cur || '', onChange: onCh, disabled: brLocked, style: Object.assign({}, K.inp(T), { cursor: brLocked ? 'not-allowed' : 'pointer', opacity: brLocked ? 0.6 : 1 }) }, [h('option', { key: '_', value: '' }, phLbl), ...effOpt.map(o => h('option', { key: o, value: o }, labelFor(o)))]); })()
+          : h('input', { placeholder: typeof opt === 'string' ? opt : '', value: cur, onChange: onCh, style: K.inp(T) });
+        return K.field(T, lb, node, ty === 1);
+      })); });
+      let linesEditor = null;
+      if (nav === 'item-uomgroup') {
+        const linesKey = pre + '__lines';
+        const curLines = dr[linesKey] !== undefined ? dr[linesKey] : (er && this._groupLines(er).length ? this._groupLines(er).map(l => Object.assign({}, l)) : [{ uom: '', conv: '' }]);
+        const uomRows = this.dbRows('item-uom', (cfgAll['item-uom'] || {}).rows || []);
+        const setLines = (next) => this.setState(s => ({ draft: Object.assign({}, s.draft, { [linesKey]: next }) }));
+        const upd = (i, patch) => setLines(curLines.map((l, j) => j === i ? Object.assign({}, l, patch) : l));
+        const rm = (i) => setLines(curLines.filter((l, j) => j !== i));
+        const add = () => setLines(curLines.concat([{ uom: '', conv: '', sort: (curLines.length + 1) * 10 }]));
+        const rowsEl = curLines.map((l, i) => h('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
+          h('input', { type: 'number', placeholder: String((i + 1) * 10), title: 'ลำดับ', value: l.sort == null ? '' : l.sort, onChange: e => upd(i, { sort: e.target.value }), style: Object.assign({}, K.inp(T), { width: 64, flexShrink: 0 }) }),
+          h('select', { value: l.uom || '', onChange: e => upd(i, { uom: e.target.value }), style: Object.assign({}, K.inp(T), { cursor: 'pointer', flex: 1 }) }, [h('option', { key: '_', value: '' }, '— เลือกหน่วย —'), ...uomRows.map(u => h('option', { key: u.no, value: u.no }, u.no + ' — ' + (u.a || u.en)))]),
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } }, h('span', { style: { fontSize: 11, color: sub, whiteSpace: 'nowrap' } }, '× Base'), h('input', { type: 'number', placeholder: '1', value: l.conv == null ? '' : l.conv, onChange: e => upd(i, { conv: e.target.value }), style: Object.assign({}, K.inp(T), { width: 92 }) })),
+          h('span', { style: { width: 46, display: 'flex', justifyContent: 'center' } }, Number(l.conv) === 1 ? K.pill(T, 'หลัก', 130) : null),
+          h('button', { onClick: () => rm(i), title: 'ลบ', style: { flexShrink: 0, width: 30, height: 30, borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: sub, cursor: 'pointer', fontFamily: c.font, fontSize: 16, lineHeight: 1 } }, '×')));
+        linesEditor = K.card(T, [
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('scale', 17)), h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, 'ชุดอัตราแปลงหน่วย (UOM Group Conversion)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'กำหนดหน่วยและอัตราแปลง — หน่วยที่อัตรา = 1 คือหน่วยหลัก (Base)'))),
+          ...rowsEl,
+          h('div', { style: { marginTop: 4 } }, K.btn(T, 'เพิ่มหน่วย', false, 'plus', add))
+        ], { marginBottom: 14, padding: '14px 16px' });
+      }
+      const save = K.btn(T, 'บันทึก', true, 'check', () => { this.doSave(); this.goScr('detail'); });
+      const stDk = pre + 'สถานะ';
+      const stCur = dr[stDk] !== undefined ? dr[stDk] : (er ? (er.s || 'ใช้งาน') : 'ใช้งาน');
+      const statusFormEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, stCur, this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPTS.map(o => h('option', { key: o, value: o }, o)))))], { marginBottom: 14, padding: '12px 16px' });
+      body = [hdr, ...secs, linesEditor, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts || ['Export'])];
+    } else if (scr === 'detail' && cfg.roMap) {
+      const r = selRow;
+      if (!r) { this.setScr('list'); body = [null]; }
+      else {
+        const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.a || r.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only)')), h('div', { style: { display: 'flex', gap: 7, flexWrap: 'wrap' } }, K.btn(T, 'พิมพ์', false, 'doc', () => this.toast('พิมพ์')), K.btn(T, 'แก้ไข', true, 'doc', () => this.enterEdit(r)), K.btn(T, 'สร้างใหม่', false, 'plus', () => this.enterCreate())))], { marginBottom: 14, padding: '12px 16px' });
+        const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb, ty, opt]) => { const m = cfg.roMap[lb]; const ov = r['_f:' + lb]; let val = ov !== undefined ? ov : (m ? r[m] : ''); if (m === 'dec' && val != null && val !== '') val = String(val); if (opt === 'checkbox') { const on = val === 'ใช่' || val === true; return K.field(T, lb, h('div', { style: { display: 'flex', alignItems: 'center', gap: 9, padding: '9px 2px' } }, h('span', { style: { width: 20, height: 20, borderRadius: 6, flexShrink: 0, border: `1.5px solid ${on ? acc : c.border}`, background: on ? acc : 'transparent', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, on ? K.Icon('check', 13) : null), h('span', { style: { fontSize: 12.5, color: on ? c.text : sub } }, on ? 'ใช่' : 'ไม่ใช่'))); } const LBL_SRC = { cls: 'item-class', typ: 'item-type', uom: 'item-uom', puruom: 'item-uom', seluom: 'item-uom', uomgrp: 'item-uomgroup', puruomgrp: 'item-uomgroup', seluomgrp: 'item-uomgroup' }; if (m === 'tid' && val) { val = this._tenantName(val); } if ((m === 'co' || m === 'br') && !val) { val = 'ข้อมูลกลาง'; } if (val && LBL_SRC[m] && val !== '— ไม่ระบุ —') { const rows = this.dbRows(LBL_SRC[m], (cfgAll[LBL_SRC[m]] || {}).rows || []); const rr = rows.find(x => x.no === val); const nm = rr ? (rr.a || rr.en || '') : ''; if (nm) val = val + ' - ' + nm; } return K.field(T, lb, K.roField(T, val)); })));
+        const curSt = r.s || 'ใช้งาน';
+        let linesTable = null;
+        if (nav === 'item-uomgroup') {
+          const rlines = this._groupLines(r);
+          const uomRowsD = this.dbRows('item-uom', (cfgAll['item-uom'] || {}).rows || []);
+          const nm = u => { const x = uomRowsD.find(z => z.no === u); return x ? (x.a || x.en || '') : ''; };
+          linesTable = K.card(T, [
+            h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('scale', 16)), h('span', { style: { fontSize: 13.5, fontWeight: 700 } }, 'ชุดอัตราแปลงหน่วย (UOM Group Conversion)')),
+            h('div', { key: 'hd', style: { display: 'flex', fontSize: 10.5, fontWeight: 700, color: sub, letterSpacing: .4, padding: '0 4px 8px' } }, h('span', { style: { width: 56 } }, 'ลำดับ'), h('span', { style: { flex: 1 } }, 'หน่วย (UOM)'), h('span', { style: { width: 150, textAlign: 'right' } }, 'อัตราแปลง (× Base)'), h('span', { style: { width: 70, textAlign: 'right' } }, 'บทบาท')),
+            ...rlines.map((l, i) => h('div', { key: i, style: { display: 'flex', alignItems: 'center', padding: '9px 4px', borderTop: `1px solid ${c.line}` } }, h('span', { style: { width: 56, color: sub, fontVariantNumeric: 'tabular-nums' } }, l.sort || ((i + 1) * 10)), h('span', { style: { flex: 1, fontWeight: 600 } }, l.uom, h('span', { style: { fontWeight: 400, color: sub, fontSize: 11.5 } }, '  ' + nm(l.uom))), h('span', { style: { width: 150, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 } }, (l.conv === '' || l.conv == null) ? h('span', { style: { color: sub, fontWeight: 400 } }, '—') : ('× ' + l.conv)), h('span', { style: { width: 70, display: 'flex', justifyContent: 'flex-end' } }, Number(l.conv) === 1 ? K.pill(T, 'หลัก', 130) : h('span', { style: { color: sub, fontSize: 11 } }, '—'))))
+          ], { marginBottom: 14, padding: '14px 16px' });
+        }
+        const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือโหมดสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, curSt, this.statusHue(curSt))))], { marginBottom: 14, padding: '12px 16px' });
+        const fmtDt = v => { if (!v) return '—'; try { return new Date(v).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return String(v); } };
+        const _idMap = { 'item-main': ['ItemId', r.iid], 'item-uom': ['UOMId', r.uid], 'item-uomgroup': ['UOMGroupId', r.gid], 'item-class': ['ItemClassId', r.cid], 'item-type': ['ItemTypeId', r.tyid], 'item-category': ['ItemCategoryId', r.catid], 'item-group': ['ProductGroupId', r.pgid] }; const _idInfo = _idMap[nav]; const _sysFields = []; _sysFields.push(K.field(T, 'สร้างเมื่อ (CreatedAt)', K.roField(T, fmtDt(r.createdAt))), K.field(T, 'สร้างโดย (CreatedBy)', K.roField(T, r.createdBy || '—')), K.field(T, 'แก้ไขล่าสุด (UpdatedAt)', K.roField(T, fmtDt(r.updatedAt))), K.field(T, 'แก้ไขโดย (UpdatedBy)', K.roField(T, r.updatedBy || '—'))); const auditSec = K.formSec(T, 'ข้อมูลระบบ (System Info)', 'gauge', _sysFields);
+        body = [hdr, ...secs, linesTable, auditSec, statusEditor, actLegend(cfg.acts || ['Export'])];
+      }
+    } else {
+      const canEdit = !!(cfg.form && cfg.roMap);
+      const openDetail = (r) => { this.setState({ sel: r }); this.goScr('detail'); };
+      const statusCol = { h: 'สถานะ', render: r => K.pill(T, r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) };
+      const baseCols = cfg.cols.some(cc => cc.h === 'สถานะ') ? cfg.cols : cfg.cols.concat([statusCol]);
+      const cols = canEdit ? baseCols.concat([{ h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู'), h('button', { onClick: e => { e.stopPropagation(); this.enterEdit(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'แก้ไข')) }]) : baseCols;
+      const sortSt = this.state.sort || { key: 'no', dir: 'asc' };
+      const setSort = (key) => this.setState(s => { const cur = s.sort || { key: 'no', dir: 'asc' }; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: { key, dir } }; });
+      const sortedRows = sortSt.key ? rows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); }) : rows;
+      const _liveKpi = ['item-main', 'item-uom', 'item-uomgroup', 'item-grade', 'item-brand', 'item-category', 'item-class', 'item-type', 'item-group'].indexOf(nav) > -1 && cfg.kpi
+        ? cfg.kpi.map(([lb, v, sc, hu], i) => [lb, String(i === 0 ? rows.length : i === 1 ? rows.filter(r => (r.s || 'ใช้งาน') === 'ใช้งาน').length : rows.filter(r => !r.co).length), sc, hu])
+        : cfg.kpi;
+      body = [_liveKpi ? K.kpi(T, _liveKpi) : null, K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.no || selRow.a) : null, (cfg.th || nav), canEdit && K.btn(T, 'สร้างใหม่', true, 'plus', () => this.enterCreate())), actLegend(cfg.acts || ['Export'])];
+    }
+
+    const controlled = typeof this.props.onScr === 'function';
+    const modal = this.state.confirm ? h('div', { key: 'cf', style: controlled ? { position: 'fixed', top: 38, left: 0, right: 0, bottom: 0, zIndex: 100000, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } : { position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+      h('div', { style: { background: c.dark ? 'oklch(0.23 0.014 265)' : '#fff', borderRadius: 14, border: `1px solid ${c.border}`, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: 400, maxWidth: '100%', padding: '22px 24px', fontFamily: c.font, color: c.text } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } }, h('span', { style: { width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('doc', 18)), h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'บันทึกการเปลี่ยนแปลง?')),
+        h('div', { style: { fontSize: 12.5, color: sub, lineHeight: 1.6, marginBottom: 18 } }, 'คุณกำลัง' + (this.state.edit ? 'แก้ไข' : 'สร้าง') + 'รายการและยังไม่ได้บันทึก ต้องการบันทึกก่อนออกจากหน้านี้หรือไม่?'),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' } }, K.btn(T, 'ยกเลิก', false, null, () => this.setState({ confirm: null })), K.btn(T, 'ไม่บันทึก', false, null, () => this.confirmDiscard()), K.btn(T, 'บันทึก', true, 'check', () => this.confirmSave())))) : null;
+    const aiOpen = !!this.state.aiOpen;
+    const aiMsgs = this.state.aiMsgs || [];
+    const aiInput = this.state.aiInput || '';
+    const AI_CTX = {
+      'item-main': { csub: 'ข้อมูลสินค้า', sugs: [['spark', 'แนะนำ UOM Group ให้สินค้าที่ยังไม่ผูก'], ['doc', 'สร้างสินค้าจากใบเสนอราคา (OCR)'], ['search', 'ตรวจหาสินค้าซ้ำซ้อน']], insight: ['warn', 'TG-BOX-001 ยังไม่ผูกชุดหน่วยนับ (UOM Group)'] },
+      'item-uomgroup': { csub: 'ชุดหน่วย', sugs: [['spark', 'แนะนำอัตราแปลงหน่วยมาตรฐาน'], ['doc', 'สร้างชุดใหม่จากสินค้าที่มีอยู่'], ['shield', 'ตรวจอัตราแปลงที่ผิดปกติ']], insight: ['ok', '2 ชุด · 6 หน่วย — อัตราแปลงครบถ้วน ไม่พบข้อผิดพลาด'] },
+      'item-uom': { csub: 'หน่วยนับ', sugs: [['spark', 'แนะนำหน่วยที่ยังขาด'], ['reports', 'สรุปการใช้หน่วยตามสินค้า']], insight: ['ok', '9 หน่วยพร้อมใช้งาน'] },
+      'item-class': { csub: 'จำแนกสินค้า', sugs: [['spark', 'แนะนำการจัดจำแนกใหม่'], ['reports', 'สรุปสินค้าตามจำแนก']], insight: ['info', '5 จำแนกสินค้า เปิดใช้งานทั้งหมด'] },
+      'item-type': { csub: 'ชนิดสินค้า', sugs: [['spark', 'แนะนำชนิดที่เหมาะกับจำแนก'], ['reports', 'สรุปคุณสมบัติชนิดสินค้า']], insight: ['info', '11 ชนิดสินค้า'] },
+      'item-category': { csub: 'หมวดหมู่สินค้า', sugs: [['spark', 'แนะนำหมวดหมู่ใหม่'], ['reports', 'สรุปสินค้าตามหมวด']], insight: ['info', '3 หมวดหมู่'] },
+      'item-grade': { csub: 'เกรดสินค้า', sugs: [['spark', 'แนะนำเกณฑ์แบ่งเกรด'], ['reports', 'สรุปสินค้าตามเกรด']], insight: ['info', '3 เกรดสินค้า'] },
+      'item-brand': { csub: 'ยี่ห้อสินค้า', sugs: [['spark', 'แนะนำยี่ห้อที่ควรเพิ่ม'], ['reports', 'สรุปสินค้าตามยี่ห้อ']], insight: ['info', '3 ยี่ห้อสินค้า'] }
+    };
+    const aiCtx = AI_CTX[nav] || { csub: cfg.th || '', sugs: [['spark', 'แนะนำการทำงานในหน้านี้']], insight: ['info', 'พร้อมช่วยเหลือ'] };
+    const roles = [['settings', 'Act', 'ทำแทน'], ['spark', 'Advise', 'แนะนำ'], ['shield', 'Alert', 'เตือน'], ['doc', 'Author', 'สร้าง'], ['crm', 'Assist', 'ช่วย']];
+    const toneClr = { warn: 'oklch(0.72 0.15 70)', ok: 'oklch(0.66 0.16 150)', info: acc };
+    const aiLauncher = aiOpen ? null : h('button', { key: 'ailauncher', onClick: () => this.setState({ aiOpen: true }), title: 'AI Copilot', style: { position: 'absolute', right: 20, bottom: 20, zIndex: 55, height: 46, padding: '0 18px 0 15px', display: 'flex', alignItems: 'center', gap: 9, borderRadius: 23, border: 'none', cursor: 'pointer', fontFamily: c.font, fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg, ' + acc + ', oklch(0.6 0.2 300))', boxShadow: '0 8px 24px rgba(80,60,200,.35)' } }, h('span', { style: { display: 'flex' } }, K.Icon('spark', 19)), 'AI Copilot');
+    const bubble = (m, i) => m.role === 'user'
+      ? h('div', { key: i, style: { alignSelf: 'flex-end', maxWidth: '85%', background: acc, color: '#fff', padding: '8px 12px', borderRadius: '12px 12px 3px 12px', fontSize: 12.5, lineHeight: 1.5 } }, m.text)
+      : h('div', { key: i, style: { alignSelf: 'flex-start', maxWidth: '92%', display: 'flex', gap: 8 } }, h('span', { style: { flexShrink: 0, width: 26, height: 26, borderRadius: 8, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 15)), h('div', { style: { background: c.winHead, border: '1px solid ' + c.border, color: c.text, padding: '8px 12px', borderRadius: '12px 12px 12px 3px', fontSize: 12.5, lineHeight: 1.55 } }, m.text));
+    const aiPanel = !aiOpen ? null : h('div', { key: 'aipanel', style: { position: 'absolute', top: 0, right: 0, bottom: 0, width: 372, maxWidth: '92%', zIndex: 60, background: c.win, borderLeft: '1px solid ' + c.border, boxShadow: '-12px 0 40px rgba(15,20,35,.16)', display: 'flex', flexDirection: 'column', fontFamily: c.font } },
+      h('div', { style: { flexShrink: 0, padding: '14px 16px', borderBottom: '1px solid ' + c.line, display: 'flex', alignItems: 'center', gap: 10 } },
+        h('span', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: 'linear-gradient(135deg,' + acc + ',oklch(0.6 0.2 300))', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 19)),
+        h('div', { style: { flex: 1, minWidth: 0 } }, h('div', { style: { fontSize: 14, fontWeight: 800 } }, 'AI Copilot'), h('div', { style: { fontSize: 11, color: sub } }, 'ผู้ช่วยอัจฉริยะ · ' + aiCtx.csub)),
+        h('button', { onClick: () => this.setState({ aiOpen: false }), style: { width: 28, height: 28, borderRadius: 8, border: '1px solid ' + c.border, background: c.win, color: sub, cursor: 'pointer', fontSize: 16, lineHeight: 1, fontFamily: c.font } }, '×')),
+      h('div', { style: { flexShrink: 0, display: 'flex', gap: 6, padding: '10px 14px', borderBottom: '1px solid ' + c.line } }, roles.map(([ic, k, lbl]) => h('button', { key: k, title: lbl, onClick: () => this.aiSend(k + ' · ' + lbl + 'ในหน้า' + (aiCtx.csub || '')), style: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 2px', borderRadius: 9, border: '1px solid ' + c.border, background: c.winHead, color: c.text, cursor: 'pointer', fontFamily: c.font } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon(ic, 16)), h('span', { style: { fontSize: 9.5, fontWeight: 700 } }, k)))),
+      h('div', { style: { flex: 1, minHeight: 0, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 10 } },
+        h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', borderRadius: 10, background: c.accSoft, border: '1px solid ' + c.border } }, h('span', { style: { flexShrink: 0, color: toneClr[aiCtx.insight[0]] || acc, display: 'flex', marginTop: 1 } }, K.Icon(aiCtx.insight[0] === 'warn' ? 'shield' : 'spark', 16)), h('div', { style: { fontSize: 12, lineHeight: 1.5, color: c.text } }, h('div', { style: { fontSize: 9.5, fontWeight: 800, letterSpacing: .5, color: sub, marginBottom: 2 } }, 'AI INSIGHT'), aiCtx.insight[1])),
+        h('div', { style: { fontSize: 9.5, fontWeight: 800, letterSpacing: .5, color: sub, marginTop: 2 } }, 'แนะนำสำหรับหน้านี้'),
+        ...aiCtx.sugs.map(([ic, lbl], i) => h('button', { key: 'sug' + i, onClick: () => this.aiSend(lbl), style: { display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left', width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid ' + c.border, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: 500 } }, h('span', { style: { display: 'flex', color: acc, flexShrink: 0 } }, K.Icon(ic, 16)), h('span', { style: { flex: 1 } }, lbl), h('span', { style: { display: 'flex', color: sub } }, K.Icon('chevron2', 13)))),
+        aiMsgs.length ? h('div', { style: { height: 1, background: c.line, margin: '4px 0' } }) : null,
+        ...aiMsgs.map((m, i) => bubble(m, i))),
+      h('form', { onSubmit: e => { e.preventDefault(); this.aiSend(); }, style: { flexShrink: 0, padding: '12px 14px', borderTop: '1px solid ' + c.line, display: 'flex', gap: 8, alignItems: 'center' } },
+        h('input', { value: aiInput, onChange: e => this.setState({ aiInput: e.target.value }), placeholder: 'ถาม AI หรือสั่งงาน...', style: Object.assign({}, K.inp(T), { flex: 1 }) }),
+        h('button', { type: 'submit', title: 'ส่ง', style: { width: 38, height: 38, flexShrink: 0, borderRadius: 10, border: 'none', background: acc, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('chevron2', 17))));
+    const aiUI = [aiLauncher, aiPanel];
+
+    if (controlled) return { fg: c.text, view: h('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column' } }, h('div', { style: { display: 'flex', flexDirection: 'column' } }, body), modal, ...aiUI) };
+
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const collapsed = !!this.state.sideCollapsed;
+    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'box']);
+    const thOnly = s => String(s || '').replace(/\s*\(.*?\)\s*$/, '').trim();
+    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
+      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, thOnly(th))); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const tabsEl = h('div', { style: { display: 'flex', gap: 6, rowGap: 0, flexWrap: 'wrap', borderBottom: `1px solid ${border}` } }, cfg.screens.filter(([id]) => id === 'create' ? this.curMode() === 'create' : id === 'edit' ? this.curMode() === 'edit' : true).map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb;
+      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const filterDd = (() => {
+      const ddOpenId = this.state.openDd || null;
+      const ddToggle = (id) => this.setState(s => ({ openDd: s.openDd === id ? null : id }));
+      const ddWrap = (id, label, active, content) => h('div', { key: 'dd-' + id, style: { position: 'relative', display: 'flex' } },
+        h('button', { type: 'button', onClick: () => ddToggle(id), style: { display: 'flex', alignItems: 'center', gap: 7, height: 30, width: '100%', fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 8, border: `1px solid ${c.border}`, background: active ? c.accSoft : c.win, color: active ? aTxt : c.text, cursor: 'pointer', fontFamily: c.font, whiteSpace: 'nowrap' } },
+          h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' } }, label), h('span', { style: { display: 'flex', color: sub } }, K.Icon('arrowdown', 13))),
+        ddOpenId === id ? h('div', { key: 'bd', onClick: () => this.setState({ openDd: null }), style: { position: 'fixed', inset: 0, zIndex: 199 } }) : null,
+        ddOpenId === id ? h('div', { key: 'pop', onClick: e => e.stopPropagation(), style: { position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', background: c.win, border: `1px solid ${c.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,20,35,.18)', padding: 6 } }, content) : null);
+      const coLabel = coAll ? 'บริษัท: ทั้งหมด' : (coSel.length === 1 ? coSel[0] : 'บริษัท (' + coSel.length + ')');
+      const coContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+        h('input', { type: 'checkbox', checked: coAll, ref: el => { if (el) el.indeterminate = coSel.length > 0 && !coAll; }, onChange: () => this.setState({ filterCo: coAll ? [] : PROC_COMPANIES.slice(), filterBr: [] }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+        .concat(PROC_COMPANIES.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: coSel.indexOf(o) > -1, onChange: () => { const next = coSel.indexOf(o) > -1 ? coSel.filter(x => x !== o) : coSel.concat([o]); this.setState({ filterCo: next, filterBr: [] }); }, style: { cursor: 'pointer' } }), h('span', null, o))));
+      const brLabel = brAll ? 'สาขา: ทั้งหมด' : (brSelFinal.length === 1 ? brSelFinal[0] : 'สาขา (' + brSelFinal.length + ')');
+      const brContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+        h('input', { type: 'checkbox', checked: brAll, ref: el => { if (el) el.indeterminate = brSelFinal.length > 0 && !brAll; }, onChange: () => this.setState({ filterBr: brAll ? [] : brOpts.slice() }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+        .concat(brOpts.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: brSelFinal.indexOf(o) > -1, onChange: () => { const next = brSelFinal.indexOf(o) > -1 ? brSelFinal.filter(x => x !== o) : brSelFinal.concat([o]); this.setState({ filterBr: next }); }, style: { cursor: 'pointer' } }), h('span', null, o))));
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, width: '100%' } }, ddWrap('co', coLabel, !coAll, coContent), ddWrap('br', brLabel, !brAll, brContent));
+    })();
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('box', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('box', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'ข้อมูลสินค้า')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns),
+        !collapsed ? h('div', { style: { flexShrink: 0, paddingTop: 10, marginTop: 6, borderTop: `1px solid ${border}` } }, filterDd) : null),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
+          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px', flexWrap: 'nowrap', position: 'relative' } }, h('div', { style: { minWidth: 0, overflow: 'hidden' } }, h('div', { style: { fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'L1 · ระบบบริหารคลังสินค้า (INVT)  ›  L2 · ข้อมูลสินค้า (ITEM)  ›  L3 · ' + cfg.th)), h('div', { style: { flex: 1, minWidth: 12 } })),
+          h('div', { style: { padding: '0 14px' } }, tabsEl)),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view, modal, ...aiUI) };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  DBKEY = 'db:acct-cc:v1';
+  _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); } K.dbPersist(this, this.DBKEY); }
+  state = { nav: 'cc-main', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {} };
+  bus() { if (typeof window === 'undefined') return null; if (!window.__erpBus) { const LS = 'meeerp.bus.v2'; const persist = (k) => k.indexOf('org.') !== 0; let saved = {}; try { saved = JSON.parse(window.localStorage.getItem(LS) || '{}') || {}; } catch (e) { saved = {}; } const st = { data: Object.assign({}, saved), subs: [] }; const flush = () => { try { const out = {}; Object.keys(st.data).forEach(k => { if (persist(k)) out[k] = st.data[k]; }); window.localStorage.setItem(LS, JSON.stringify(out)); } catch (e) {} }; window.__erpBus = { get: (k, d) => st.data[k] !== undefined ? st.data[k] : d, set: (k, v) => { st.data[k] = v; if (persist(k)) flush(); st.subs.forEach(f => f(k, v)); }, on: (f) => { st.subs.push(f); return () => { st.subs = st.subs.filter(x => x !== f); }; } }; } return window.__erpBus; }
+  notifyUp(msg) { const a = this.props.api || {}; if (typeof a.notify === 'function') a.notify(msg); else this.toast(msg); }
+  _busWire() { const b = this.bus(); if (b && !this._offBus) this._offBus = b.on(() => this.forceUpdate()); }
+  componentWillUnmount() { if (this._offBus) this._offBus(); }
+  componentDidMount() { this._busWire(); if (this.K) { this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); }); }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._handleReq(); }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'tag', hidden: false, screens: cfg[k].screens.map(([id, lb, ic]) => [id, lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb, ic]) }))); }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); else if (r.kind === 'scr') this.setScr(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; const m = this.curMode(); if (m !== this._lastMode) { this._lastMode = m; this.props.onMode(m); } }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+
+  BR_MAP = { 'บมจ. มี กรุ๊ป': ['สำนักงานใหญ่ (สาทร)', 'สาขาเชียงใหม่'], 'บจก. มี เทรดดิ้ง': ['สำนักงานใหญ่ (ลาดพร้าว)', 'สาขาเชียงใหม่'], 'บจก. มี โลจิสติกส์': ['สำนักงานใหญ่ (บางนา)'] };
+  DV_MAP = { 'สำนักงานใหญ่ (สาทร)': ['ฝ่ายขาย', 'ฝ่ายจัดซื้อ'], 'สาขาเชียงใหม่': ['ฝ่ายขาย', 'ฝ่ายจัดซื้อ', 'ฝ่ายไอที'], 'สำนักงานใหญ่ (ลาดพร้าว)': ['ฝ่ายบัญชีการเงิน'], 'สำนักงานใหญ่ (บางนา)': ['ฝ่ายโลจิสติกส์', 'ฝ่ายคลังสินค้า'] };
+  DEPT_MAP = { 'ฝ่ายขาย': ['แผนกขายในประเทศ', 'แผนกขายต่างประเทศ'], 'ฝ่ายจัดซื้อ': ['แผนกจัดซื้อในประเทศ'], 'ฝ่ายบัญชีการเงิน': ['แผนกบัญชี', 'แผนกการเงิน'], 'ฝ่ายไอที': ['แผนกโครงสร้างพื้นฐาน'], 'ฝ่ายโลจิสติกส์': ['แผนกขนส่ง'], 'ฝ่ายคลังสินค้า': ['แผนกคลังสินค้า'] };
+  CC_TYPES = ['Production', 'Sales', 'Administration', 'Service'];
+  typeHue(t) { return ({ Production: 145, Sales: 210, Administration: 265, Service: 60 })[t] || 220; }
+
+  _syncOrgMaps() {
+    const b = this.bus(); if (!b) return;
+    const ds = b.get('org.departments', null); if (!ds || !ds.length) return;
+    const br = {}, dv = {}, dp = {};
+    ds.forEach(r => {
+      if (r.co && r.br) { (br[r.co] = br[r.co] || []); if (br[r.co].indexOf(r.br) < 0) br[r.co].push(r.br); }
+      if (r.br && r.dv) { (dv[r.br] = dv[r.br] || []); if (dv[r.br].indexOf(r.dv) < 0) dv[r.br].push(r.dv); }
+      if (r.dv && r.a) { (dp[r.dv] = dp[r.dv] || []); if (dp[r.dv].indexOf(r.a) < 0) dp[r.dv].push(r.a); }
+    });
+    if (Object.keys(br).length) this.BR_MAP = br;
+    if (Object.keys(dv).length) this.DV_MAP = dv;
+    if (Object.keys(dp).length) this.DEPT_MAP = dp;
+  }
+  CFG() {
+    this._syncOrgMaps();
+    const T = this.T(), K = this.K, h = K ? K.h : null;
+    const P = (t) => K ? K.pill(T, t, this.typeHue(t)) : t;
+    const COS = Object.keys(this.BR_MAP).length ? Object.keys(this.BR_MAP) : ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์'];
+    const GRP_NAME = { 'CCG-01': 'บริหารส่วนกลาง', 'CCG-02': 'การผลิต', 'CCG-03': 'การขายและการตลาด', 'CCG-04': 'โลจิสติกส์และคลังสินค้า' };
+    const PAR_NAME = { 'CC-1001': 'ฝ่ายขาย — สำนักงานใหญ่', 'CC-1003': 'ฝ่ายจัดซื้อ — สำนักงานใหญ่', 'CC-2001': 'ฝ่ายบัญชีการเงิน', 'CC-3001': 'ฝ่ายโลจิสติกส์' };
+    const GRPS = Object.keys(GRP_NAME);
+    const CC_LOOKUP = { 'CC-1001': 'ฝ่ายขาย — สำนักงานใหญ่', 'CC-1002': 'แผนกขายต่างประเทศ', 'CC-1003': 'ฝ่ายจัดซื้อ — สำนักงานใหญ่', 'CC-1101': 'ฝ่ายขาย — เชียงใหม่', 'CC-1102': 'ฝ่ายจัดซื้อ — เชียงใหม่', 'CC-2001': 'ฝ่ายบัญชีการเงิน', 'CC-2002': 'แผนกการเงิน', 'CC-2101': 'ฝ่ายไอที — เชียงใหม่', 'CC-3001': 'ฝ่ายโลจิสติกส์', 'CC-3002': 'ฝ่ายคลังสินค้า' };
+    const CC_KEYS = Object.keys(CC_LOOKUP);
+    const bus = this.bus();
+    const ccMap = (bus ? bus.get('cc.assign', null) : null);
+    const deptSrc = (bus ? bus.get('org.departments', null) : null);
+    const assignRows = (deptSrc && deptSrc.length ? deptSrc : [
+      { no: 'DP-MEE-01-003', a: 'แผนกขายในประเทศ', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่ (สาทร)', dv: 'ฝ่ายขาย', cc: 'CC-1001', ccAlt: 'CC-1002' },
+      { no: 'DP-MEE-01-006', a: 'แผนกจัดซื้อในประเทศ', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่ (สาทร)', dv: 'ฝ่ายจัดซื้อ', cc: 'CC-1003', ccAlt: '' },
+      { no: 'DP-MET-01-008', a: 'แผนกบัญชี', co: 'บจก. มี เทรดดิ้ง', br: 'สำนักงานใหญ่ (ลาดพร้าว)', dv: 'ฝ่ายบัญชีการเงิน', cc: 'CC-2001', ccAlt: 'CC-2002' },
+      { no: 'DP-MET-02-001', a: 'แผนกโครงสร้างพื้นฐาน', co: 'บจก. มี เทรดดิ้ง', br: 'สาขาเชียงใหม่', dv: 'ฝ่ายไอที', cc: '', ccAlt: '' }
+    ]).map(r => { const m = ccMap && ccMap[r.no] !== undefined ? ccMap[r.no] : r.cc; const alt = ccMap && ccMap['alt:' + r.no] !== undefined ? ccMap['alt:' + r.no] : (r.ccAlt || ''); return Object.assign({}, r, { cc: m || '', ccAlt: alt, s: (m ? 'ใช้งาน' : 'รอผูก') }); });
+    const pending = assignRows.filter(r => !r.cc).length;
+    const treeRows = [
+      { lv: 'L1', no: 'CC-1001', a: 'ฝ่ายขาย — สำนักงานใหญ่', t: 'Sales', bud: '฿2,400,000', roll: '฿4,580,000', act: '฿2,952,000' },
+      { lv: 'L2', no: 'CC-1002', a: 'แผนกขายต่างประเทศ', t: 'Sales', bud: '฿1,200,000', roll: '฿1,200,000', act: '฿792,000' },
+      { lv: 'L2', no: 'CC-1101', a: 'ฝ่ายขาย — เชียงใหม่', t: 'Sales', bud: '฿980,000', roll: '฿980,000', act: '฿792,000' },
+      { lv: 'L1', no: 'CC-1003', a: 'ฝ่ายจัดซื้อ — สำนักงานใหญ่', t: 'Administration', bud: '฿1,450,000', roll: '฿2,090,000', act: '฿1,537,000' },
+      { lv: 'L2', no: 'CC-1102', a: 'ฝ่ายจัดซื้อ — เชียงใหม่', t: 'Administration', bud: '฿640,000', roll: '฿640,000', act: '฿398,000' },
+      { lv: 'L1', no: 'CC-2001', a: 'ฝ่ายบัญชีการเงิน', t: 'Administration', bud: '฿2,100,000', roll: '฿3,450,000', act: '฿2,062,000' },
+      { lv: 'L2', no: 'CC-2002', a: 'แผนกการเงิน', t: 'Administration', bud: '฿1,350,000', roll: '฿1,350,000', act: '฿844,000' },
+      { lv: 'L1', no: 'CC-2101', a: 'ฝ่ายไอที — เชียงใหม่', t: 'Service', bud: '฿3,600,000', roll: '฿3,600,000', act: '฿2,196,000' },
+      { lv: 'L1', no: 'CC-3001', a: 'ฝ่ายโลจิสติกส์', t: 'Service', bud: '฿3,600,000', roll: '฿6,350,000', act: '฿3,940,000' },
+      { lv: 'L2', no: 'CC-3002', a: 'ฝ่ายคลังสินค้า', t: 'Service', bud: '฿2,750,000', roll: '฿2,750,000', act: '฿1,600,000' }
+    ];
+    const treeL1 = treeRows.filter(r => r.lv === 'L1').length, treeL2 = treeRows.length - treeL1;
+    const driverRows = [
+      { no: 'DRV-01', a: 'จำนวนพนักงาน', uom: 'คน', pd: '2026-07', cc: 'CC-1003', val: '18', s: 'ใช้งาน' },
+      { no: 'DRV-02', a: 'จำนวนพนักงาน', uom: 'คน', pd: '2026-07', cc: 'CC-2001', val: '24', s: 'ใช้งาน' },
+      { no: 'DRV-03', a: 'พื้นที่ (ตร.ม.)', uom: 'ตร.ม.', pd: '2026-07', cc: 'CC-3002', val: '2,400', s: 'ใช้งาน' },
+      { no: 'DRV-04', a: 'ชั่วโมงแรงงาน', uom: 'ชม.', pd: '2026-07', cc: 'CC-3001', val: '3,180', s: 'ใช้งาน' },
+      { no: 'DRV-05', a: 'ยอดขาย', uom: 'บาท', pd: '2026-07', cc: 'CC-1001', val: '฿8,420,000', s: 'ใช้งาน' },
+      { no: 'DRV-06', a: 'ยอดขาย', uom: 'บาท', pd: '2026-07', cc: 'CC-1101', val: '—', s: 'รอบันทึก' }
+    ];
+    const drvPending = driverRows.filter(r => r.s === 'รอบันทึก').length;
+    const periodRows = CC_KEYS.map(code => {
+      const closed = { 'CC-2001': ['ว. อนุชา', '2026-07-05'], 'CC-3002': ['ธ. ชัยวัฒน์', '2026-07-03'] }[code];
+      return closed
+        ? { no: code, pd: '2026-06', ps: 'ปิด', by: closed[0], ts: closed[1], s: code === 'CC-3002' ? 'ปิดใช้งาน' : 'ใช้งาน' }
+        : { no: code, pd: '2026-07', ps: 'เปิด', by: '—', ts: '—', s: 'ใช้งาน' };
+    });
+    const pdOpen = periodRows.filter(r => r.ps === 'เปิด').length;
+    const PARENTS = ['—'].concat(Object.keys(PAR_NAME));
+    return {
+      'cc-main': {
+        th: 'ศูนย์ต้นทุน', ic: 'tag',
+        screens: [['list', 'Cost Center List — รายการศูนย์ต้นทุน', 'list'], ['detail', 'Cost Center Detail — รายละเอียดศูนย์ต้นทุน', 'doc'], ['create', 'Create Cost Center — สร้างศูนย์ต้นทุน', 'plus'], ['edit', 'Edit Cost Center — แก้ไขศูนย์ต้นทุน', 'doc']],
+        kpi: [['ศูนย์ต้นทุนทั้งหมด', '10', 'Cost Center', 145], ['ใช้งาน', '9', 'Active', 130], ['งบประมาณรวมปี 69', '฿20.1M', 'Annual Budget', 265], ['ปิดใช้งาน', '1', 'Inactive', 22]],
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อศูนย์ต้นทุน', k: 'a', b: true }, { h: 'ประเภท', k: 't', render: r => P(r.t) }, { h: 'ศูนย์ต้นทุนแม่', k: 'par', render: r => (!r.par || r.par === '—') ? '—' : r.par + ' · ' + (PAR_NAME[r.par] || '') }, { h: 'กลุ่ม', k: 'grp', render: r => r.grp ? r.grp + ' · ' + (GRP_NAME[r.grp] || '') : '—' }, { h: 'บริษัท', k: 'co' }, { h: 'สาขา', k: 'br' }, { h: 'แผนก', k: 'dept' }, { h: 'ผู้รับผิดชอบ', k: 'own' }, { h: 'ลงบัญชี', k: 'pt' }, { h: 'งบประมาณปี', k: 'bud', r: true }],
+        rows: [
+          { no: 'CC-1001', own: 'ก. ธนกร', appr: 'CFO — ณ. วิไล', pt: 'Real', pc: 'PC-01', ab: 'ยอดขาย', ce: '5xxx ค่าใช้จ่ายดำเนินงาน', vf: '2026-01-01', vt: '—', pb: 'ไม่', cb: 'ไม่', lv: 'L1', a: 'ฝ่ายขาย — สำนักงานใหญ่', t: 'Sales', par: '—', grp: 'CCG-03', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่ (สาทร)', dv: 'ฝ่ายขาย', dept: 'แผนกขายในประเทศ', bud: '฿2,400,000', s: 'ใช้งาน' },
+          { no: 'CC-1002', own: 'ก. ธนกร', appr: 'CFO — ณ. วิไล', pt: 'Real', pc: 'PC-01', ab: 'ยอดขาย', ce: '5xxx ค่าใช้จ่ายดำเนินงาน', vf: '2026-01-01', vt: '—', pb: 'ไม่', cb: 'ไม่', lv: 'L2', a: 'แผนกขายต่างประเทศ', t: 'Sales', par: 'CC-1001', grp: 'CCG-03', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่ (สาทร)', dv: 'ฝ่ายขาย', dept: 'แผนกขายต่างประเทศ', bud: '฿1,200,000', s: 'ใช้งาน' },
+          { no: 'CC-1003', own: 'ส. ปรียา', appr: 'CFO — ณ. วิไล', pt: 'Real', pc: 'PC-01', ab: 'จำนวนพนักงาน', ce: '5xxx ค่าใช้จ่ายดำเนินงาน', vf: '2026-01-01', vt: '—', pb: 'ไม่', cb: 'ไม่', lv: 'L1', a: 'ฝ่ายจัดซื้อ — สำนักงานใหญ่', t: 'Administration', par: '—', grp: 'CCG-01', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่ (สาทร)', dv: 'ฝ่ายจัดซื้อ', dept: 'แผนกจัดซื้อในประเทศ', bud: '฿1,450,000', s: 'ใช้งาน' },
+          { no: 'CC-1101', own: 'เจน', appr: 'CFO — ณ. วิไล', pt: 'Real', pc: 'PC-01', ab: 'ยอดขาย', ce: '5xxx ค่าใช้จ่ายดำเนินงาน', vf: '2026-01-01', vt: '—', pb: 'ไม่', cb: 'ไม่', lv: 'L2', a: 'ฝ่ายขาย — เชียงใหม่', t: 'Sales', par: 'CC-1001', grp: 'CCG-03', co: 'บมจ. มี กรุ๊ป', br: 'สาขาเชียงใหม่', dv: 'ฝ่ายขาย', dept: 'แผนกขายในประเทศ', bud: '฿980,000', s: 'ใช้งาน' },
+          { no: 'CC-1102', own: 'คุณรบ', appr: 'CFO — ณ. วิไล', pt: 'Real', pc: 'PC-01', ab: 'จำนวนพนักงาน', ce: '5xxx ค่าใช้จ่ายดำเนินงาน', vf: '2026-01-01', vt: '—', pb: 'ไม่', cb: 'ไม่', lv: 'L2', a: 'ฝ่ายจัดซื้อ — เชียงใหม่', t: 'Administration', par: 'CC-1003', grp: 'CCG-01', co: 'บมจ. มี กรุ๊ป', br: 'สาขาเชียงใหม่', dv: 'ฝ่ายจัดซื้อ', dept: 'แผนกจัดซื้อในประเทศ', bud: '฿640,000', s: 'ใช้งาน' },
+          { no: 'CC-2001', own: 'ว. อนุชา', appr: 'CFO — ณ. วิไล', pt: 'Real', pc: 'PC-02', ab: 'จำนวนพนักงาน', ce: '5xxx ค่าใช้จ่ายดำเนินงาน', vf: '2026-01-01', vt: '—', pb: 'ไม่', cb: 'ไม่', lv: 'L1', a: 'ฝ่ายบัญชีการเงิน', t: 'Administration', par: '—', grp: 'CCG-01', co: 'บจก. มี เทรดดิ้ง', br: 'สำนักงานใหญ่ (ลาดพร้าว)', dv: 'ฝ่ายบัญชีการเงิน', dept: 'แผนกบัญชี', bud: '฿2,100,000', s: 'ใช้งาน' },
+          { no: 'CC-2002', own: 'ว. อนุชา', appr: 'CFO — ณ. วิไล', pt: 'Real', pc: 'PC-02', ab: 'จำนวนพนักงาน', ce: '5xxx ค่าใช้จ่ายดำเนินงาน', vf: '2026-01-01', vt: '—', pb: 'ไม่', cb: 'ไม่', lv: 'L2', a: 'แผนกการเงิน', t: 'Administration', par: 'CC-2001', grp: 'CCG-01', co: 'บจก. มี เทรดดิ้ง', br: 'สำนักงานใหญ่ (ลาดพร้าว)', dv: 'ฝ่ายบัญชีการเงิน', dept: 'แผนกการเงิน', bud: '฿1,350,000', s: 'ใช้งาน' },
+          { no: 'CC-2101', own: 'ม. กมล', appr: 'CFO — ณ. วิไล', pt: 'Real', pc: 'PC-02', ab: 'จำนวนพนักงาน', ce: '5xxx ค่าใช้จ่ายดำเนินงาน', vf: '2026-01-01', vt: '—', pb: 'ไม่', cb: 'ไม่', lv: 'L1', a: 'ฝ่ายไอที — เชียงใหม่', t: 'Service', par: '—', grp: 'CCG-01', co: 'บจก. มี เทรดดิ้ง', br: 'สาขาเชียงใหม่', dv: 'ฝ่ายไอที', dept: 'แผนกโครงสร้างพื้นฐาน', bud: '฿3,600,000', s: 'ใช้งาน' },
+          { no: 'CC-3001', own: 'ธ. ชัยวัฒน์', appr: 'CFO — ณ. วิไล', pt: 'Real', pc: 'PC-03', ab: 'ชั่วโมงแรงงาน', ce: '5xxx ค่าใช้จ่ายดำเนินงาน', vf: '2026-01-01', vt: '—', pb: 'ไม่', cb: 'ไม่', lv: 'L1', a: 'ฝ่ายโลจิสติกส์', t: 'Service', par: '—', grp: 'CCG-04', co: 'บจก. มี โลจิสติกส์', br: 'สำนักงานใหญ่ (บางนา)', dv: 'ฝ่ายโลจิสติกส์', dept: 'แผนกขนส่ง', bud: '฿3,600,000', s: 'ใช้งาน' },
+          { no: 'CC-3002', own: 'ธ. ชัยวัฒน์', appr: 'CFO — ณ. วิไล', pt: 'Real', pc: 'PC-03', ab: 'พื้นที่ (ตร.ม.)', ce: '5xxx ค่าใช้จ่ายดำเนินงาน', vf: '2026-01-01', vt: '2026-12-31', pb: 'ใช่', cb: 'ใช่', lv: 'L2', a: 'ฝ่ายคลังสินค้า', t: 'Service', par: 'CC-3001', grp: 'CCG-04', co: 'บจก. มี โลจิสติกส์', br: 'สำนักงานใหญ่ (บางนา)', dv: 'ฝ่ายคลังสินค้า', dept: 'แผนกคลังสินค้า', bud: '฿2,750,000', s: 'ปิดใช้งาน' }
+        ],
+        form: [
+          ['ข้อมูลศูนย์ต้นทุน', 'tag', [['รหัสศูนย์ต้นทุน', 1, 'CC-NEW'], ['ชื่อศูนย์ต้นทุน', 1, 'เช่น ฝ่ายผลิต — สายการประกอบ'], ['ประเภท', 1, this.CC_TYPES], ['ศูนย์ต้นทุนแม่', 0, PARENTS], ['กลุ่มศูนย์ต้นทุน', 1, GRPS], ['งบประมาณปี', 1, 'เช่น ฿2,400,000']]],
+          ['สังกัดองค์กร (Organizational Elements)', 'box', [['บริษัท', 1, COS], ['สาขา', 1, [].concat(...COS.map(o => this.BR_MAP[o]))], ['ฝ่าย', 1, Object.keys(this.DEPT_MAP)], ['แผนก', 1, [].concat(...Object.values(this.DEPT_MAP))]]],
+          ['ผู้รับผิดชอบและการควบคุม', 'user', [['ผู้รับผิดชอบ (CC Manager)', 1, 'ชื่อผู้รับผิดชอบ'], ['ผู้อนุมัติงบประมาณ', 1, 'ชื่อผู้อนุมัติ'], ['ประเภทการลงบัญชี', 1, ['Real', 'Statistical']], ['ระดับชั้น', 2, ''], ['บล็อกการลงบัญชี', 1, ['ไม่', 'ใช่']], ['บล็อกการเปิด PR', 1, ['ไม่', 'ใช่']]]],
+          ['การปันส่วนและงวดที่มีผล', 'gauge', [['ผูก Profit Center', 1, ['PC-01', 'PC-02', 'PC-03']], ['เกณฑ์ปันส่วน', 1, ['ชั่วโมงแรงงาน', 'ชั่วโมงเครื่องจักร', 'จำนวนพนักงาน', 'พื้นที่ (ตร.ม.)', 'ยอดขาย']], ['ผังบัญชีที่อนุญาต', 0, 'เช่น 5xxx ค่าใช้จ่ายดำเนินงาน'], ['วันที่มีผล', 1, 'YYYY-MM-DD'], ['วันที่สิ้นสุด', 0, 'YYYY-MM-DD หรือ —']]]
+        ],
+        roMap: { 'รหัสศูนย์ต้นทุน': 'no', 'ชื่อศูนย์ต้นทุน': 'a', 'ประเภท': 't', 'ศูนย์ต้นทุนแม่': 'par', 'กลุ่มศูนย์ต้นทุน': 'grp', 'งบประมาณปี': 'bud', 'บริษัท': 'co', 'สาขา': 'br', 'ฝ่าย': 'dv', 'แผนก': 'dept', 'ผู้รับผิดชอบ (CC Manager)': 'own', 'ผู้อนุมัติงบประมาณ': 'appr', 'ประเภทการลงบัญชี': 'pt', 'ระดับชั้น': 'lv', 'บล็อกการลงบัญชี': 'pb', 'บล็อกการเปิด PR': 'cb', 'ผูก Profit Center': 'pc', 'เกณฑ์ปันส่วน': 'ab', 'ผังบัญชีที่อนุญาต': 'ce', 'วันที่มีผล': 'vf', 'วันที่สิ้นสุด': 'vt' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+      'cc-group': {
+        th: 'กลุ่มศูนย์ต้นทุน', ic: 'box',
+        screens: [['list', 'Cost Center Group List — รายการกลุ่มศูนย์ต้นทุน', 'list'], ['detail', 'Cost Center Group Detail — รายละเอียดกลุ่ม', 'doc'], ['create', 'Create Group — สร้างกลุ่ม', 'plus'], ['edit', 'Edit Group — แก้ไขกลุ่ม', 'doc']],
+        kpi: [['กลุ่มทั้งหมด', '4', 'Group', 145], ['ศูนย์ต้นทุนในกลุ่ม', '10', 'Assigned', 130], ['กลุ่มที่ยังไม่มีสมาชิก', '1', 'Empty Group', 35]],
+        cols: [{ h: 'รหัสกลุ่ม', k: 'no', b: true }, { h: 'ชื่อกลุ่ม', k: 'a', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'ผู้รับผิดชอบ', k: 'own' }, { h: 'จำนวนศูนย์ต้นทุน', k: 'cnt', r: true }, { h: 'งบประมาณรวม', k: 'bud', r: true }],
+        rows: [
+          { no: 'CCG-01', a: 'บริหารส่วนกลาง', co: 'บมจ. มี กรุ๊ป', own: 'ก. ธนกร', cnt: '5', bud: '฿9,140,000', s: 'ใช้งาน' },
+          { no: 'CCG-02', a: 'การผลิต', co: 'บมจ. มี กรุ๊ป', own: 'ส. ประเสริฐ', cnt: '0', bud: '฿0', s: 'ใช้งาน' },
+          { no: 'CCG-03', a: 'การขายและการตลาด', co: 'บมจ. มี กรุ๊ป', own: 'ว. อรุณี', cnt: '3', bud: '฿4,580,000', s: 'ใช้งาน' },
+          { no: 'CCG-04', a: 'โลจิสติกส์และคลังสินค้า', co: 'บจก. มี โลจิสติกส์', own: 'ธ. ชัยวัฒน์', cnt: '2', bud: '฿6,350,000', s: 'ใช้งาน' }
+        ],
+        form: [['ข้อมูลกลุ่มศูนย์ต้นทุน', 'box', [['รหัสกลุ่ม', 1, 'CCG-NEW'], ['ชื่อกลุ่ม', 1, 'เช่น การผลิต'], ['บริษัท', 1, COS], ['สาขา', 0, [].concat(...COS.map(o => this.BR_MAP[o]))], ['ผู้รับผิดชอบ', 1, 'ชื่อผู้รับผิดชอบ'], ['คำอธิบาย', 0, 'คำอธิบายกลุ่ม']]]],
+        roMap: { 'รหัสกลุ่ม': 'no', 'ชื่อกลุ่ม': 'a', 'บริษัท': 'co', 'สาขา': 'br', 'ผู้รับผิดชอบ': 'own', 'คำอธิบาย': 'desc' },
+        acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
+      },
+      'cc-tree': {
+        th: 'ผังศูนย์ต้นทุน', ic: 'box',
+        screens: [['list', 'Cost Center Hierarchy — ผังศูนย์ต้นทุนและ Roll-up งบประมาณ', 'list']],
+        kpi: [['ระดับสูงสุด', '2', 'ชั้น', 35], ['ศูนย์ต้นทุนระดับ L1', String(treeL1), 'Top level', 145], ['ศูนย์ต้นทุนระดับ L2', String(treeL2), 'Child', 130], ['งบประมาณรวม (Roll-up)', '฿20.1M', 'Annual', 265]],
+        cols: [{ h: 'ระดับ', k: 'lv' }, { h: 'ศูนย์ต้นทุน', k: 'a', b: true, render: r => h('span', { style: { paddingLeft: (r.lv === 'L2' ? 22 : 0) } }, (r.lv === 'L2' ? '└ ' : '') + r.no + ' · ' + r.a) }, { h: 'ประเภท', k: 't' }, { h: 'งบประมาณเฉพาะตัว', k: 'bud', r: true }, { h: 'งบประมาณรวมลูก (Roll-up)', k: 'roll', r: true }, { h: 'ใช้จริง (YTD)', k: 'act', r: true }],
+        rows: treeRows,
+        acts: ['View', 'Reorder', 'Export', 'Print']
+      },
+      'cc-assign': {
+        th: 'การผูกศูนย์ต้นทุน', ic: 'box',
+        screens: [['list', 'CC Assignment List — รายการผูกแผนกกับศูนย์ต้นทุน', 'list'], ['detail', 'CC Assignment Detail — รายละเอียดการผูก', 'doc'], ['create', 'Create Assignment — สร้างการผูก', 'plus'], ['edit', 'Edit Assignment — แก้ไขการผูก', 'doc']],
+        kpi: [['แผนกทั้งหมด', String(assignRows.length), 'Department', 145], ['ผูกแล้ว', String(assignRows.length - pending), 'Assigned', 130], ['รอผูก', String(pending), 'Pending', 35], ['ผู้ดูแล', 'Controller', 'Owner', 265]],
+        cols: [{ h: 'รหัสแผนก', k: 'no', b: true }, { h: 'ชื่อแผนก', k: 'a', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'สาขา', k: 'br' }, { h: 'ฝ่าย', k: 'dv' }, { h: 'ศูนย์ต้นทุนเริ่มต้น', k: 'cc', render: r => r.cc ? r.cc + ' · ' + (CC_LOOKUP[r.cc] || '') : K.pill(T, 'ยังไม่ผูก', 35) }, { h: 'CC ที่อนุญาตเพิ่ม', k: 'ccAlt' }],
+        rows: assignRows,
+        form: [
+          ['แผนก (ดูอย่างเดียว — แก้ที่ ITSA-ORG › ข้อมูลแผนก)', 'box', [['รหัสแผนก', 2, ''], ['ชื่อแผนก', 2, ''], ['บริษัท', 2, ''], ['สาขา', 2, ''], ['ฝ่าย', 2, '']]],
+          ['ศูนย์ต้นทุนที่รับผิดชอบ', 'cash', [['ศูนย์ต้นทุนเริ่มต้น', 1, CC_KEYS], ['CC ที่อนุญาตเพิ่ม', 0, 'เช่น CC-2002, CC-1003 (คั่นด้วย ,)'], ['เหตุผลการเปลี่ยน', 0, 'ระบุเหตุผลเพื่อบันทึก Audit Trail']]]
+        ],
+        roMap: { 'รหัสแผนก': 'no', 'ชื่อแผนก': 'a', 'บริษัท': 'co', 'สาขา': 'br', 'ฝ่าย': 'dv', 'ศูนย์ต้นทุนเริ่มต้น': 'cc', 'CC ที่อนุญาตเพิ่ม': 'ccAlt', 'เหตุผลการเปลี่ยน': 'rsn' },
+        acts: ['Assign', 'Update', 'Export']
+      },
+      'cc-driver': {
+        th: 'ตัวขับเกณฑ์ปันส่วน', ic: 'gauge',
+        screens: [['list', 'Allocation Driver List — รายการตัวขับเกณฑ์ปันส่วน', 'list'], ['detail', 'Allocation Driver Detail — รายละเอียด', 'doc'], ['create', 'Create Driver — บันทึกค่าสถิติ', 'plus'], ['edit', 'Edit Driver — แก้ไขค่าสถิติ', 'doc']],
+        kpi: [['ตัวขับทั้งหมด', String(driverRows.length), 'Driver', 145], ['บันทึกค่าแล้ว', String(driverRows.length - drvPending), 'Recorded', 130], ['งวดล่าสุด', '2026-07', 'Period', 265], ['ค่าที่ยังไม่บันทึก', String(drvPending), 'Missing', 35]],
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'เกณฑ์ปันส่วน', k: 'a', b: true }, { h: 'หน่วยนับ', k: 'uom' }, { h: 'งวด', k: 'pd' }, { h: 'ศูนย์ต้นทุน', k: 'cc', render: r => r.cc ? r.cc + ' · ' + (CC_LOOKUP[r.cc] || '') : '—' }, { h: 'ค่าสถิติ', k: 'val', r: true }],
+        rows: driverRows,
+        form: [['ค่าสถิติสำหรับปันส่วน', 'gauge', [['รหัส', 0, 'DRV-NEW'], ['เกณฑ์ปันส่วน', 1, ['ชั่วโมงแรงงาน', 'ชั่วโมงเครื่องจักร', 'จำนวนพนักงาน', 'พื้นที่ (ตร.ม.)', 'ยอดขาย']], ['หน่วยนับ', 1, ['คน', 'ชม.', 'ตร.ม.', 'บาท']], ['งวด', 1, 'YYYY-MM'], ['ศูนย์ต้นทุน', 1, CC_KEYS], ['ค่าสถิติ', 1, 'เช่น 18']]]],
+        roMap: { 'รหัส': 'no', 'เกณฑ์ปันส่วน': 'a', 'หน่วยนับ': 'uom', 'งวด': 'pd', 'ศูนย์ต้นทุน': 'cc', 'ค่าสถิติ': 'val' },
+        acts: ['Create', 'Update', 'Delete', 'Import', 'Export']
+      },
+      'cc-period': {
+        th: 'ควบคุมงวด', ic: 'scale',
+        screens: [['list', 'Period Control List — สถานะงวดลงบัญชีต่อศูนย์ต้นทุน', 'list'], ['detail', 'Period Control Detail — รายละเอียดงวด', 'doc'], ['edit', 'Edit Period — เปิด/ปิดงวด', 'doc']],
+        kpi: [['งวดปัจจุบัน', '2026-07', 'Period', 265], ['ศูนย์ต้นทุนทั้งหมด', String(periodRows.length), 'Cost Center', 145], ['เปิดอยู่', String(pdOpen), 'Open', 130], ['ปิดแล้ว', String(periodRows.length - pdOpen), 'Closed', 22]],
+        cols: [{ h: 'ศูนย์ต้นทุน', k: 'no', b: true, render: r => r.no + ' · ' + (CC_LOOKUP[r.no] || '') }, { h: 'งวด', k: 'pd' }, { h: 'สถานะงวด', k: 'ps', render: r => K.pill(T, r.ps, r.ps === 'เปิด' ? 130 : 22) }, { h: 'ผู้ปิดงวด', k: 'by' }, { h: 'วันที่ปิด', k: 'ts' }],
+        rows: periodRows,
+        form: [['การควบคุมงวด', 'scale', [['ศูนย์ต้นทุน', 2, ''], ['งวด', 1, 'YYYY-MM'], ['สถานะงวด', 1, ['เปิด', 'ปิด']], ['ผู้ปิดงวด', 0, 'ชื่อผู้ปิดงวด'], ['วันที่ปิด', 0, 'YYYY-MM-DD']]]],
+        roMap: { 'ศูนย์ต้นทุน': 'no', 'งวด': 'pd', 'สถานะงวด': 'ps', 'ผู้ปิดงวด': 'by', 'วันที่ปิด': 'ts' },
+        acts: ['Open Period', 'Close Period', 'Export']
+      },
+      'cc-sub': {
+        th: 'วิเคราะห์ต้นทุน', ic: 'gauge',
+        screens: [['list', 'Cost Analysis — วิเคราะห์ต้นทุนศูนย์ต้นทุน', 'list']],
+        kpi: [['งบประมาณรวม', '฿20.1M', 'Annual', 265], ['ใช้จริง (YTD)', '฿12.4M', '61.7%', 145], ['คงเหลือ', '฿7.7M', '38.3%', 200], ['เกินงบ', '1', 'Cost Center', 22]],
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ศูนย์ต้นทุน', k: 'a', b: true }, { h: 'แผนก', k: 'dept' }, { h: 'งบประมาณ', k: 'bud', r: true }, { h: 'ใช้จริง (YTD)', k: 'act', r: true }, { h: 'คงเหลือ', k: 'rem', r: true }, { h: '% ใช้ไป', k: 'pct', r: true }],
+        rows: [
+          { no: 'CC-1001', a: 'ฝ่ายขาย — สำนักงานใหญ่', dept: 'แผนกขายในประเทศ', bud: '฿2,400,000', act: '฿1,368,000', rem: '฿1,032,000', pct: '57.0%', s: 'ปกติ' },
+          { no: 'CC-1002', a: 'แผนกขายต่างประเทศ', dept: 'แผนกขายต่างประเทศ', bud: '฿1,200,000', act: '฿792,000', rem: '฿408,000', pct: '66.0%', s: 'ปกติ' },
+          { no: 'CC-1003', a: 'ฝ่ายจัดซื้อ — สำนักงานใหญ่', dept: 'แผนกจัดซื้อในประเทศ', bud: '฿1,450,000', act: '฿1,537,000', rem: '-฿87,000', pct: '106.0%', s: 'เกินงบ' },
+          { no: 'CC-2001', a: 'ฝ่ายบัญชีการเงิน', dept: 'แผนกบัญชี', bud: '฿2,100,000', act: '฿1,218,000', rem: '฿882,000', pct: '58.0%', s: 'ปกติ' },
+          { no: 'CC-2101', a: 'ฝ่ายไอที — เชียงใหม่', dept: 'แผนกโครงสร้างพื้นฐาน', bud: '฿3,600,000', act: '฿2,196,000', rem: '฿1,404,000', pct: '61.0%', s: 'ปกติ' },
+          { no: 'CC-3001', a: 'ฝ่ายโลจิสติกส์', dept: 'แผนกขนส่ง', bud: '฿3,600,000', act: '฿2,340,000', rem: '฿1,260,000', pct: '65.0%', s: 'ปกติ' }
+        ]
+      }
+    };
+  }
+  statusHue(s) { return ({ 'ใช้งาน': 130, 'ปิดใช้งาน': 22, 'ปกติ': 130, 'เกินงบ': 22, 'รอผูก': 35 })[s] || 130; }
+  STATUS_OPTS = ['ใช้งาน', 'ปิดใช้งาน'];
+
+  curNav() { return this.props.nav || this.state.nav; }
+  _setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: 'list', mode: 'view', edit: null, sel: null }); }
+  setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
+  dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
+  curScr() { return this.props.scr || this.state.scr; }
+  curMode() { return this.state.mode; }
+  isDirty() { const m = this.curMode(); return m === 'create' || m === 'edit'; }
+  enterCreate() { this.setState({ mode: 'create', edit: null, draft: {} }); this._goScr('create'); }
+  enterEdit(r) { this.setState({ mode: 'edit', edit: r, sel: r, draft: {} }); this._goScr('edit'); }
+  askConfirm(run) { this.setState({ confirm: run }); }
+  _goScr(v) { if (this.props.onScr) this.props.onScr(v); else this.setState({ scr: v }); }
+  goScr(v) { if (this.isDirty() && v !== 'detail' && v !== 'create' && v !== 'edit') { this.askConfirm(() => this._goScr(v)); return; } this._goScr(v); }
+  setScr(v) { this.goScr(v); }
+  doSave() {
+    const key = this.curNav();
+    const cfg = this.CFG()[key];
+    const er = this.state.edit;
+    const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
+    const dr = this.state.draft || {}, pre = mode + '|';
+    const base = er ? Object.assign({}, er) : Object.assign({}, (cfg.rows || [])[0]);
+    if (cfg.roMap && cfg.form) cfg.form.forEach(sc => sc[2].forEach(fld => { const lb = fld[0], mm = cfg.roMap[lb], v = dr[pre + lb]; if (v !== undefined && v !== '') { if (typeof mm === 'string') base[mm] = v; base['_f:' + lb] = v; } }));
+    const stV = dr[pre + 'สถานะ']; if (stV !== undefined && stV !== '') base.s = stV;
+    if (key === 'cc-assign') {
+      const b = this.bus();
+      if (b) { const cur = Object.assign({}, b.get('cc.assign', {})); cur[base.no] = base.cc || ''; cur['alt:' + base.no] = base.ccAlt || ''; b.set('cc.assign', cur); }
+      this.setState({ draft: {}, mode: 'view', sel: base, edit: null });
+      this.toast(base.cc ? ('ผูก ' + base.no + ' → ' + base.cc + ' แล้ว') : ('ยกเลิกการผูกของ ' + base.no));
+      return;
+    }
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = er ? cur.map(x => (x === er || (x.no != null && x.no === er.no)) ? base : x) : [base, ...cur]; return { db, draft: {}, mode: 'view', sel: base, edit: null }; });
+    this.toast(er ? 'บันทึกการแก้ไขแล้ว' : 'บันทึกเรียบร้อย');
+  }
+  confirmSave() { const r = this.state.confirm; this.doSave(); this.setState({ confirm: null, scr: 'detail' }, () => r && r()); }
+  confirmDiscard() { const r = this.state.confirm; this.setState({ confirm: null, draft: {}, mode: 'view', edit: null, scr: 'list' }, () => r && r()); this.toast('ยกเลิกการเปลี่ยนแปลง'); }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
+    const scr = this.curScr();
+    const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const _cbM = (this.K && this.K.liveCoBr) ? this.K.liveCoBr() : { COS: [], BR_MAP: {} };
+    const PROC_COMPANIES = _cbM.COS;
+    const PROC_BR_MAP = _cbM.BR_MAP;
+    const coSel = this.props.filterCo || this.state.filterCo || ((this.props.api && this.props.api.userCo && PROC_COMPANIES.indexOf(this.props.api.userCo) > -1) ? [this.props.api.userCo] : PROC_COMPANIES.slice());
+    const coAll = coSel.length === PROC_COMPANIES.length;
+    const brOpts = Array.from(new Set([].concat(...(coAll ? PROC_COMPANIES : coSel).map(o => PROC_BR_MAP[o] || []))));
+    const brSel = (this.props.filterBr || this.state.filterBr || ['สำนักงานใหญ่ (สาทร)']).filter(o => brOpts.indexOf(o) > -1);
+    const brSelFinal = brSel.length ? brSel : brOpts;
+    const brAll = brSelFinal.length === brOpts.length;
+    const rows = this.dbRows(nav, cfg.rows || []);
+    const selRow = this.state.sel || rows[0] || null;
+    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'ACTIONS'), list.map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+    let body;
+    if (scr === 'create' || scr === 'edit') {
+      const er = scr === 'edit' ? this.state.edit : null;
+      const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
+      const dr = this.state.draft || {}, pre = mode + '|';
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, er ? (er.a || er.no) : 'สร้างรายการใหม่'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, er ? 'โหมดแก้ไข (Edit)' : 'โหมดสร้างใหม่ (New)')), K.btn(T, 'กลับ', false, 'doc', () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }))], { marginBottom: 14, padding: '12px 16px' });
+      const secs = cfg.form.map(([title, ic, fields]) => { const coFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'co'); const brFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'br'); return K.formSec(T, title, ic, fields.map(([lb, ty, opt]) => {
+        const m = cfg.roMap && cfg.roMap[lb];
+        const ev = er ? (er['_f:' + lb] !== undefined ? er['_f:' + lb] : (m ? er[m] : null)) : null;
+        const dk = pre + lb;
+        const cur = dr[dk] !== undefined ? dr[dk] : (ev != null ? ev : '');
+        const ORG_MAP = { br: this.BR_MAP, dv: this.DV_MAP, dept: this.DEPT_MAP };
+        const PARENT_OF = { br: 'co', dv: 'br', dept: 'dv' }, CHILD_OF = { co: ['br', 'dv', 'dept'], br: ['dv', 'dept'], dv: ['dept'] };
+        const fieldOf = (mm) => fields.find(f2 => cfg.roMap && cfg.roMap[f2[0]] === mm);
+        const valOf = (mm) => { const fx = fieldOf(mm); if (!fx) return ''; const d2 = dr[pre + fx[0]]; if (d2 !== undefined) return d2; const e2 = er ? (er['_f:' + fx[0]] !== undefined ? er['_f:' + fx[0]] : er[mm]) : null; return e2 != null ? e2 : ''; };
+        let effOpt = opt;
+        if (ORG_MAP[m] && Array.isArray(opt)) { const pv = valOf(PARENT_OF[m]); effOpt = (pv && ORG_MAP[m][pv]) ? ORG_MAP[m][pv] : opt; }
+        if (m === 'par' && er && Array.isArray(effOpt)) { const all = this.dbRows(nav, cfg.rows || []); const kids = all.filter(x => x.par === er.no).map(x => x.no); effOpt = effOpt.filter(o => o !== er.no && kids.indexOf(o) < 0); }
+        const onCh = e => { const v = e.target.value; this.setState(s => { const d = Object.assign({}, s.draft, { [dk]: v }); (CHILD_OF[m] || []).forEach(km => { const fx = fieldOf(km); if (fx) d[pre + fx[0]] = ''; }); return { draft: d }; }); };
+        const node = ty === 2 ? K.roField(T, cur || '—') : Array.isArray(opt)
+          ? h('select', { value: cur || '', onChange: onCh, style: Object.assign({}, K.inp(T), { cursor: 'pointer' }) }, [h('option', { key: '_', value: '' }, '— เลือก —'), ...effOpt.map(o => h('option', { key: o, value: o }, o))])
+          : h('input', { placeholder: typeof opt === 'string' ? opt : '', value: cur, onChange: onCh, style: K.inp(T) });
+        return K.field(T, lb, node, ty === 1);
+      })); });
+      const save = K.btn(T, 'บันทึก', true, 'check', () => { this.doSave(); this.goScr('detail'); });
+      const stDk = pre + 'สถานะ';
+      const stCur = dr[stDk] !== undefined ? dr[stDk] : (er ? (er.s || 'ใช้งาน') : 'ใช้งาน');
+      const statusFormEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, stCur, this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPTS.map(o => h('option', { key: o, value: o }, o)))))], { marginBottom: 14, padding: '12px 16px' });
+      body = [hdr, ...secs, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts || ['Export'])];
+    } else if (scr === 'detail' && cfg.roMap) {
+      const r = selRow;
+      if (!r) { this.setScr('list'); body = [null]; }
+      else {
+        const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.a || r.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only)')), h('div', { style: { display: 'flex', gap: 7, flexWrap: 'wrap' } }, K.btn(T, 'พิมพ์', false, 'doc', () => this.toast('พิมพ์')), K.btn(T, 'แก้ไข', true, 'doc', () => this.enterEdit(r)), K.btn(T, 'สร้างใหม่', false, 'plus', () => this.enterCreate())))], { marginBottom: 14, padding: '12px 16px' });
+        const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb]) => { const m = cfg.roMap[lb]; const ov = r['_f:' + lb]; const val = ov !== undefined ? ov : (m ? r[m] : ''); return K.field(T, lb, K.roField(T, val)); })));
+        const curSt = r.s || 'ใช้งาน';
+        const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือโหมดสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, curSt, this.statusHue(curSt))))], { marginBottom: 14, padding: '12px 16px' });
+        body = [hdr, ...secs, K.formSec(T, '\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e23\u0e30\u0e1a\u0e1a (System Info)', 'gauge', [K.field(T, '\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e40\u0e21\u0e37\u0e48\u0e2d (CreatedAt)', K.roField(T, ((v)=>{try{return v?new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}):'\u2014';}catch(e){return String(v);}})(r.createdAt||r.created_at))), K.field(T, '\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e42\u0e14\u0e22 (CreatedBy)', K.roField(T, r.createdBy||r.created_by||'\u2014')), K.field(T, '\u0e41\u0e01\u0e49\u0e44\u0e02\u0e25\u0e48\u0e32\u0e2a\u0e38\u0e14 (UpdatedAt)', K.roField(T, ((v)=>{try{return v?new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}):'\u2014';}catch(e){return String(v);}})(r.updatedAt||r.updated_at))), K.field(T, '\u0e41\u0e01\u0e49\u0e44\u0e02\u0e42\u0e14\u0e22 (UpdatedBy)', K.roField(T, r.updatedBy||r.updated_by||'\u2014'))]), statusEditor, actLegend(cfg.acts || ['Export'])];
+      }
+    } else {
+      const canEdit = !!(cfg.form && cfg.roMap);
+      const canCreate = canEdit && (cfg.screens || []).some(sc => sc[0] === 'create');
+      const openDetail = (r) => { this.setState({ sel: r }); this.goScr('detail'); };
+      const statusCol = { h: 'สถานะ', render: r => K.pill(T, r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) };
+      const baseCols = cfg.cols.some(cc => cc.h === 'สถานะ') ? cfg.cols : cfg.cols.concat([statusCol]);
+      const cols = canEdit ? baseCols.concat([{ h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู'), h('button', { onClick: e => { e.stopPropagation(); this.enterEdit(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'แก้ไข')) }]) : baseCols;
+      const sortSt = this.state.sort || { key: 'no', dir: 'asc' };
+      const setSort = (key) => this.setState(s => { const cur = s.sort || { key: 'no', dir: 'asc' }; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: { key, dir } }; });
+      const sortedRows = sortSt.key ? rows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); }) : rows;
+      body = [cfg.kpi ? K.kpi(T, cfg.kpi) : null, K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.no || selRow.a) : null, (cfg.th || nav), canCreate && K.btn(T, 'สร้างใหม่', true, 'plus', () => this.enterCreate())), actLegend(cfg.acts || ['Export'])];
+    }
+
+    const controlled = typeof this.props.onScr === 'function';
+    const modal = this.state.confirm ? h('div', { key: 'cf', style: controlled ? { position: 'fixed', top: 38, left: 0, right: 0, bottom: 0, zIndex: 100000, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } : { position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+      h('div', { style: { background: c.dark ? 'oklch(0.23 0.014 265)' : '#fff', borderRadius: 14, border: `1px solid ${c.border}`, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: 400, maxWidth: '100%', padding: '22px 24px', fontFamily: c.font, color: c.text } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } }, h('span', { style: { width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('doc', 18)), h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'บันทึกการเปลี่ยนแปลง?')),
+        h('div', { style: { fontSize: 12.5, color: sub, lineHeight: 1.6, marginBottom: 18 } }, 'คุณกำลัง' + (this.state.edit ? 'แก้ไข' : 'สร้าง') + 'รายการและยังไม่ได้บันทึก ต้องการบันทึกก่อนออกจากหน้านี้หรือไม่?'),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' } }, K.btn(T, 'ยกเลิก', false, null, () => this.setState({ confirm: null })), K.btn(T, 'ไม่บันทึก', false, null, () => this.confirmDiscard()), K.btn(T, 'บันทึก', true, 'check', () => this.confirmSave())))) : null;
+    if (controlled) return { fg: c.text, view: h('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column' } }, h('div', { style: { display: 'flex', flexDirection: 'column' } }, body), modal) };
+
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const collapsed = !!this.state.sideCollapsed;
+    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'tag']);
+    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
+      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th)); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const tabsEl = h('div', { style: { display: 'flex', gap: 6, rowGap: 0, flexWrap: 'wrap', borderBottom: `1px solid ${border}` } }, cfg.screens.filter(([id]) => id === 'create' ? this.curMode() === 'create' : id === 'edit' ? this.curMode() === 'edit' : true).map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb;
+      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const filterDd = (() => {
+      const ddOpenId = this.state.openDd || null;
+      const ddToggle = (id) => this.setState(s => ({ openDd: s.openDd === id ? null : id }));
+      const ddWrap = (id, label, active, content) => h('div', { key: 'dd-' + id, style: { position: 'relative', display: 'flex' } },
+        h('button', { type: 'button', onClick: () => ddToggle(id), style: { display: 'flex', alignItems: 'center', gap: 7, height: 30, width: '100%', fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 8, border: `1px solid ${c.border}`, background: active ? c.accSoft : c.win, color: active ? aTxt : c.text, cursor: 'pointer', fontFamily: c.font, whiteSpace: 'nowrap' } },
+          h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' } }, label), h('span', { style: { display: 'flex', color: sub } }, K.Icon('arrowdown', 13))),
+        ddOpenId === id ? h('div', { key: 'bd', onClick: () => this.setState({ openDd: null }), style: { position: 'fixed', inset: 0, zIndex: 199 } }) : null,
+        ddOpenId === id ? h('div', { key: 'pop', onClick: e => e.stopPropagation(), style: { position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', background: c.win, border: `1px solid ${c.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,20,35,.18)', padding: 6 } }, content) : null);
+      const coLabel = coAll ? 'บริษัท: ทั้งหมด' : (coSel.length === 1 ? coSel[0] : 'บริษัท (' + coSel.length + ')');
+      const coContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+        h('input', { type: 'checkbox', checked: coAll, ref: el => { if (el) el.indeterminate = coSel.length > 0 && !coAll; }, onChange: () => this.setState({ filterCo: coAll ? [] : PROC_COMPANIES.slice(), filterBr: [] }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+        .concat(PROC_COMPANIES.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: coSel.indexOf(o) > -1, onChange: () => { const next = coSel.indexOf(o) > -1 ? coSel.filter(x => x !== o) : coSel.concat([o]); this.setState({ filterCo: next, filterBr: [] }); }, style: { cursor: 'pointer' } }), h('span', null, o))));
+      const brLabel = brAll ? 'สาขา: ทั้งหมด' : (brSelFinal.length === 1 ? brSelFinal[0] : 'สาขา (' + brSelFinal.length + ')');
+      const brContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+        h('input', { type: 'checkbox', checked: brAll, ref: el => { if (el) el.indeterminate = brSelFinal.length > 0 && !brAll; }, onChange: () => this.setState({ filterBr: brAll ? [] : brOpts.slice() }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+        .concat(brOpts.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: brSelFinal.indexOf(o) > -1, onChange: () => { const next = brSelFinal.indexOf(o) > -1 ? brSelFinal.filter(x => x !== o) : brSelFinal.concat([o]); this.setState({ filterBr: next }); }, style: { cursor: 'pointer' } }), h('span', null, o))));
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, width: '100%' } }, ddWrap('co', coLabel, !coAll, coContent), ddWrap('br', brLabel, !brAll, brContent));
+    })();
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('tag', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('tag', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'ระบบบัญชีศูนย์ต้นทุน (CC)')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns),
+        !collapsed ? h('div', { style: { flexShrink: 0, paddingTop: 10, marginTop: 6, borderTop: `1px solid ${border}` } }, filterDd) : null),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
+          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px', flexWrap: 'nowrap', position: 'relative' } }, h('div', { style: { minWidth: 0, overflow: 'hidden' } }, h('div', { style: { fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'L1 · ระบบบัญชีและการเงิน (ACCT)  ›  L2 · ระบบบัญชีศูนย์ต้นทุน (CC)  ›  L3 · ' + cfg.th)), h('div', { style: { flex: 1, minWidth: 12 } })),
+          h('div', { style: { padding: '0 14px' } }, tabsEl)),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view, modal) };
+  }
+}
+
+</script>
+</body>
+</html>

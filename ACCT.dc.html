@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'IBM Plex Sans Thai','Inter',system-ui,sans-serif;}
+</style>
+</helmet>
+<div style="display:flex;height:100vh;min-height:0;background:{{ bg }};color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">
+  <aside style="width:230px;flex-shrink:0;border-right:1px solid {{ border }};background:{{ panel }};display:flex;flex-direction:column;min-height:0;">
+    <div style="padding:16px 16px 12px;border-bottom:1px solid {{ border }};">
+      <div style="font-size:9.5px;font-weight:700;letter-spacing:.6px;color:{{ acc }};">L1 · ACCT</div>
+      <div style="font-size:14.5px;font-weight:800;margin-top:3px;letter-spacing:-.2px;">ระบบบัญชีและการเงิน</div>
+      <div style="font-size:10.5px;color:{{ sub }};margin-top:2px;">Accounting Management System</div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:8px;min-height:0;">
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+        <div style="margin:6px 6px 2px;">
+          <span style="font-size:9px;font-weight:700;letter-spacing:.4px;padding:2px 7px;border-radius:5px;background:{{ g.badgeBg }};color:{{ g.badgeFg }};">{{ g.label }}</span>
+        </div>
+        <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="4">
+          <button onClick="{{ it.onClick }}" style="{{ it.style }}">
+            <span style="font-size:12.5px;font-weight:{{ it.weight }};">{{ it.th }}</span>
+            <span style="display:flex;align-items:center;gap:6px;">
+              <sc-if value="{{ it.dis }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:8px;font-weight:700;letter-spacing:.4px;padding:2px 5px;border-radius:5px;background:#e5484d;color:#fff;">ปิด</span>
+              </sc-if>
+              <sc-if value="{{ it.hid }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:8px;font-weight:700;letter-spacing:.4px;padding:2px 5px;border-radius:5px;background:{{ border }};color:{{ sub }};">HIDDEN</span>
+              </sc-if>
+              <span style="font-size:9.5px;font-weight:700;color:{{ it.abbrColor }};">{{ it.abbr }}</span>
+            </span>
+          </button>
+        </sc-for>
+      </sc-for>
+    </div>
+  </aside>
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;">
+    <sc-if value="{{ is_gl }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-GL" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.gl.onCatalog }}" on-mode="{{ handlers.gl.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_ap }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-AP" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.ap.onCatalog }}" on-mode="{{ handlers.ap.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_ar }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-AR" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.ar.onCatalog }}" on-mode="{{ handlers.ar.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_cash }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-CASH" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.cash.onCatalog }}" on-mode="{{ handlers.cash.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_bank }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-BANK" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.bank.onCatalog }}" on-mode="{{ handlers.bank.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_fa }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-FA" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.fa.onCatalog }}" on-mode="{{ handlers.fa.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_budg }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-BUDG" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.budg.onCatalog }}" on-mode="{{ handlers.budg.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_cost }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-COST" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.cost.onCatalog }}" on-mode="{{ handlers.cost.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_tax }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-TAX" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.tax.onCatalog }}" on-mode="{{ handlers.tax.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_close }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-CLOSE" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.close.onCatalog }}" on-mode="{{ handlers.close.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_cons }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-CONS" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.cons.onCatalog }}" on-mode="{{ handlers.cons.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_curr }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-CURR" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.curr.onCatalog }}" on-mode="{{ handlers.curr.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_alloc }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-ALLOC" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.alloc.onCatalog }}" on-mode="{{ handlers.alloc.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_cc }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-CC" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.cc.onCatalog }}" on-mode="{{ handlers.cc.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_pc }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-PC" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.pc.onCatalog }}" on-mode="{{ handlers.pc.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_jv }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-JV" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.jv.onCatalog }}" on-mode="{{ handlers.jv.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_fs }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-FS" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.fs.onCatalog }}" on-mode="{{ handlers.fs.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_einv }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-EINV" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.einv.onCatalog }}" on-mode="{{ handlers.einv.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_epay }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-EPAY" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.epay.onCatalog }}" on-mode="{{ handlers.epay.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_ebank }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-EBANK" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.ebank.onCatalog }}" on-mode="{{ handlers.ebank.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_loan }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-LOAN" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.loan.onCatalog }}" on-mode="{{ handlers.loan.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_treas }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-TREAS" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.treas.onCatalog }}" on-mode="{{ handlers.treas.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_lease }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-LEASE" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.lease.onCatalog }}" on-mode="{{ handlers.lease.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_intc }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-INTC" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.intc.onCatalog }}" on-mode="{{ handlers.intc.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_bi }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-BI" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.bi.onCatalog }}" on-mode="{{ handlers.bi.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_rpta }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ACCT-RPTA" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.rpta.onCatalog }}" on-mode="{{ handlers.rpta.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ hasConfirm }}" hint-placeholder-val="{{ false }}">
+      <div style="position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.32);display:flex;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:{{ panel }};border-radius:14px;border:1px solid {{ border }};box-shadow:0 20px 60px rgba(0,0,0,0.25);width:400px;max-width:100%;padding:22px 24px;">
+          <div style="font-size:15.5px;font-weight:800;margin-bottom:10px;">ออกจากหน้านี้โดยไม่บันทึก?</div>
+          <div style="font-size:12.5px;color:{{ sub }};line-height:1.6;margin-bottom:18px;">โมดูล {{ confirmFromTh }} มีการแก้ไขที่ยังไม่ได้บันทึก การสลับไปยัง {{ confirmToTh }} จะละทิ้งการเปลี่ยนแปลงนี้</div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button onClick="{{ cancelSwitch }}" style="padding:8px 16px;border-radius:9px;border:1px solid {{ border }};background:{{ panel }};color:{{ fg }};font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">ยกเลิก</button>
+            <button onClick="{{ confirmSwitchAction }}" style="padding:8px 16px;border-radius:9px;border:none;background:{{ acc }};color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;">ไม่บันทึกและสลับ</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+class Component extends DCLogic {
+  state = { active: 'acct-gl', catalogs: {}, modes: {}, confirm: null };
+  MODKEYS = { 'acct-gl':'gl','acct-ap':'ap','acct-ar':'ar','acct-cash':'cash','acct-bank':'bank','acct-fa':'fa','acct-budg':'budg','acct-cost':'cost','acct-tax':'tax','acct-close':'close','acct-cons':'cons','acct-curr':'curr','acct-alloc':'alloc','acct-cc':'cc','acct-pc':'pc','acct-jv':'jv','acct-fs':'fs','acct-einv':'einv','acct-epay':'epay','acct-ebank':'ebank','acct-loan':'loan','acct-treas':'treas','acct-lease':'lease','acct-intc':'intc','acct-bi':'bi','acct-rpta':'rpta' };
+  BUILT = ['acct-gl','acct-ap','acct-ar','acct-cash','acct-bank','acct-fa','acct-budg','acct-cost','acct-tax','acct-close','acct-cons','acct-curr','acct-alloc','acct-cc','acct-pc','acct-jv','acct-fs','acct-einv','acct-epay','acct-ebank','acct-loan','acct-treas','acct-lease','acct-intc','acct-bi','acct-rpta'];
+  _handlers = {};
+  mkHandlers(key) {
+    if (this._handlers[key]) return this._handlers[key];
+    const h = {
+      onCatalog: (cat) => this.setState(s => ({ catalogs: Object.assign({}, s.catalogs, { [key]: cat }) })),
+      onMode: (m) => this.setState(s => ({ modes: Object.assign({}, s.modes, { [key]: m }) })),
+    };
+    this._handlers[key] = h;
+    return h;
+  }
+  requestSwitch(id) {
+    if (id === this.state.active) return;
+    const curKey = this.MODKEYS[this.state.active];
+    const dirty = curKey && (this.state.modes[curKey] === 'create' || this.state.modes[curKey] === 'edit');
+    if (dirty) this.setState({ confirm: id }); else this.setState({ active: id });
+  }
+  confirmSwitch() { const id = this.state.confirm; this.setState({ active: id, confirm: null }); }
+  cancelSwitch() { this.setState({ confirm: null }); }
+
+  // ---- ACCT submodule registry (mirrors Shell's MODULES/ACCT_GEN) ----
+  SUBS() {
+    return [
+      ['acct-gl','GL','ระบบบัญชีแยกประเภททั่วไป','core',false,false],
+      ['acct-ap','AP','ระบบเจ้าหนี้การค้า','core',false,false],
+      ['acct-ar','AR','ระบบลูกหนี้การค้า','core',false,false],
+      ['acct-cash','CASH','ระบบบริหารเงินสด','core',false,false],
+      ['acct-bank','BANK','ระบบบริหารบัญชีธนาคาร','core',false,false],
+      ['acct-fa','FA','ระบบสินทรัพย์ถาวร','core',false,false],
+      ['acct-budg','BUDG','ระบบบริหารงบประมาณ','core',false,false],
+      ['acct-cost','COST','ระบบบัญชีต้นทุน','core',false,false],
+      ['acct-tax','TAX','ระบบบริหารภาษี','core',false,false],
+      ['acct-close','CLOSE','ระบบปิดบัญชี','core',false,false],
+      ['acct-cons','CONS','ระบบงบการเงินรวม','core',false,false],
+      ['acct-curr','CURR','ระบบบริหารหลายสกุลเงิน','core',false,false],
+      ['acct-alloc','ALLOC','ระบบปันส่วนต้นทุน','core',false,false],
+      ['acct-cc','CC','ระบบบัญชีศูนย์ต้นทุน','core',false,false],
+      ['acct-pc','PC','ระบบบัญชีศูนย์กำไร','core',false,false],
+      ['acct-jv','JV','ระบบสมุดรายวัน','core',false,false],
+      ['acct-fs','FS','ระบบงบการเงิน','core',false,false],
+      ['acct-einv','EINV','ระบบใบกำกับภาษีอิเล็กทรอนิกส์','ext',false,false],
+      ['acct-epay','EPAY','ระบบชำระเงินอิเล็กทรอนิกส์','ext',false,false],
+      ['acct-ebank','EBANK','ระบบเชื่อมต่อธนาคาร','ext',false,false],
+      ['acct-loan','LOAN','ระบบบริหารเงินกู้','ext',false,false],
+      ['acct-treas','TREAS','ระบบบริหารเงินทุน','ext',false,false],
+      ['acct-lease','LEASE','ระบบบัญชีสัญญาเช่า','ext',false,false],
+      ['acct-intc','INTC','ระบบบัญชีระหว่างบริษัท','ext',false,false],
+      ['acct-bi','BI','ระบบวิเคราะห์ข้อมูลทางการเงิน','ext',false,false],
+      ['acct-rpta','RPTA','รายงานและการวิเคราะห์','report',false,false],
+    ];
+  }
+
+  T() { return this.props.theme || {}; }
+
+  renderVals() {
+    const T = this.T();
+    const dark = T.name === 'dark';
+    const acc = T.acc || 'oklch(0.55 0.16 255)';
+    const bg = T.bg || (dark ? 'oklch(0.19 0.012 265)' : 'oklch(0.98 0.004 255)');
+    const panel = T.card || (dark ? 'oklch(0.23 0.014 265)' : '#fff');
+    const fg = T.text || (dark ? 'oklch(0.94 0.01 265)' : 'oklch(0.25 0.02 265)');
+    const sub = T.sub || (dark ? 'oklch(0.68 0.02 265)' : 'oklch(0.55 0.02 265)');
+    const border = T.border || (dark ? 'oklch(0.32 0.014 265)' : 'oklch(0.9 0.006 255)');
+    const accSoft = T.accSoft || (dark ? 'rgba(120,160,255,.16)' : 'rgba(60,110,240,.10)');
+
+    const TYPE = {
+      core:   ['Core Functions', dark?'rgba(90,140,255,.18)':'oklch(0.95 0.05 220)', dark?'oklch(0.8 0.1 220)':'oklch(0.45 0.15 220)'],
+      ext:    ['Extensions',     dark?'rgba(80,200,140,.18)':'oklch(0.95 0.05 158)', dark?'oklch(0.82 0.1 158)':'oklch(0.45 0.15 158)'],
+      report: ['Reports & Analytics', dark?'rgba(240,180,90,.18)':'oklch(0.95 0.05 35)', dark?'oklch(0.84 0.1 60)':'oklch(0.5 0.15 45)'],
+    };
+    const subs = this.SUBS();
+    const active = this.state.active;
+    const showHidden = this.props.showHidden !== undefined ? !!this.props.showHidden : true;
+    const mk = (mt) => subs.filter(s => s[3] === mt && (showHidden || !s[4])).map(([id, abbr, th, , hid, dis]) => {
+      const on = id === active;
+      return {
+        th, abbr, hid: !!hid, dis: !!dis,
+        weight: on ? 700 : 500,
+        abbrColor: on ? acc : sub,
+        style: `display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;border:none;cursor:pointer;font-family:inherit;padding:8px 10px;border-radius:9px;margin:1px 0;color:${on?fg:sub};background:${on?accSoft:'transparent'};opacity:${dis?0.5:(hid?0.62:1)};`,
+        onClick: () => this.requestSwitch(id),
+      };
+    });
+    const groups = [['core'],['ext'],['report']].map(([mt]) => ({
+      label: TYPE[mt][0], badgeBg: TYPE[mt][1], badgeFg: TYPE[mt][2], items: mk(mt),
+    })).filter(g => g.items.length);
+
+    const cur = subs.find(s => s[0] === active) || subs[0];
+    const api = this.props.api || {};
+    const handlers = {};
+    Object.keys(this.MODKEYS).forEach(k => { handlers[this.MODKEYS[k]] = this.mkHandlers(this.MODKEYS[k]); });
+    const confirmId = this.state.confirm;
+    const confirmFrom = confirmId ? (subs.find(s => s[0] === active) || subs[0]) : null;
+    const confirmTo = confirmId ? (subs.find(s => s[0] === confirmId) || subs[0]) : null;
+    return {
+      handlers,
+      hasConfirm: !!confirmId,
+      confirmFromTh: confirmFrom ? confirmFrom[2] : '',
+      confirmToTh: confirmTo ? confirmTo[2] : '',
+      cancelSwitch: () => this.cancelSwitch(),
+      confirmSwitchAction: () => this.confirmSwitch(),
+      bg, fg, sub, panel, border, acc,
+      groups,
+      themeName: T.name || '(ยังไม่ได้ส่ง theme)',
+      activeTh: cur[2],
+      activeAbbr: cur[1],
+      activeCrumb: 'L1 · ACCT › L2 · ' + ({core:'Core Functions',ext:'Extensions',report:'Reports & Analytics'}[cur[3]]) + ' › L3 · ' + cur[2],
+      is_gl: active === 'acct-gl',
+      is_ap: active === 'acct-ap',
+      is_ar: active === 'acct-ar',
+      is_cash: active === 'acct-cash',
+      is_bank: active === 'acct-bank',
+      is_fa: active === 'acct-fa',
+      is_budg: active === 'acct-budg',
+      is_cost: active === 'acct-cost',
+      is_tax: active === 'acct-tax',
+      is_close: active === 'acct-close',
+      is_cons: active === 'acct-cons',
+      is_curr: active === 'acct-curr',
+      is_alloc: active === 'acct-alloc',
+      is_cc: active === 'acct-cc',
+      is_pc: active === 'acct-pc',
+      is_jv: active === 'acct-jv',
+      is_fs: active === 'acct-fs',
+      is_einv: active === 'acct-einv',
+      is_epay: active === 'acct-epay',
+      is_ebank: active === 'acct-ebank',
+      is_loan: active === 'acct-loan',
+      is_treas: active === 'acct-treas',
+      is_lease: active === 'acct-lease',
+      is_intc: active === 'acct-intc',
+      is_bi: active === 'acct-bi',
+      is_rpta: active === 'acct-rpta',
+      showHidden,
+      theme: this.props.theme,
+      api: this.props.api,
+      win: this.props.win,
+    };
+  }
+}
+</script>
+</body>
+</html>

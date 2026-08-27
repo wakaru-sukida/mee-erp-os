@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'IBM Plex Sans Thai','Inter',system-ui,sans-serif;}
+</style>
+</helmet>
+<div style="display:flex;height:100vh;min-height:0;background:{{ bg }};color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">
+  <aside style="width:230px;flex-shrink:0;border-right:1px solid {{ border }};background:{{ panel }};display:flex;flex-direction:column;min-height:0;">
+    <div style="padding:16px 16px 12px;border-bottom:1px solid {{ border }};">
+      <div style="font-size:9.5px;font-weight:700;letter-spacing:.6px;color:{{ acc }};">L1 · INVT</div>
+      <div style="font-size:14.5px;font-weight:800;margin-top:3px;letter-spacing:-.2px;">ระบบบริหารคลังสินค้า</div>
+      <div style="font-size:10.5px;color:{{ sub }};margin-top:2px;">Inventory Management System</div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:8px;min-height:0;">
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+        <div style="margin:6px 6px 2px;">
+          <span style="font-size:9px;font-weight:700;letter-spacing:.4px;padding:2px 7px;border-radius:5px;background:{{ g.badgeBg }};color:{{ g.badgeFg }};">{{ g.label }}</span>
+        </div>
+        <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="4">
+          <button onClick="{{ it.onClick }}" style="{{ it.style }}">
+            <span style="font-size:12.5px;font-weight:{{ it.weight }};">{{ it.th }}</span>
+            <span style="display:flex;align-items:center;gap:6px;">
+              <sc-if value="{{ it.dis }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:8px;font-weight:700;letter-spacing:.4px;padding:2px 5px;border-radius:5px;background:#e5484d;color:#fff;">ปิด</span>
+              </sc-if>
+              <sc-if value="{{ it.hid }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:8px;font-weight:700;letter-spacing:.4px;padding:2px 5px;border-radius:5px;background:{{ border }};color:{{ sub }};">HIDDEN</span>
+              </sc-if>
+              <span style="font-size:9.5px;font-weight:700;color:{{ it.abbrColor }};">{{ it.abbr }}</span>
+            </span>
+          </button>
+        </sc-for>
+      </sc-for>
+    </div>
+  </aside>
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;">
+    <sc-if value="{{ is_item }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-ITEM" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.item.onCatalog }}" on-mode="{{ handlers.item.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_stk }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-STK" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.stk.onCatalog }}" on-mode="{{ handlers.stk.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_grn }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-GRN" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.grn.onCatalog }}" on-mode="{{ handlers.grn.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_gin }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-GIN" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.gin.onCatalog }}" on-mode="{{ handlers.gin.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_trf }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-TRF" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.trf.onCatalog }}" on-mode="{{ handlers.trf.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_adj }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-ADJ" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.adj.onCatalog }}" on-mode="{{ handlers.adj.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_cnt }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-CNT" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.cnt.onCatalog }}" on-mode="{{ handlers.cnt.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_lot }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-LOT" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.lot.onCatalog }}" on-mode="{{ handlers.lot.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_ser }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-SER" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.ser.onCatalog }}" on-mode="{{ handlers.ser.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_bin }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-BIN" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.bin.onCatalog }}" on-mode="{{ handlers.bin.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_exp }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-EXP" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.exp.onCatalog }}" on-mode="{{ handlers.exp.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_rsv }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-RSV" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.rsv.onCatalog }}" on-mode="{{ handlers.rsv.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_avl }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-AVL" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.avl.onCatalog }}" on-mode="{{ handlers.avl.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_val }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-VAL" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.val.onCatalog }}" on-mode="{{ handlers.val.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_mov }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-MOV" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.mov.onCatalog }}" on-mode="{{ handlers.mov.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_wms }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-WMS" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.wms.onCatalog }}" on-mode="{{ handlers.wms.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_pick }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-PICK" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.pick.onCatalog }}" on-mode="{{ handlers.pick.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_pack }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-PACK" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.pack.onCatalog }}" on-mode="{{ handlers.pack.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_ship }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-SHIP" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.ship.onCatalog }}" on-mode="{{ handlers.ship.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_bar }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-BAR" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.bar.onCatalog }}" on-mode="{{ handlers.bar.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_rfid }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-RFID" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.rfid.onCatalog }}" on-mode="{{ handlers.rfid.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_mob }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-MOB" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.mob.onCatalog }}" on-mode="{{ handlers.mob.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_auto }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-AUTO" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.auto.onCatalog }}" on-mode="{{ handlers.auto.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_rpta }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="INVT-RPTA" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.rpta.onCatalog }}" on-mode="{{ handlers.rpta.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ hasConfirm }}" hint-placeholder-val="{{ false }}">
+      <div style="position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.32);display:flex;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:{{ panel }};border-radius:14px;border:1px solid {{ border }};box-shadow:0 20px 60px rgba(0,0,0,0.25);width:400px;max-width:100%;padding:22px 24px;">
+          <div style="font-size:15.5px;font-weight:800;margin-bottom:10px;">ออกจากหน้านี้โดยไม่บันทึก?</div>
+          <div style="font-size:12.5px;color:{{ sub }};line-height:1.6;margin-bottom:18px;">โมดูล {{ confirmFromTh }} มีการแก้ไขที่ยังไม่ได้บันทึก การสลับไปยัง {{ confirmToTh }} จะละทิ้งการเปลี่ยนแปลงนี้</div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button onClick="{{ cancelSwitch }}" style="padding:8px 16px;border-radius:9px;border:1px solid {{ border }};background:{{ panel }};color:{{ fg }};font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">ยกเลิก</button>
+            <button onClick="{{ confirmSwitchAction }}" style="padding:8px 16px;border-radius:9px;border:none;background:{{ acc }};color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;">ไม่บันทึกและสลับ</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+class Component extends DCLogic {
+  state = { active: 'invt-item', catalogs: {}, modes: {}, confirm: null };
+  MODKEYS = { 'invt-item':'item','invt-stk':'stk','invt-grn':'grn','invt-gin':'gin','invt-trf':'trf','invt-adj':'adj','invt-cnt':'cnt','invt-lot':'lot','invt-ser':'ser','invt-bin':'bin','invt-exp':'exp','invt-rsv':'rsv','invt-avl':'avl','invt-val':'val','invt-mov':'mov','invt-wms':'wms','invt-pick':'pick','invt-pack':'pack','invt-ship':'ship','invt-bar':'bar','invt-rfid':'rfid','invt-mob':'mob','invt-auto':'auto','invt-rpta':'rpta' };
+  BUILT = ['invt-item','invt-stk','invt-grn','invt-gin','invt-trf','invt-adj','invt-cnt','invt-lot','invt-ser','invt-bin','invt-exp','invt-rsv','invt-avl','invt-val','invt-mov','invt-wms','invt-pick','invt-pack','invt-ship','invt-bar','invt-rfid','invt-mob','invt-auto','invt-rpta'];
+  _handlers = {};
+  mkHandlers(key) {
+    if (this._handlers[key]) return this._handlers[key];
+    const h = {
+      onCatalog: (cat) => this.setState(s => ({ catalogs: Object.assign({}, s.catalogs, { [key]: cat }) })),
+      onMode: (m) => this.setState(s => ({ modes: Object.assign({}, s.modes, { [key]: m }) })),
+    };
+    this._handlers[key] = h;
+    return h;
+  }
+  requestSwitch(id) {
+    if (id === this.state.active) return;
+    const curKey = this.MODKEYS[this.state.active];
+    const dirty = curKey && (this.state.modes[curKey] === 'create' || this.state.modes[curKey] === 'edit');
+    if (dirty) this.setState({ confirm: id }); else this.setState({ active: id });
+  }
+  confirmSwitch() { const id = this.state.confirm; this.setState({ active: id, confirm: null }); }
+  cancelSwitch() { this.setState({ confirm: null }); }
+
+  // ---- INVT submodule registry (mirrors Shell's MODULES/INVT_GEN) ----
+  SUBS() {
+    return [
+      ['invt-item','ITEM','ระบบบริหารข้อมูลสินค้า','core',false,false],
+      ['invt-stk','STK','ระบบควบคุมสินค้าคงคลัง','core',false,false],
+      ['invt-grn','GRN','ระบบรับสินค้าเข้าคลัง','core',false,false],
+      ['invt-gin','GIN','ระบบเบิกจ่ายสินค้า','core',false,false],
+      ['invt-trf','TRF','ระบบโอนย้ายสินค้า','core',false,false],
+      ['invt-adj','ADJ','ระบบปรับปรุงสินค้าคงคลัง','core',false,false],
+      ['invt-cnt','CNT','ระบบตรวจนับสินค้าคงคลัง','core',false,false],
+      ['invt-lot','LOT','ระบบบริหารล็อตสินค้า','core',false,false],
+      ['invt-ser','SER','ระบบบริหารหมายเลข Serial','core',false,false],
+      ['invt-bin','BIN','ระบบบริหารตำแหน่งจัดเก็บสินค้า','core',false,false],
+      ['invt-exp','EXP','ระบบบริหารวันหมดอายุสินค้า','core',false,false],
+      ['invt-rsv','RSV','ระบบสำรองสินค้า','core',false,false],
+      ['invt-avl','AVL','ระบบตรวจสอบสินค้าพร้อมใช้งาน','core',false,false],
+      ['invt-val','VAL','ระบบประเมินมูลค่าสินค้าคงคลัง','core',false,false],
+      ['invt-mov','MOV','ระบบติดตามการเคลื่อนไหวสินค้า','core',false,false],
+      ['invt-wms','WMS','ระบบบริหารคลังสินค้า (WMS)','core',false,false],
+      ['invt-pick','PICK','ระบบจัดการการหยิบสินค้า','ext',false,false],
+      ['invt-pack','PACK','ระบบจัดการการแพ็คสินค้า','ext',false,false],
+      ['invt-ship','SHIP','ระบบจัดการการจัดส่งสินค้า','ext',false,false],
+      ['invt-bar','BAR','ระบบบริหารบาร์โค้ด','ext',false,false],
+      ['invt-rfid','RFID','ระบบบริหาร RFID','ext',false,false],
+      ['invt-mob','MOB','ระบบคลังสินค้าบนอุปกรณ์เคลื่อนที่','ext',false,false],
+      ['invt-auto','AUTO','ระบบคลังสินค้าอัตโนมัติ','ext',false,false],
+      ['invt-rpta','RPTA','รายงานและการวิเคราะห์','report',false,false],
+    ];
+  }
+
+  T() { return this.props.theme || {}; }
+
+  renderVals() {
+    const T = this.T();
+    const dark = T.name === 'dark';
+    const acc = T.acc || 'oklch(0.55 0.16 255)';
+    const bg = T.bg || (dark ? 'oklch(0.19 0.012 265)' : 'oklch(0.98 0.004 255)');
+    const panel = T.card || (dark ? 'oklch(0.23 0.014 265)' : '#fff');
+    const fg = T.text || (dark ? 'oklch(0.94 0.01 265)' : 'oklch(0.25 0.02 265)');
+    const sub = T.sub || (dark ? 'oklch(0.68 0.02 265)' : 'oklch(0.55 0.02 265)');
+    const border = T.border || (dark ? 'oklch(0.32 0.014 265)' : 'oklch(0.9 0.006 255)');
+    const accSoft = T.accSoft || (dark ? 'rgba(120,160,255,.16)' : 'rgba(60,110,240,.10)');
+
+    const TYPE = {
+      core:   ['Core Functions', dark?'rgba(90,140,255,.18)':'oklch(0.95 0.05 220)', dark?'oklch(0.8 0.1 220)':'oklch(0.45 0.15 220)'],
+      ext:    ['Extensions',     dark?'rgba(80,200,140,.18)':'oklch(0.95 0.05 158)', dark?'oklch(0.82 0.1 158)':'oklch(0.45 0.15 158)'],
+      report: ['Reports & Analytics', dark?'rgba(240,180,90,.18)':'oklch(0.95 0.05 35)', dark?'oklch(0.84 0.1 60)':'oklch(0.5 0.15 45)'],
+    };
+    const subs = this.SUBS();
+    const active = this.state.active;
+    const showHidden = this.props.showHidden !== undefined ? !!this.props.showHidden : true;
+    const mk = (mt) => subs.filter(s => s[3] === mt && (showHidden || !s[4])).map(([id, abbr, th, , hid, dis]) => {
+      const on = id === active;
+      return {
+        th, abbr, hid: !!hid, dis: !!dis,
+        weight: on ? 700 : 500,
+        abbrColor: on ? acc : sub,
+        style: `display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;border:none;cursor:pointer;font-family:inherit;padding:8px 10px;border-radius:9px;margin:1px 0;color:${on?fg:sub};background:${on?accSoft:'transparent'};opacity:${dis?0.5:(hid?0.62:1)};`,
+        onClick: () => this.requestSwitch(id),
+      };
+    });
+    const groups = [['core'],['ext'],['report']].map(([mt]) => ({
+      label: TYPE[mt][0], badgeBg: TYPE[mt][1], badgeFg: TYPE[mt][2], items: mk(mt),
+    })).filter(g => g.items.length);
+
+    const cur = subs.find(s => s[0] === active) || subs[0];
+    const api = this.props.api || {};
+    const handlers = {};
+    Object.keys(this.MODKEYS).forEach(k => { handlers[this.MODKEYS[k]] = this.mkHandlers(this.MODKEYS[k]); });
+    const confirmId = this.state.confirm;
+    const confirmFrom = confirmId ? (subs.find(s => s[0] === active) || subs[0]) : null;
+    const confirmTo = confirmId ? (subs.find(s => s[0] === confirmId) || subs[0]) : null;
+    return {
+      handlers,
+      hasConfirm: !!confirmId,
+      confirmFromTh: confirmFrom ? confirmFrom[2] : '',
+      confirmToTh: confirmTo ? confirmTo[2] : '',
+      cancelSwitch: () => this.cancelSwitch(),
+      confirmSwitchAction: () => this.confirmSwitch(),
+      bg, fg, sub, panel, border, acc,
+      groups,
+      themeName: T.name || '(ยังไม่ได้ส่ง theme)',
+      activeTh: cur[2],
+      activeAbbr: cur[1],
+      activeCrumb: 'L1 · INVT › L2 · ' + ({core:'Core Functions',ext:'Extensions',report:'Reports & Analytics'}[cur[3]]) + ' › L3 · ' + cur[2],
+      is_item: active === 'invt-item',
+      is_stk: active === 'invt-stk',
+      is_grn: active === 'invt-grn',
+      is_gin: active === 'invt-gin',
+      is_trf: active === 'invt-trf',
+      is_adj: active === 'invt-adj',
+      is_cnt: active === 'invt-cnt',
+      is_lot: active === 'invt-lot',
+      is_ser: active === 'invt-ser',
+      is_bin: active === 'invt-bin',
+      is_exp: active === 'invt-exp',
+      is_rsv: active === 'invt-rsv',
+      is_avl: active === 'invt-avl',
+      is_val: active === 'invt-val',
+      is_mov: active === 'invt-mov',
+      is_wms: active === 'invt-wms',
+      is_pick: active === 'invt-pick',
+      is_pack: active === 'invt-pack',
+      is_ship: active === 'invt-ship',
+      is_bar: active === 'invt-bar',
+      is_rfid: active === 'invt-rfid',
+      is_mob: active === 'invt-mob',
+      is_auto: active === 'invt-auto',
+      is_rpta: active === 'invt-rpta',
+      showHidden,
+      theme: this.props.theme,
+      api: this.props.api,
+      win: this.props.win,
+    };
+  }
+}
+</script>
+</body>
+</html>
