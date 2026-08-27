@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  doc-page:not(:defined){visibility:hidden}
+  body{margin:0;background:#eceef2}
+  .doc{font-family:'IBM Plex Sans Thai',sans-serif;color:#1c2432;line-height:1.62}
+  .doc h1{font-size:25px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+  .doc .sub{font-size:13px;color:#5b6472;margin:0 0 20px}
+  .doc h2{font-size:15px;font-weight:700;margin:24px 0 9px;padding-bottom:6px;border-bottom:2px solid #e2e6ec}
+  .doc p{margin:0 0 10px;font-size:12.5px}
+  .lead{background:#f3f5f8;border-left:3px solid #1f2a44;border-radius:0 8px 8px 0;padding:10px 14px;font-size:12.5px;margin:0 0 4px}
+  code,pre{font-family:'IBM Plex Mono','SF Mono',monospace}
+  code{background:#eef1f5;border-radius:4px;padding:1px 5px;font-size:11.5px;color:#334}
+  pre{background:#1f2a44;color:#e8ecf4;border-radius:9px;padding:12px 14px;font-size:11px;line-height:1.55;overflow:auto;margin:8px 0 12px;break-inside:avoid}
+  pre .c{color:#8fa3c4}
+  .num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:#1f2a44;color:#fff;font-size:12px;font-weight:700;margin-right:8px;vertical-align:middle}
+  table{border-collapse:collapse;width:100%;font-size:12px;break-inside:avoid;margin:6px 0}
+  th,td{border:1px solid #d9dee6;padding:8px 11px;vertical-align:top;text-align:left}
+  thead th{background:#1f2a44;color:#fff;font-weight:600}
+  tbody th{background:#f3f5f8;font-weight:600;width:130px}
+  .note{margin-top:22px;border:1px solid #d9c6a6;background:#fdf8ee;border-radius:10px;padding:13px 16px;font-size:12px;break-inside:avoid}
+  .note b{color:#8a5a12}
+  .foot{margin-top:20px;font-size:11px;color:#8a929e;border-top:1px solid #e2e6ec;padding-top:8px}
+</style>
+</helmet>
+<doc-page margin="0.7in">
+<div class="doc">
+  <h1>การกันข้อมูลข้าม Tenant (Cross-Tenant Isolation)</h1>
+  <p class="sub">Composite FK / CHECK และ Row-Level Security — สำหรับโมเดล Pooled Multi-Tenant · Mee-ERP OS</p>
+
+  <p class="lead">เป้าหมาย: ผู้เช่า A ต้อง <b>ไม่</b> สามารถอ้าง เห็น หรือแก้ข้อมูลของผู้เช่า B ได้ — แม้โค้ดจะมี bug หรือลืมกรอง โดยบังคับที่ชั้นฐานข้อมูล ไม่พึ่งวินัยของโปรแกรมเมอร์อย่างเดียว</p>
+
+  <h2><span class="num">1</span>Composite FK — กันที่ระดับความสัมพันธ์ (Integrity)</h2>
+  <p>FK ปกติเช็คแค่ว่าค่าปลายทาง “มีอยู่จริง” แต่ไม่เช็คว่าอยู่ tenant เดียวกัน → เผลอผูก branch ของ A ไปหา company ของ B ได้ วิธีกันคือใส่ <code>tenant_id</code> ในทุกตาราง แล้วทำ FK เป็น <b>คู่</b> ให้ tenant ต้องตรงกันด้วย</p>
+  <pre><span class="c">-- company: unique (tenant_id, company_id)</span>
+<span class="c">-- branch อ้างอิงแบบคู่ (composite):</span>
+FOREIGN KEY (tenant_id, company_id)
+  REFERENCES company (tenant_id, company_id)</pre>
+  <p>ผล: ฐานข้อมูลปฏิเสธทันทีถ้า <code>branch.tenant_id ≠ company.tenant_id</code> — ผูกข้าม tenant ไม่ได้ตั้งแต่โครงสร้าง</p>
+  <p><b>CHECK</b> = ทางเลือกที่เบากว่า บังคับเงื่อนไขภายในแถวเดียว (เช่นค่าห้ามขัดกัน) แต่เช็คข้ามตารางตรงๆ ไม่ได้ — เคสข้ามตารางจึงใช้ composite FK หรือ trigger แทน</p>
+
+  <h2><span class="num">2</span>Row-Level Security (RLS) — กันที่ระดับการเข้าถึง (Access)</h2>
+  <p>ฟีเจอร์ของ DB (เช่น PostgreSQL) ที่ <b>กรองแถวอัตโนมัติทุก query</b> ตาม tenant ปัจจุบัน โดยแอปไม่ต้องเขียน <code>WHERE tenant_id=…</code> เอง</p>
+  <pre>ALTER TABLE branch ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON branch
+  USING (tenant_id = current_setting('app.tenant_id')::bigint);</pre>
+  <p>แอปตั้งค่า tenant ตอนเปิด connection (<code>SET app.tenant_id = 42</code>) จากนั้น <code>SELECT * FROM branch</code> จะเห็นเฉพาะแถวของ tenant 42 — แม้ลืมกรอง ก็รั่วไม่ได้</p>
+
+  <h2>สรุปความต่าง</h2>
+  <table>
+    <thead><tr><th style="width:110px">หัวข้อ</th><th>Composite FK / CHECK</th><th>Row-Level Security</th></tr></thead>
+    <tbody>
+      <tr><th>กันอะไร</th><td>ผูกความสัมพันธ์ข้าม tenant (เขียนผิด)</td><td>อ่าน/เห็น/แก้แถวข้าม tenant (เข้าถึงผิด)</td></tr>
+      <tr><th>ชั้น</th><td>Integrity — โครงสร้างข้อมูล</td><td>Access — การมองเห็นแถว</td></tr>
+      <tr><th>ทำงานเมื่อ</th><td>ตอน insert / update</td><td>ตอนทุก query (select/update/delete)</td></tr>
+      <tr><th>ใช้คู่กัน</th><td colspan="2">RLS กันการเข้าถึง + composite FK กันการผูกผิด = ป้องกันสองชั้น เหมาะกับ Pooled</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <p style="margin:0"><b>บริบท Mee-ERP OS:</b> ทั้งสองเป็นกลไกฝั่งฐานข้อมูลจริง (SQL) เวอร์ชันปัจจุบันที่เก็บข้อมูลบน Google Sheet <b>ยังไม่มีชั้นนี้</b> ต้องบังคับ tenant/company scope ที่ชั้นแอปเอง — เมื่อย้ายไปฐานข้อมูลจริงและทำ Pooled Multi-Tenant ค่อยเปิด RLS + composite FK เพื่อ isolation สองชั้น</p>
+  </div>
+
+  <p class="foot">Mee-ERP OS · Architecture Note · 14 ส.ค. 2026 — เอกสารประกอบการตัดสินใจ</p>
+</div>
+</doc-page>
+<script src="./doc-page.js"></script>
+</x-dc>
+</body>
+</html>

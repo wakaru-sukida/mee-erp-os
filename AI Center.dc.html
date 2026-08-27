@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  state = {
+    tab: 'insights', ready: false, answer: null, ask: '', task: null, doneKeys: [],
+    autos: [
+      { id: 1, on: true, mod: 'PROC', name: 'จับคู่ 3-Way Match (PO–GR–Invoice)', trig: 'เมื่อบันทึกใบแจ้งหนี้', act: 'ตรวจและแจ้งเตือนเมื่อยอดไม่ตรง', runs: 142 },
+      { id: 2, on: true, mod: 'INVT', name: 'เติมสต็อกอัตโนมัติ (Auto Replenish)', trig: 'เมื่อสต็อก < จุดสั่งซื้อ (ReOrder Point)', act: 'สร้างใบขอซื้อ (PR) ฉบับร่าง', runs: 38 },
+      { id: 3, on: false, mod: 'INVT', name: 'อ่านใบเสนอราคา (OCR) → สร้างสินค้า', trig: 'เมื่ออัปโหลดเอกสาร', act: 'กรอกฟอร์มสินค้าให้อัตโนมัติ', runs: 0 },
+      { id: 4, on: true, mod: 'SALE', name: 'สรุป Dashboard รายวัน', trig: 'ทุกวัน 08:00 น.', act: 'ส่งสรุปยอดขาย/สต็อกทางอีเมล', runs: 60 },
+      { id: 5, on: false, mod: 'ACCT', name: 'เตือนลูกหนี้เกินวงเงิน', trig: 'เมื่อสร้างใบสั่งขาย', act: 'บล็อกรายการและแจ้งผู้อนุมัติ', runs: 0 }
+    ]
+  };
+  componentDidMount() { if (this.K) { this.setState({ ready: true }); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); }); }
+  componentWillUnmount() { if (this._t) clearTimeout(this._t); }
+  runTask(key, steps, msg, cmd) {
+    if (this._t) clearTimeout(this._t);
+    const norm = steps.map(s => (typeof s === 'string' ? { label: s } : s));
+    this.setState({ task: { key, steps: norm.map(s => ({ label: s.t || s.label, api: s.api || '', resp: s.resp || '', status: 'pending' })), done: false } });
+    const step = (i) => {
+      this.setState(s => { if (!s.task || s.task.key !== key) return null; const st = s.task.steps.map((x, j) => Object.assign({}, x, { status: j < i ? 'done' : (j === i ? 'run' : 'pending') })); return { task: { key: s.task.key, steps: st, done: false } }; });
+      if (i < norm.length - 1) { this._t = setTimeout(() => step(i + 1), 850); }
+      else { this._t = setTimeout(() => { this.setState(s => { if (!s.task || s.task.key !== key) return null; const dk = (s.doneKeys || []).indexOf(key) > -1 ? s.doneKeys : (s.doneKeys || []).concat([key]); return { task: { key: s.task.key, steps: s.task.steps.map(x => Object.assign({}, x, { status: 'done' })), done: true }, doneKeys: dk }; }); if (cmd && this.K && this.K.bus) { try { this.K.bus().set('meeerp.invt.cmd', Object.assign({ nonce: Date.now() }, cmd)); } catch (e) {} } this.toast(msg || 'AI ดำเนินการสำเร็จ'); }, 850); }
+    };
+    step(0);
+  }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); else if (typeof window !== 'undefined') { /* noop */ } }
+  MODHUE = { INVT: 220, PROC: 265, SALE: 35, ACCT: 190, HRMS: 158, PROD: 300 };
+  INSIGHTS() {
+    return [
+      { sev: 'warn', mod: 'INVT', title: 'สินค้า 1 ตัวยังไม่ผูกชุดหน่วยนับ', desc: 'TG-BOX-001 (กล่องบรรจุภัณฑ์) ยังไม่มี UOM Group — แนะนำสร้างชุด GRP-BOX (EA เป็นหลัก)', action: 'ผูก UOM Group', role: 'Advise', cmd: { action: 'link-uomgroup', item: 'TG-BOX-001', group: { no: 'GRP-BOX', a: 'ชุดบรรจุกล่อง', en: 'Box Packaging', utype: 'Quantity', base: 'EA', lines: [{ uom: 'EA', conv: 1 }], d: 'ชุดหน่วยนับกล่อง (สร้างโดย AI)' } }, steps: [{ t: 'วิเคราะห์สินค้า TG-BOX-001 และหน่วยที่ใช้ (EA)', api: 'GET /api/items/TG-BOX-001', resp: '200 OK' }, { t: 'สร้างชุดหน่วยนับ GRP-BOX (EA = หน่วยหลัก ×1)', api: 'POST /api/uom-groups', resp: '201 Created' }, { t: 'ผูกชุด GRP-BOX เข้ากับสินค้า TG-BOX-001', api: 'PATCH /api/items/TG-BOX-001', resp: '200 OK' }, { t: 'ตรวจสอบความถูกต้องของอัตราแปลง', api: 'POST /api/uom-groups/GRP-BOX/validate', resp: '200 OK' }, { t: 'สำเร็จ — TG-BOX-001 ผูกชุดหน่วยนับแล้ว' }] },
+      { sev: 'risk', mod: 'PROC', title: 'ราคาซื้อเม็ดพลาสติกสูงกว่าค่าเฉลี่ย 18%', desc: 'ใบขอซื้อล่าสุดของ RM-RESIN-001 ราคา 42.5 ฿/KG เทียบค่าเฉลี่ย 90 วัน 36 ฿/KG', action: 'ดู Supplier ทางเลือก', role: 'Alert' },
+      { sev: 'warn', mod: 'INVT', title: 'สต็อกเม็ดพลาสติกจะต่ำกว่าจุดสั่งซื้อใน 6 วัน', desc: 'อัตราการใช้เฉลี่ย 1.2 ตัน/วัน · คงเหลือ 8.4 ตัน · ReOrder Point 6 ตัน', action: 'สร้างใบขอซื้อ (PR)', role: 'Alert', steps: [{ t: 'ดึงข้อมูลสต็อกและอัตราการใช้ของ RM-RESIN-001', api: 'GET /api/stock/RM-RESIN-001', resp: '200 OK' }, { t: 'คำนวณปริมาณสั่งซื้อที่แนะนำ (7.2 ตัน)', api: 'POST /api/mrp/suggest', resp: '200 OK' }, { t: 'เลือก Supplier หลักตามประวัติราคา/การส่ง', api: 'GET /api/suppliers?item=RM-RESIN-001', resp: '200 OK' }, { t: 'สร้างใบขอซื้อ PR-2026-0149 (ฉบับร่าง)', api: 'POST /api/purchase-requests', resp: '201 Created' }, { t: 'สำเร็จ — สร้าง PR ฉบับร่างและส่งให้ผู้อนุมัติแล้ว' }] },
+      { sev: 'info', mod: 'SALE', title: 'พยากรณ์ยอดขายฟิล์มเดือนหน้า +12%', desc: 'จากแนวโน้ม 6 เดือนและฤดูกาล — แนะนำเพิ่มแผนผลิต FG-FILM-001 ล่วงหน้า', action: 'ดูรายละเอียด', role: 'Advise' },
+      { sev: 'risk', mod: 'ACCT', title: 'พบใบแจ้งหนี้อาจซ้ำซ้อน 2 ฉบับ', desc: 'INV-2026-0091 และ INV-2026-0093 มีผู้ขาย ยอดเงิน และวันที่ใกล้เคียงกัน', action: 'ตรวจสอบ', role: 'Alert', steps: [{ t: 'เปรียบเทียบ INV-2026-0091 กับ INV-2026-0093', api: 'GET /api/invoices?ids=0091,0093', resp: '200 OK' }, { t: 'ตรวจผู้ขาย · ยอดเงิน · วันที่ · เลขที่อ้างอิง', api: 'POST /api/invoices/dup-check', resp: '200 OK' }, { t: 'ทำเครื่องหมาย “อาจซ้ำ” และพักการชำระ', api: 'PATCH /api/invoices/0093', resp: '200 OK' }, { t: 'แจ้งเตือนผู้อนุมัติให้ตรวจสอบ', api: 'POST /api/notifications', resp: '202 Accepted' }, { t: 'สำเร็จ — ตั้งค่าตรวจซ้ำและแจ้งเตือนแล้ว' }] },
+      { sev: 'info', mod: 'HRMS', title: 'สรุป: อัตราเข้างานตรงเวลา 96% เดือนนี้', desc: 'ดีขึ้น 3% จากเดือนก่อน — แผนกผลิตมีสายบ่อยสุด แนะนำทบทวนกะ', action: 'ดูรายงาน', role: 'Author' }
+    ];
+  }
+  ACTIVITY() {
+    return [
+      { t: '2 นาทีที่แล้ว', role: 'Act', mod: 'INVT', text: 'สร้างใบขอซื้อ PR-2026-0148 (ฉบับร่าง) จากสต็อกเม็ดพลาสติกต่ำกว่าจุดสั่งซื้อ' },
+      { t: '25 นาทีที่แล้ว', role: 'Alert', mod: 'PROC', text: 'แจ้งเตือนราคาซื้อ RM-RESIN-001 สูงผิดปกติ (+18% จากค่าเฉลี่ย)' },
+      { t: '1 ชม.ที่แล้ว', role: 'Author', mod: 'SALE', text: 'สรุปรายงานยอดขายประจำวันและส่งอีเมลถึงผู้บริหาร 4 ท่าน' },
+      { t: '3 ชม.ที่แล้ว', role: 'Advise', mod: 'PROC', text: 'แนะนำ Supplier ทางเลือกสำหรับ RM-RESIN-001 (ราคาต่ำกว่า 8%, ประวัติส่งตรงเวลา 98%)' },
+      { t: 'เมื่อวาน 16:20', role: 'Assist', mod: 'INVT', text: 'ช่วยผู้ใช้ค้นหาและเปิดหน้าจอ “ชุดหน่วยนับ (UOM Group)”' },
+      { t: 'เมื่อวาน 09:02', role: 'Act', mod: 'ACCT', text: 'จับคู่ 3-Way Match ใบแจ้งหนี้ 12 ฉบับสำเร็จ · พบไม่ตรง 1 ฉบับ' }
+    ];
+  }
+  ask(text) {
+    const q = (text != null ? String(text) : (this.state.ask || '')).trim();
+    if (!q) return;
+    if (/ผูก|group|อัตโนมัติ|ทำให้|ดำเนินการ/i.test(q)) {
+      const it = this.INSIGHTS().find(x => /UOM Group/.test(x.action));
+      if (it && it.steps && (this.state.doneKeys || []).indexOf(it.title) === -1) { this.runTask(it.title, it.steps, 'AI: สร้าง GRP-BOX และผูกกับ TG-BOX-001 สำเร็จ', it.cmd); this.setState({ answer: { q: q, a: 'กำลังดำเนินการผูกชุดหน่วยนับให้ TG-BOX-001 โดยอัตโนมัติ — ดูขั้นตอนและ API log ด้านล่างครับ' }, ask: '' }); return; }
+    }
+    let a;
+    if (/สต็อก|คงคลัง|เติม|replenish/i.test(q)) a = 'ตอนนี้มี 2 สินค้าที่สต็อกใกล้จุดสั่งซื้อ (เม็ดพลาสติกใน 6 วัน) — ผมสร้างใบขอซื้อ (PR) ฉบับร่างให้ได้ทันที หรือเปิดกฎ “เติมสต็อกอัตโนมัติ” เพื่อให้ระบบทำเองทุกครั้ง';
+    else if (/ราคา|supplier|ผู้ขาย|จัดซื้อ/i.test(q)) a = 'พบราคาซื้อ RM-RESIN-001 สูงกว่าค่าเฉลี่ย 18% ผมแนะนำ Supplier ทางเลือก 2 ราย (ถูกกว่า 8% และ 5%) พร้อมประวัติการส่งของ ต้องการเปรียบเทียบไหมครับ';
+    else if (/ซ้ำ|duplicate|บัญชี|หนี้/i.test(q)) a = 'ตรวจพบใบแจ้งหนี้อาจซ้ำ 2 ฉบับ (INV-2026-0091 / 0093) — เปิดดูเทียบรายการ หรือให้ผมตั้งกฎบล็อกใบซ้ำอัตโนมัติก็ได้';
+    else if (/สรุป|รายงาน|ยอดขาย|report/i.test(q)) a = 'ยอดขายรวมเดือนนี้โต 9% จากเดือนก่อน โดยฟิล์มสำเร็จรูปเป็นตัวนำ (+14%) พยากรณ์เดือนหน้ายังโตต่อ +12% ต้องการรายงานฉบับเต็มหรือส่งออก Excel ไหมครับ';
+    else a = 'รับทราบ “' + q + '” — ผมรวมข้อมูลจากทุกโมดูลให้ได้ ทั้งพยากรณ์ แนะนำการตัดสินใจ เตือนความเสี่ยง สรุปรายงาน และตั้งงานอัตโนมัติ บอกเป้าหมายได้เลยครับ';
+    this.setState({ answer: { q: q, a: a }, ask: '' });
+  }
+  toggleAuto(id) { this.setState(s => ({ autos: s.autos.map(x => x.id === id ? Object.assign({}, x, { on: !x.on }) : x) })); }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
+    const acc = c.acc, sub = c.sub, aTxt = c.aTxt || acc;
+    const tab = this.state.tab;
+    const P = (t, hu) => K.pill(T, t, hu);
+    const modPill = m => P(m, this.MODHUE[m] || 220);
+    const SEV = { warn: ['oklch(0.72 0.15 70)', 'แจ้งเตือน'], risk: ['oklch(0.62 0.22 25)', 'ความเสี่ยง'], info: [acc, 'ข้อมูลเชิงลึก'] };
+    const ROLEHUE = { Act: 265, Advise: 220, Alert: 25, Author: 300, Assist: 158 };
+
+    // hero
+    const chips = ['สต็อกไหนใกล้หมด?', 'สรุปยอดขายเดือนนี้', 'มีใบแจ้งหนี้ซ้ำไหม', 'ราคาซื้อผิดปกติหรือเปล่า'];
+    const hero = h('div', { style: { borderRadius: 16, padding: '22px 24px', marginBottom: 18, background: 'linear-gradient(135deg, color-mix(in oklab, ' + acc + ' 82%, #000), ' + acc + ')', color: '#fff' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 } },
+        h('span', { style: { width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 22)),
+        h('div', null, h('div', { style: { fontSize: 19, fontWeight: 800 } }, 'AI Center — ศูนย์ AI อัจฉริยะ'), h('div', { style: { fontSize: 12, opacity: .85, marginTop: 2 } }, 'Enterprise AI Layer · รวมข้อมูลจากทุกโมดูลของ Mee-ERP OS'))),
+      h('form', { onSubmit: e => { e.preventDefault(); this.ask(); }, style: { display: 'flex', gap: 8, marginBottom: 12 } },
+        h('input', { value: this.state.ask, onChange: e => this.setState({ ask: e.target.value }), placeholder: 'ถาม AI ข้ามทุกโมดูล เช่น “สินค้าไหนใกล้หมดสต็อก?”', style: { flex: 1, height: 42, padding: '0 15px', borderRadius: 11, border: 'none', fontSize: 13.5, fontFamily: c.font, color: c.text, background: 'rgba(255,255,255,.96)' } }),
+        h('button', { type: 'submit', style: { height: 42, padding: '0 20px', borderRadius: 11, border: 'none', cursor: 'pointer', fontFamily: c.font, fontSize: 13.5, fontWeight: 700, color: acc, background: '#fff', display: 'flex', alignItems: 'center', gap: 7 } }, K.Icon('spark', 16), 'ถาม AI')),
+      h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } }, chips.map(q => h('button', { key: q, onClick: () => this.ask(q), style: { fontSize: 12, fontWeight: 500, padding: '6px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,.35)', background: 'rgba(255,255,255,.12)', color: '#fff', cursor: 'pointer', fontFamily: c.font } }, q))));
+
+    const answer = this.state.answer ? K.card(T, [
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: sub } }, K.Icon('crm', 15), 'คุณถาม: ' + this.state.answer.q), h('button', { onClick: () => this.setState({ answer: null }), style: { width: 26, height: 26, borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: sub, cursor: 'pointer', fontSize: 15, lineHeight: 1, fontFamily: c.font } }, '×')),
+      h('div', { style: { display: 'flex', gap: 10 } }, h('span', { style: { flexShrink: 0, width: 30, height: 30, borderRadius: 9, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 17)), h('div', { style: { fontSize: 13, lineHeight: 1.65, color: c.text } }, this.state.answer.a))
+    ], { marginBottom: 18, padding: '14px 16px' }) : null;
+
+    const tk = this.state.task;
+    const taskCard = tk ? K.card(T, [
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } },
+        h('span', { style: { width: 30, height: 30, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 17)),
+        h('div', { style: { flex: 1 } }, h('div', { style: { fontSize: 13.5, fontWeight: 800 } }, tk.done ? 'AI ดำเนินการเสร็จแล้ว' : 'AI กำลังดำเนินการ…'), h('div', { style: { fontSize: 11, color: sub } }, 'อัตโนมัติ · Act')),
+        tk.done ? h('button', { onClick: () => this.setState({ task: null }), style: { width: 26, height: 26, borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: sub, cursor: 'pointer', fontSize: 15, lineHeight: 1, fontFamily: c.font } }, '×') : null),
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 11 } }, tk.steps.map((s, i) => h('div', { key: i, style: { display: 'flex', alignItems: 'flex-start', gap: 10, opacity: s.status === 'pending' ? .45 : 1 } },
+        h('span', { style: { flexShrink: 0, marginTop: 1, display: 'flex' } }, s.status === 'done' ? h('span', { style: { color: 'oklch(0.6 0.16 150)', display: 'flex' } }, K.Icon('check', 16)) : s.status === 'run' ? h('span', { style: { width: 15, height: 15, borderRadius: '50%', background: acc, display: 'inline-block' } }) : h('span', { style: { width: 13, height: 13, borderRadius: '50%', border: `2px solid ${c.border}`, display: 'inline-block' } })),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 } },
+          h('span', { style: { fontSize: 12.5, color: c.text, fontWeight: s.status === 'run' ? 700 : 500 } }, s.label),
+          (s.api && s.status !== 'pending') ? h('span', { style: { fontFamily: 'ui-monospace,Menlo,Consolas,monospace', fontSize: 10.5, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } }, h('span', { style: { color: acc } }, s.api), s.status === 'done' ? h('span', { style: { color: 'oklch(0.6 0.16 150)', fontWeight: 700 } }, '→ ' + (s.resp || '200 OK')) : h('span', { style: { color: sub } }, '…')) : null))))
+    ], { marginBottom: 18, padding: '14px 16px' }) : null;
+
+    const kpi = K.kpi(T, [['งานที่ AI ทำวันนี้', '24', 'Actions', 265], ['Insight ใหม่', '6', 'วันนี้', 220], ['การเตือนความเสี่ยง', '3', 'ต้องตรวจ', 25], ['กฎอัตโนมัติเปิดใช้', this.state.autos.filter(a => a.on).length + ' / ' + this.state.autos.length, 'Rules', 158]]);
+
+    const TABS = [['insights', 'ข้อมูลเชิงลึกและการเตือน', 'spark'], ['automation', 'งานอัตโนมัติ', 'settings'], ['activity', 'บันทึกกิจกรรม AI', 'list']];
+    const tabsEl = h('div', { style: { display: 'flex', gap: 4, marginBottom: 16, borderBottom: `1px solid ${c.border}` } }, TABS.map(([id, lb, ic]) => { const on = tab === id; return h('button', { key: id, onClick: () => this.setState({ tab: id }), style: { display: 'flex', alignItems: 'center', gap: 8, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 13, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '9px 12px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 16)), lb); }));
+
+    let content;
+    if (tab === 'insights') {
+      content = h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 } }, this.INSIGHTS().map((it, i) => {
+        const sv = SEV[it.sev] || SEV.info;
+        const done = (this.state.doneKeys || []).indexOf(it.title) > -1;
+        return h('div', { key: i, style: { position: 'relative', background: c.win, border: `1px solid ${c.border}`, borderRadius: 13, padding: '16px 16px 16px 18px', overflow: 'hidden' } },
+          h('span', { style: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: sv[0] } }),
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 } }, modPill(it.mod), h('span', { style: { fontSize: 10.5, fontWeight: 700, letterSpacing: .3, color: sv[0], display: 'flex', alignItems: 'center', gap: 5 } }, K.Icon(it.sev === 'info' ? 'spark' : 'shield', 13), sv[1]), h('span', { style: { marginLeft: 'auto' } }, P(it.role, ROLEHUE[it.role] || 220))),
+          h('div', { style: { fontSize: 14, fontWeight: 700, marginBottom: 5, color: c.text } }, it.title),
+          h('div', { style: { fontSize: 12, lineHeight: 1.55, color: sub, marginBottom: 14 } }, it.desc),
+          h('div', { style: { display: 'flex', gap: 8 } }, done ? h('span', { style: { display: 'flex', alignItems: 'center', gap: 8 } }, P('เสร็จแล้ว', 130), h('span', { style: { fontSize: 11.5, color: sub } }, 'AI ดำเนินการแล้ว')) : h('span', { style: { display: 'flex', gap: 8 } }, K.btn(T, it.action, true, 'spark', () => it.steps ? this.runTask(it.title, it.steps, 'AI: ' + it.action + ' สำเร็จ', it.cmd) : this.toast(it.action)), K.btn(T, 'ปิด', false, null, () => this.toast('ปิด Insight')))));
+      }));
+    } else if (tab === 'automation') {
+      content = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } }, this.state.autos.map(a => h('div', { key: a.id, style: { display: 'flex', alignItems: 'center', gap: 16, background: c.win, border: `1px solid ${c.border}`, borderRadius: 13, padding: '14px 18px' } },
+        h('button', { onClick: () => this.toggleAuto(a.id), title: a.on ? 'ปิดกฎ' : 'เปิดกฎ', style: { flexShrink: 0, width: 46, height: 26, borderRadius: 999, border: 'none', cursor: 'pointer', padding: 3, background: a.on ? acc : c.border, display: 'flex', justifyContent: a.on ? 'flex-end' : 'flex-start', transition: 'all .15s' } }, h('span', { style: { width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.3)' } })),
+        h('div', { style: { flex: 1, minWidth: 0 } },
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 } }, modPill(a.mod), h('span', { style: { fontSize: 13.5, fontWeight: 700, color: c.text } }, a.name)),
+          h('div', { style: { fontSize: 11.5, color: sub, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' } }, h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 4 } }, K.Icon('gauge', 12), a.trig), h('span', { style: { color: acc, display: 'flex' } }, K.Icon('chevron2', 12)), h('span', null, a.act))),
+        h('div', { style: { flexShrink: 0, textAlign: 'right' } }, h('div', { style: { fontSize: 16, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: a.on ? c.text : sub } }, a.runs), h('div', { style: { fontSize: 10, color: sub } }, 'ครั้งที่ทำงาน')),
+        h('span', { style: { flexShrink: 0 } }, P(a.on ? 'เปิดใช้งาน' : 'ปิดอยู่', a.on ? 130 : 22)))));
+    } else {
+      content = h('div', { style: { background: c.win, border: `1px solid ${c.border}`, borderRadius: 13, padding: '6px 18px' } }, this.ACTIVITY().map((a, i, arr) => h('div', { key: i, style: { display: 'flex', gap: 14, padding: '14px 0', borderBottom: i < arr.length - 1 ? `1px solid ${c.line}` : 'none' } },
+        h('span', { style: { flexShrink: 0, width: 34, height: 34, borderRadius: 10, background: `oklch(0.95 0.04 ${ROLEHUE[a.role] || 220})`, color: `oklch(0.5 0.16 ${ROLEHUE[a.role] || 220})`, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon(a.role === 'Act' ? 'settings' : a.role === 'Alert' ? 'shield' : a.role === 'Author' ? 'doc' : a.role === 'Assist' ? 'crm' : 'spark', 17)),
+        h('div', { style: { flex: 1, minWidth: 0 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 } }, P(a.role, ROLEHUE[a.role] || 220), modPill(a.mod), h('span', { style: { marginLeft: 'auto', fontSize: 11, color: sub } }, a.t)), h('div', { style: { fontSize: 13, lineHeight: 1.5, color: c.text } }, a.text)))));
+    }
+
+    const view = h('div', { style: { height: '100%', overflow: 'auto', background: c.bg, padding: 22 } },
+      h('div', { style: { maxWidth: 1120, margin: '0 auto' } }, hero, answer, taskCard, kpi, tabsEl, content));
+    return { fg: c.text, view };
+  }
+}
+</script>
+</body>
+</html>

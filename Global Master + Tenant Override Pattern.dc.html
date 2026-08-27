@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  doc-page:not(:defined){visibility:hidden}
+  body{margin:0;background:#eceef2}
+  .doc{font-family:'IBM Plex Sans Thai',sans-serif;color:#1c2432;line-height:1.62}
+  .doc h1{font-size:24px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+  .doc .sub{font-size:13px;color:#5b6472;margin:0 0 18px}
+  .doc h2{font-size:15px;font-weight:700;margin:22px 0 9px;padding-bottom:6px;border-bottom:2px solid #e2e6ec}
+  .doc p{margin:0 0 10px;font-size:12.5px}
+  .lead{background:#f2f9f4;border-left:3px solid #1a7a43;border-radius:0 8px 8px 0;padding:10px 14px;font-size:12.5px;margin:0 0 10px}
+  .lead b{color:#155e37}
+  code,pre{font-family:'IBM Plex Mono','SF Mono',monospace}
+  code{background:#eef1f5;border-radius:4px;padding:1px 5px;font-size:11.5px;color:#334}
+  pre{background:#1f2a44;color:#e8ecf4;border-radius:9px;padding:12px 14px;font-size:10.5px;line-height:1.5;overflow:auto;margin:8px 0 12px;break-inside:avoid}
+  pre .c{color:#8fa3c4}
+  pre .k{color:#7fd6a6}
+  table{border-collapse:collapse;width:100%;font-size:12px;break-inside:avoid;margin:6px 0}
+  th,td{border:1px solid #d9dee6;padding:8px 11px;vertical-align:top;text-align:left}
+  thead th{background:#1f2a44;color:#fff;font-weight:600}
+  tbody th{background:#f3f5f8;font-weight:600;width:200px}
+  .ok{color:#1a7a43;font-weight:700}.no{color:#b23b3b;font-weight:700}
+  ul{margin:6px 0 10px;padding-left:18px;font-size:12.5px}
+  li{margin-bottom:5px}
+  .layers{display:flex;gap:12px;margin:8px 0 12px;break-inside:avoid}
+  .layer{flex:1;border:1px solid #d9dee6;border-radius:10px;padding:12px 14px;font-size:11.5px}
+  .layer.g{background:#eef4fb;border-color:#c3d6ea}
+  .layer.o{background:#fdf6ec;border-color:#e5cfa5}
+  .layer h4{margin:0 0 6px;font-size:12.5px;font-weight:700}
+  .layer.g h4{color:#1f4d7a}.layer.o h4{color:#8a5a12}
+  .layer .tag{display:inline-block;font-size:10px;font-weight:700;border-radius:5px;padding:2px 7px;margin-bottom:6px}
+  .layer.g .tag{background:#d6e6f5;color:#1f4d7a}.layer.o .tag{background:#f0e0c0;color:#8a5a12}
+  .note{margin-top:20px;border:1px solid #d9c6a6;background:#fdf8ee;border-radius:10px;padding:13px 16px;font-size:12px;break-inside:avoid}
+  .note b{color:#8a5a12}
+  .foot{margin-top:20px;font-size:11px;color:#8a929e;border-top:1px solid #e2e6ec;padding-top:8px}
+</style>
+</helmet>
+<doc-page margin="0.7in">
+<div class="doc">
+  <h1>Global Master + Tenant Override — แนวทางที่เลือก</h1>
+  <p class="sub">Master กลาง (geo/currency) ไม่มี tenant_id · ปรับแต่งรายผู้เช่าผ่าน override table · อ่านแบบ union · Mee-ERP OS</p>
+
+  <p class="lead"><b>ข้อสรุป:</b> แยกข้อมูลเป็น 2 ชั้น — Global master เก็บชุดเดียวใช้ร่วมทุกผู้เช่า (ไม่มี tenant_id), ส่วนการปรับแต่งเฉพาะผู้เช่าไปอยู่ในตาราง override ที่มี tenant_id เวลาอ่าน = <b>global ∪ override ของ tenant นั้น</b></p>
+
+  <div class="layers">
+    <div class="layer g">
+      <span class="tag">ชั้นที่ 1 · GLOBAL</span>
+      <h4>Global Master</h4>
+      <div><code>country · province · district · subdistrict · currency</code></div>
+      <p style="margin:6px 0 0"><b>ไม่มีคอลัมน์ tenant_id</b> — เก็บชุดเดียว, single source of truth, แก้ที่เดียวเห็นทุกผู้เช่า</p>
+    </div>
+    <div class="layer o">
+      <span class="tag">ชั้นที่ 2 · PER-TENANT</span>
+      <h4>Override Tables</h4>
+      <div><code>tenant_geo_override · tenant_currency_override</code></div>
+      <p style="margin:6px 0 0"><b>tenant_id NOT NULL</b> + RLS + status — เพิ่มเขต/พื้นที่/สกุลเงินเฉพาะองค์กร โดยไม่แตะตารางกลาง</p>
+    </div>
+  </div>
+
+  <h2>ทำไมไม่ใส่ tenant_id ลง master กลาง</h2>
+  <ul>
+    <li>ถ้าใส่ = ทุกผู้เช่าต้องมีสำเนา 77 จังหวัด / 928 อำเภอ / 7,436 ตำบล ของตัวเอง → ข้อมูลบวม (7,436 × จำนวน tenant) และซ้ำซ้อน</li>
+    <li>อัปเดตข้อมูลกลาง (เพิ่มตำบล/แก้ชื่อ) ต้องไล่แก้ทุก tenant แทนที่จะแก้ที่เดียว</li>
+    <li>ขัดหลัก single-source-of-truth ที่วางไว้</li>
+  </ul>
+
+  <h2>กติกาการอ่าน (Resolve)</h2>
+  <ul>
+    <li>อ่าน = <b>global master ∪ override ของ tenant นั้น</b></li>
+    <li>ถ้า override มี key ชนกับ global (เช่น แก้ชื่อจังหวัดเดิม) → <b>override ชนะ</b> เฉพาะ tenant นั้น</li>
+    <li>id ของ override ต้อง<b>ไม่ชน</b> global — ใช้ prefix/namespace หรือ UUID</li>
+    <li>FK จากตาราง tenant-owned (เช่น <code>branch.province_id</code>) ต้อง resolve ได้ทั้งจาก global และ override</li>
+  </ul>
+  <pre><span class="c">-- ตัวอย่างการอ่านจังหวัดของ tenant 42</span>
+SELECT province_id, province_name FROM province          <span class="c">-- global</span>
+UNION ALL
+SELECT province_id, province_name FROM tenant_geo_override
+  WHERE tenant_id = 42 AND kind = 'province' AND status = 'active';</pre>
+
+  <h2>สรุป tenant_id ต่อตาราง</h2>
+  <table>
+    <thead><tr><th style="width:200px">กลุ่มตาราง</th><th>tenant_id</th><th>หมายเหตุ</th></tr></thead>
+    <tbody>
+      <tr><th>tenant-owned<br><span style="font-weight:400;font-size:11px">branch · department · transaction ฯลฯ</span></th><td class="ok">NOT NULL</td><td>ทุกแถวต้องรู้เจ้าของ + RLS</td></tr>
+      <tr><th>override<br><span style="font-weight:400;font-size:11px">tenant_geo_override · tenant_currency_override</span></th><td class="ok">NOT NULL</td><td>ปรับแต่งรายผู้เช่า + RLS</td></tr>
+      <tr><th>global master<br><span style="font-weight:400;font-size:11px">geo · currency</span></th><td class="no">ไม่มีคอลัมน์</td><td>ใช้ร่วมทุกผู้เช่า</td></tr>
+    </tbody>
+  </table>
+
+  <h2>ตอน Export → Siloed</h2>
+  <ul>
+    <li>copy <b>global master ทั้งชุด</b> + <b>override ของ tenant นั้น</b> ไปตั้งต้น DB ใหม่</li>
+    <li>merge เป็น master ชุดเดียวใน DB ใหม่ได้เลย (หรือคง 2 ชั้นไว้ก็ได้)</li>
+    <li>ป้องกัน FK หัก: master ต้องตามไปพร้อม tenant data เสมอ</li>
+  </ul>
+
+  <div class="note">
+    <p style="margin:0"><b>หมายเหตุ:</b> โมเดล “tenant_id nullable = global” (เก็บ global กับ tenant data ปนตารางเดียวแล้วใช้ NULL แทน global) <b>ไม่ใช้แล้ว</b> เมื่อเลือกแยกตาราง — global master จึงไม่มีคอลัมน์ tenant_id เลย ทำให้ RLS เขียนตรงไปตรงมา ไม่ต้องเผื่อเงื่อนไข NULL</p>
+  </div>
+
+  <p class="foot">Mee-ERP OS · Architecture Note · 14 ส.ค. 2026 — เอกสารประกอบการตัดสินใจ</p>
+</div>
+</doc-page>
+<script src="./doc-page.js"></script>
+</x-dc>
+</body>
+</html>

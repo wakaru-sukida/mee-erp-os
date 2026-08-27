@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  doc-page:not(:defined){visibility:hidden}
+  body{margin:0;background:#eceef2}
+  .doc{font-family:'IBM Plex Sans Thai',sans-serif;color:#1c2432;line-height:1.6}
+  .doc h1{font-size:24px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+  .doc .sub{font-size:13px;color:#5b6472;margin:0 0 18px}
+  .doc h2{font-size:15px;font-weight:700;margin:24px 0 10px;padding-bottom:6px;border-bottom:2px solid #e2e6ec}
+  .doc p{margin:0 0 10px;font-size:12.5px}
+  .lead{background:#eef4fb;border-left:3px solid #1f4d7a;border-radius:0 8px 8px 0;padding:10px 14px;font-size:12.5px;margin:0 0 10px}
+  code{font-family:'IBM Plex Mono',monospace;background:#eef1f5;border-radius:4px;padding:1px 5px;font-size:11.5px;color:#334}
+  table{border-collapse:collapse;width:100%;font-size:11.5px;margin:6px 0}
+  th,td{border:1px solid #d9dee6;padding:7px 10px;text-align:left;vertical-align:top}
+  thead th{background:#1f2a44;color:#fff;font-weight:600}
+  tbody th{background:#f3f5f8;font-weight:600;white-space:nowrap}
+  .branch{display:flex;gap:12px;margin:6px 0 4px;flex-wrap:wrap}
+  .col{flex:1;min-width:220px;border:1px solid #d9dee6;border-radius:10px;padding:12px 14px}
+  .col.sheet{background:#f2f9f4;border-color:#b6ddc4}
+  .col.db{background:#eef4fb;border-color:#c3d6ea}
+  .col h4{margin:0 0 7px;font-size:13px;font-weight:700}
+  .col.sheet h4{color:#155e37}.col.db h4{color:#1f4d7a}
+  .col ul{margin:0;padding-left:16px;font-size:11.8px}.col li{margin-bottom:4px}
+  .pill{display:inline-block;font-size:10px;font-weight:700;border-radius:5px;padding:2px 7px}
+  .pill.g{background:#e4f5ea;color:#1a7a43}.pill.b{background:#e0ecf8;color:#1f4d7a}
+  .note{margin-top:18px;border:1px solid #d9c6a6;background:#fdf8ee;border-radius:10px;padding:12px 15px;font-size:12px}
+  .note b{color:#8a5a12}
+  .foot{margin-top:20px;font-size:11px;color:#8a929e;border-top:1px solid #e2e6ec;padding-top:8px}
+</style>
+</helmet>
+<doc-page margin="0.7in">
+<div class="doc">
+  <h1>ITSA-TENT — การแยกข้อมูลผู้เช่า (Tenant Isolation)</h1>
+  <p class="sub">สวิตช์ pooled/siloed + ที่อยู่ของข้อมูล รายผู้เช่า · โมเดล Hybrid · Mee-ERP OS</p>
+
+  <p class="lead">ตาราง <code>tenant-isolation</code> คือที่กำหนด <b>ต่อผู้เช่าแต่ละราย</b> ว่าข้อมูลจะถูกเก็บ <b>ที่ไหนและแยกลึกแค่ไหน</b> — เป็นการนำโมเดล pooled/siloed มาตั้งค่าใช้จริง</p>
+
+  <h2>4 ฟิลด์หลัก</h2>
+  <table>
+    <thead><tr><th style="width:150px">ฟิลด์</th><th>ความหมาย</th><th>ค่าที่เลือกได้</th></tr></thead>
+    <tbody>
+      <tr><th>รูปแบบแยกข้อมูล<br><code>mode</code></th><td>แยกลึกแค่ไหน</td><td><span class="pill g">Shared Schema</span> = Pooled (DB เดียว แยกด้วย tenant_id) · <span class="pill b">Dedicated DB</span> = Siloed (DB เฉพาะราย)</td></tr>
+      <tr><th>ฐานข้อมูล<br><code>db</code></th><td>backend ที่ใช้เก็บ</td><td>Microsoft SQL Server · PostgreSQL · MySQL · Google Sheet</td></tr>
+      <tr><th>ประเภทการแบ่งพาร์ท<br><code>partition_type</code></th><td>แบ่งไฟล์ยังไง <i>(เฉพาะ Google Sheet)</i></td><td>พาร์ทฐานข้อมูลรวม (ไฟล์เดียว) · พาร์ทฐานข้อมูลแยกตามโมดูล</td></tr>
+      <tr><th>ปลายทางข้อมูล</th><td>ที่อยู่จริงของข้อมูล</td><td>ลิงก์ App Script (Sheet) หรือ ข้อมูลเชื่อมต่อ DB</td></tr>
+    </tbody>
+  </table>
+
+  <h2>ฟอร์มปรับตามฐานข้อมูลที่เลือก (Conditional)</h2>
+  <div class="branch">
+    <div class="col sheet">
+      <h4>ถ้าเลือก Google Sheet</h4>
+      <ul>
+        <li>แสดง <b>ประเภทการแบ่งพาร์ท</b></li>
+        <li>พาร์ทรวม → ลิงก์ App Script <b>— ALL</b> (เดียว)</li>
+        <li>พาร์ทแยกตามโมดูล → ลิงก์รายโมดูล PROC · SALE · INVT · PROD · SRVC · ACCT · HRMS · ADMS · ITSA</li>
+      </ul>
+    </div>
+    <div class="col db">
+      <h4>ถ้าเลือก SQL Server / PostgreSQL / MySQL</h4>
+      <ul>
+        <li>ซ่อนลิงก์ App Script ทั้งหมด (รวม — ALL)</li>
+        <li>แสดงข้อมูลเชื่อมต่อ DB: <code>db_host</code> · <code>db_port</code> · <code>db_name</code> · <code>db_schema</code>* · <code>db_user</code> · <code>db_ssl</code></li>
+        <li>*สคีมาแสดงเฉพาะ PostgreSQL / SQL Server</li>
+      </ul>
+    </div>
+  </div>
+  <p style="font-size:12px">กลไก: เงื่อนไขแสดงฟิลด์รองรับทั้งแบบ <b>ค่าอยู่ในชุด</b> (OR) และ <b>เงื่อนไขร่วม</b> (AND) — ลิงก์ Sheet ถูก gate ด้วย <code>db == Google Sheet</code> AND <code>partition_type == …</code></p>
+
+  <h2>ตัวอย่างข้อมูล (Seed)</h2>
+  <table>
+    <thead><tr><th>ผู้เช่า</th><th>mode</th><th>db</th><th>ปลายทาง</th></tr></thead>
+    <tbody>
+      <tr><td>บมจ. มี กรุ๊ป</td><td>Dedicated DB (siloed)</td><td>MS SQL Server</td><td>sql01.mee-erp.local:1433 · meeerp_group</td></tr>
+      <tr><td>บจก. มี โลจิสติกส์</td><td>Shared Schema (pooled)</td><td>PostgreSQL</td><td>pg.mee-erp.internal:5432 · meeerp_pool</td></tr>
+      <tr><td>บจก. มี เทรดดิ้ง / ฟู้ดส์</td><td>Shared Schema (pooled)</td><td>Google Sheet</td><td>ลิงก์ App Script (แยกตามโมดูล)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <p style="margin:0"><b>บทบาทในระบบ Hybrid:</b> ตารางนี้เป็น "สวิตช์ pooled/siloed + ที่อยู่ข้อมูล" รายผู้เช่า — กำหนดว่า tenant ไหนอยู่ DB รวม (pooled) ไหนแยก DB (siloed) และข้อมูลไปลงปลายทางใด ทำให้ระบบให้บริการทั้งลูกค้าเล็ก (Sheet/Pooled) และลูกค้าใหญ่ (Dedicated DB/Siloed) บนแพลตฟอร์มเดียวได้ · ทุกฟิลด์ persist ลง Google Sheet ผ่าน projection/native</p>
+  </div>
+
+  <p class="foot">Mee-ERP OS · ITSA-TENT · Tenant Isolation · 14 ส.ค. 2026</p>
+</div>
+</doc-page>
+<script src="./doc-page.js"></script>
+</x-dc>
+</body>
+</html>
