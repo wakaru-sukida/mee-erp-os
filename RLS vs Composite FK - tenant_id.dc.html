@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  doc-page:not(:defined){visibility:hidden}
+  body{margin:0;background:#eceef2}
+  .doc{font-family:'IBM Plex Sans Thai',sans-serif;color:#1c2432;line-height:1.62}
+  .doc h1{font-size:24px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+  .doc .sub{font-size:13px;color:#5b6472;margin:0 0 20px}
+  .doc h2{font-size:15px;font-weight:700;margin:24px 0 9px;padding-bottom:6px;border-bottom:2px solid #e2e6ec}
+  .doc p{margin:0 0 10px;font-size:12.5px}
+  .lead{background:#fdeceb;border-left:3px solid #b23b3b;border-radius:0 8px 8px 0;padding:10px 14px;font-size:12.5px;margin:0 0 10px}
+  .lead b{color:#8f2e2e}
+  code,pre{font-family:'IBM Plex Mono','SF Mono',monospace}
+  code{background:#eef1f5;border-radius:4px;padding:1px 5px;font-size:11.5px;color:#334}
+  pre{background:#1f2a44;color:#e8ecf4;border-radius:9px;padding:12px 14px;font-size:11px;line-height:1.55;overflow:auto;margin:8px 0 12px;break-inside:avoid}
+  pre .c{color:#8fa3c4}
+  pre .k{color:#7fd6a6}
+  table{border-collapse:collapse;width:100%;font-size:12px;break-inside:avoid;margin:6px 0}
+  th,td{border:1px solid #d9dee6;padding:8px 11px;vertical-align:top;text-align:left}
+  thead th{background:#1f2a44;color:#fff;font-weight:600}
+  tbody th{background:#f3f5f8;font-weight:600;width:170px}
+  .ok{color:#1a7a43;font-weight:700}
+  .no{color:#b23b3b;font-weight:700}
+  .note{margin-top:20px;border:1px solid #d9c6a6;background:#fdf8ee;border-radius:10px;padding:13px 16px;font-size:12px;break-inside:avoid}
+  .note b{color:#8a5a12}
+  .foot{margin-top:20px;font-size:11px;color:#8a929e;border-top:1px solid #e2e6ec;padding-top:8px}
+</style>
+</helmet>
+<doc-page margin="0.7in">
+<div class="doc">
+  <h1>RLS ต้องมี tenant_id ทุกตารางไหม?</h1>
+  <p class="sub">ความเข้าใจผิดที่พบบ่อย — RLS กับ Composite FK ต่างกันที่ “ใช้ tenant_id ทำอะไร” ไม่ใช่ “มี tenant_id หรือไม่” · Mee-ERP OS</p>
+
+  <p class="lead"><b>ข้อสรุป:</b> RLS <b>ก็ต้องมี</b> <code>tenant_id</code> ในทุกตาราง tenant-owned เหมือน Composite FK — ไม่ใช่ใส่แค่ตาราง company ตารางเดียว</p>
+
+  <h2>ทำไม RLS ต้องมี tenant_id ในตารางนั้นเอง</h2>
+  <p>ดูที่ตัว policy — <code>tenant_id</code> ในเงื่อนไขคือ <b>คอลัมน์ของตาราง branch เอง</b> ถ้า branch ไม่มีคอลัมน์นี้ policy จะเขียนไม่ได้เลย:</p>
+  <pre>ALTER TABLE branch <span class="k">ENABLE ROW LEVEL SECURITY</span>;
+
+CREATE POLICY tenant_isolation ON branch
+  USING (<span class="k">tenant_id</span> = current_setting('app.tenant_id')::bigint);
+  <span class="c">-- ↑ tenant_id ตัวนี้ = คอลัมน์ของ branch</span></pre>
+  <p>RLS ทำงานโดย “อ่านค่า tenant_id ของแต่ละแถว” มาเทียบกับ tenant ปัจจุบัน ดังนั้นทุกตารางที่จะกันข้าม tenant <b>ต้องเก็บ tenant_id ของตัวเอง</b></p>
+
+  <h2>สองวิธีต่างกันตรงไหน</h2>
+  <table>
+    <thead><tr><th style="width:170px">หัวข้อ</th><th>Composite FK</th><th>Row-Level Security</th></tr></thead>
+    <tbody>
+      <tr><th>ต้องมี tenant_id ทุกตาราง?</th><td class="ok">✅ ต้องมี</td><td class="ok">✅ ต้องมี</td></tr>
+      <tr><th>ใช้ tenant_id ทำอะไร</th><td>ผูกเข้า FK คู่ <code>(tenant_id, company_id)</code> เพื่อกันผูกผิด tenant</td><td>ใส่ในเงื่อนไข policy เพื่อกรองแถวตอน query</td></tr>
+      <tr><th>กันอะไร</th><td>ผูกความสัมพันธ์ข้าม tenant (เขียนผิด)</td><td>อ่าน/เห็น/แก้แถวข้าม tenant (เข้าถึงผิด)</td></tr>
+      <tr><th>ทำงานเมื่อ</th><td>ตอน insert / update</td><td>ตอนทุก query</td></tr>
+    </tbody>
+  </table>
+
+  <h2>แล้วแบบ “tenant_id เฉพาะ company” ล่ะ?</h2>
+  <p>แบบที่เก็บ tenant_id ไว้แค่ตาราง company แล้วให้ตารางลูก join กลับไปหา มีจริง เรียกว่า <b>resolve ผ่าน parent</b> — แต่ policy จะกลายเป็น subquery ที่ต้อง join ทุกครั้ง:</p>
+  <pre>CREATE POLICY tenant_isolation ON branch USING (
+  <span class="k">EXISTS</span> (SELECT 1 FROM company c
+    WHERE c.company_id = branch.company_id
+      AND c.tenant_id = current_setting('app.tenant_id')::bigint)
+);</pre>
+  <p><span class="no">ข้อเสีย:</span> ทุก query ต้อง join → <b>ช้า</b>, เขียน policy ยุ่ง, และพลาดง่ายกว่า</p>
+
+  <div class="note">
+    <p style="margin:0"><b>เพราะเหตุนี้ระบบ Pooled จริงจึง denormalize <code>tenant_id</code> ลงทุกตาราง tenant-owned</b> — ทั้ง RLS และ composite FK ทำงานได้เร็วและเขียนง่ายกว่า ไม่ต้อง join ย้อนไปหา company ทุกครั้ง ส่วน Master กลาง (ประเทศ/จังหวัด/อำเภอ/ตำบล, สกุลเงิน) ยังคงเป็น platform-global ไม่มี tenant_id ตามเดิม</p>
+  </div>
+
+  <p class="foot">Mee-ERP OS · Architecture Note · 14 ส.ค. 2026 — เอกสารประกอบการตัดสินใจ</p>
+</div>
+</doc-page>
+<script src="./doc-page.js"></script>
+</x-dc>
+</body>
+</html>

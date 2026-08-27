@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'IBM Plex Sans Thai','Inter',system-ui,sans-serif;}
+</style>
+</helmet>
+<div style="display:flex;height:100vh;min-height:0;background:{{ bg }};color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">
+  <aside style="width:230px;flex-shrink:0;border-right:1px solid {{ border }};background:{{ panel }};display:flex;flex-direction:column;min-height:0;">
+    <div style="padding:16px 16px 12px;border-bottom:1px solid {{ border }};">
+      <div style="font-size:9.5px;font-weight:700;letter-spacing:.6px;color:{{ acc }};">L1 · HRMS</div>
+      <div style="font-size:14.5px;font-weight:800;margin-top:3px;letter-spacing:-.2px;">ระบบบริหารทรัพยากรบุคคล</div>
+      <div style="font-size:10.5px;color:{{ sub }};margin-top:2px;">Human Resource Management System</div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:8px;min-height:0;">
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+        <div style="margin:6px 6px 2px;">
+          <span style="font-size:9px;font-weight:700;letter-spacing:.4px;padding:2px 7px;border-radius:5px;background:{{ g.badgeBg }};color:{{ g.badgeFg }};">{{ g.label }}</span>
+        </div>
+        <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="4">
+          <button onClick="{{ it.onClick }}" style="{{ it.style }}">
+            <span style="font-size:12.5px;font-weight:{{ it.weight }};">{{ it.th }}</span>
+            <span style="display:flex;align-items:center;gap:6px;">
+              <sc-if value="{{ it.dis }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:8px;font-weight:700;letter-spacing:.4px;padding:2px 5px;border-radius:5px;background:#e5484d;color:#fff;">ปิด</span>
+              </sc-if>
+              <sc-if value="{{ it.hid }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:8px;font-weight:700;letter-spacing:.4px;padding:2px 5px;border-radius:5px;background:{{ border }};color:{{ sub }};">HIDDEN</span>
+              </sc-if>
+              <span style="font-size:9.5px;font-weight:700;color:{{ it.abbrColor }};">{{ it.abbr }}</span>
+            </span>
+          </button>
+        </sc-for>
+      </sc-for>
+    </div>
+  </aside>
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;">
+    <sc-if value="{{ is_em }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-EM" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.em.onCatalog }}" on-mode="{{ handlers.em.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_pos }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-POS" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.pos.onCatalog }}" on-mode="{{ handlers.pos.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_rec }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-REC" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.rec.onCatalog }}" on-mode="{{ handlers.rec.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_att }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-ATT" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.att.onCatalog }}" on-mode="{{ handlers.att.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_lev }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-LEV" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.lev.onCatalog }}" on-mode="{{ handlers.lev.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_ot }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-OT" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.ot.onCatalog }}" on-mode="{{ handlers.ot.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_shf }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-SHF" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.shf.onCatalog }}" on-mode="{{ handlers.shf.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_pay }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-PAY" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.pay.onCatalog }}" on-mode="{{ handlers.pay.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_ben }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-BEN" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.ben.onCatalog }}" on-mode="{{ handlers.ben.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_claim }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-CLAIM" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.claim.onCatalog }}" on-mode="{{ handlers.claim.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_perf }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-PERF" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.perf.onCatalog }}" on-mode="{{ handlers.perf.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_kpi }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-KPI" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.kpi.onCatalog }}" on-mode="{{ handlers.kpi.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_okr }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-OKR" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.okr.onCatalog }}" on-mode="{{ handlers.okr.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_comp }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-COMP" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.comp.onCatalog }}" on-mode="{{ handlers.comp.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_skill }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-SKILL" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.skill.onCatalog }}" on-mode="{{ handlers.skill.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_time }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-TIME" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.time.onCatalog }}" on-mode="{{ handlers.time.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_wfm }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-WFM" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.wfm.onCatalog }}" on-mode="{{ handlers.wfm.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_lms }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-LMS" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.lms.onCatalog }}" on-mode="{{ handlers.lms.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_ats }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-ATS" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.ats.onCatalog }}" on-mode="{{ handlers.ats.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_portal }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-PORTAL" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.portal.onCatalog }}" on-mode="{{ handlers.portal.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ is_rpta }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="HRMS-RPTA" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.rpta.onCatalog }}" on-mode="{{ handlers.rpta.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ hasConfirm }}" hint-placeholder-val="{{ false }}">
+      <div style="position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.32);display:flex;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:{{ panel }};border-radius:14px;border:1px solid {{ border }};box-shadow:0 20px 60px rgba(0,0,0,0.25);width:400px;max-width:100%;padding:22px 24px;">
+          <div style="font-size:15.5px;font-weight:800;margin-bottom:10px;">ออกจากหน้านี้โดยไม่บันทึก?</div>
+          <div style="font-size:12.5px;color:{{ sub }};line-height:1.6;margin-bottom:18px;">โมดูล {{ confirmFromTh }} มีการแก้ไขที่ยังไม่ได้บันทึก การสลับไปยัง {{ confirmToTh }} จะละทิ้งการเปลี่ยนแปลงนี้</div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button onClick="{{ cancelSwitch }}" style="padding:8px 16px;border-radius:9px;border:1px solid {{ border }};background:{{ panel }};color:{{ fg }};font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">ยกเลิก</button>
+            <button onClick="{{ confirmSwitchAction }}" style="padding:8px 16px;border-radius:9px;border:none;background:{{ acc }};color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;">ไม่บันทึกและสลับ</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+class Component extends DCLogic {
+  state = { active: 'hrms-em', catalogs: {}, modes: {}, confirm: null };
+  MODKEYS = { 'hrms-em':'em','hrms-pos':'pos','hrms-rec':'rec','hrms-att':'att','hrms-lev':'lev','hrms-ot':'ot','hrms-shf':'shf','hrms-pay':'pay','hrms-ben':'ben','hrms-claim':'claim','hrms-perf':'perf','hrms-kpi':'kpi','hrms-okr':'okr','hrms-comp':'comp','hrms-skill':'skill','hrms-time':'time','hrms-wfm':'wfm','hrms-lms':'lms','hrms-ats':'ats','hrms-portal':'portal','hrms-rpta':'rpta' };
+  BUILT = ['hrms-em','hrms-pos','hrms-rec','hrms-att','hrms-lev','hrms-ot','hrms-shf','hrms-pay','hrms-ben','hrms-claim','hrms-perf','hrms-kpi','hrms-okr','hrms-comp','hrms-skill','hrms-time','hrms-wfm','hrms-lms','hrms-ats','hrms-portal','hrms-rpta'];
+  _handlers = {};
+  mkHandlers(key) {
+    if (this._handlers[key]) return this._handlers[key];
+    const h = {
+      onCatalog: (cat) => this.setState(s => ({ catalogs: Object.assign({}, s.catalogs, { [key]: cat }) })),
+      onMode: (m) => this.setState(s => ({ modes: Object.assign({}, s.modes, { [key]: m }) })),
+    };
+    this._handlers[key] = h;
+    return h;
+  }
+  requestSwitch(id) {
+    if (id === this.state.active) return;
+    const curKey = this.MODKEYS[this.state.active];
+    const dirty = curKey && (this.state.modes[curKey] === 'create' || this.state.modes[curKey] === 'edit');
+    if (dirty) this.setState({ confirm: id }); else this.setState({ active: id });
+  }
+  confirmSwitch() { const id = this.state.confirm; this.setState({ active: id, confirm: null }); }
+  cancelSwitch() { this.setState({ confirm: null }); }
+
+  // ---- HRMS submodule registry (mirrors Shell's MODULES/HRMS_GEN) ----
+  SUBS() {
+    return [
+      ['hrms-em','EM','ระบบบริหารข้อมูลพนักงาน','core',false,false],
+      ['hrms-pos','POS','ระบบบริหารตำแหน่งงาน','core',false,false],
+      ['hrms-rec','REC','ระบบบริหารการสรรหาบุคลากร','core',false,false],
+      ['hrms-att','ATT','ระบบบริหารเวลาทำงาน','core',false,false],
+      ['hrms-lev','LEV','ระบบบริหารการลา','core',false,false],
+      ['hrms-ot','OT','ระบบบริหารการทำงานล่วงเวลา','core',false,false],
+      ['hrms-shf','SHF','ระบบบริหารกะการทำงาน','core',false,false],
+      ['hrms-pay','PAY','ระบบบริหารเงินเดือน','core',false,false],
+      ['hrms-ben','BEN','ระบบบริหารสวัสดิการ','core',false,false],
+      ['hrms-claim','CLAIM','ระบบบริหารค่าใช้จ่ายและการเบิก','core',false,false],
+      ['hrms-perf','PERF','ระบบบริหารผลการปฏิบัติงาน','core',false,false],
+      ['hrms-kpi','KPI','ระบบบริหารตัวชี้วัดผลงาน','core',false,false],
+      ['hrms-okr','OKR','ระบบบริหาร OKR','core',false,false],
+      ['hrms-comp','COMP','ระบบบริหารค่าตอบแทน','core',false,false],
+      ['hrms-skill','SKILL','ระบบฝึกอบรมทักษะ & ใบรับรอง','core',false,false],
+      ['hrms-time','TIME','ระบบติดตามเวลาการทำงาน','ext',false,false],
+      ['hrms-wfm','WFM','ระบบบริหารกำลังคน','ext',false,false],
+      ['hrms-lms','LMS','ระบบบริหารการเรียนรู้','ext',false,false],
+      ['hrms-ats','ATS','ระบบติดตามผู้สมัครงาน','ext',false,false],
+      ['hrms-portal','PORTAL','ระบบพอร์ทัลฝ่ายบุคคล','ext',false,false],
+      ['hrms-rpta','RPTA','รายงานและการวิเคราะห์','report',false,false],
+    ];
+  }
+
+  T() { return this.props.theme || {}; }
+
+  renderVals() {
+    const T = this.T();
+    const dark = T.name === 'dark';
+    const acc = T.acc || 'oklch(0.55 0.16 255)';
+    const bg = T.bg || (dark ? 'oklch(0.19 0.012 265)' : 'oklch(0.98 0.004 255)');
+    const panel = T.card || (dark ? 'oklch(0.23 0.014 265)' : '#fff');
+    const fg = T.text || (dark ? 'oklch(0.94 0.01 265)' : 'oklch(0.25 0.02 265)');
+    const sub = T.sub || (dark ? 'oklch(0.68 0.02 265)' : 'oklch(0.55 0.02 265)');
+    const border = T.border || (dark ? 'oklch(0.32 0.014 265)' : 'oklch(0.9 0.006 255)');
+    const accSoft = T.accSoft || (dark ? 'rgba(120,160,255,.16)' : 'rgba(60,110,240,.10)');
+
+    const TYPE = {
+      core:   ['Core Functions', dark?'rgba(90,140,255,.18)':'oklch(0.95 0.05 220)', dark?'oklch(0.8 0.1 220)':'oklch(0.45 0.15 220)'],
+      ext:    ['Extensions',     dark?'rgba(80,200,140,.18)':'oklch(0.95 0.05 158)', dark?'oklch(0.82 0.1 158)':'oklch(0.45 0.15 158)'],
+      report: ['Reports & Analytics', dark?'rgba(240,180,90,.18)':'oklch(0.95 0.05 35)', dark?'oklch(0.84 0.1 60)':'oklch(0.5 0.15 45)'],
+    };
+    const subs = this.SUBS();
+    const active = this.state.active;
+    const showHidden = this.props.showHidden !== undefined ? !!this.props.showHidden : true;
+    const mk = (mt) => subs.filter(s => s[3] === mt && (showHidden || !s[4])).map(([id, abbr, th, , hid, dis]) => {
+      const on = id === active;
+      return {
+        th, abbr, hid: !!hid, dis: !!dis,
+        weight: on ? 700 : 500,
+        abbrColor: on ? acc : sub,
+        style: `display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;border:none;cursor:pointer;font-family:inherit;padding:8px 10px;border-radius:9px;margin:1px 0;color:${on?fg:sub};background:${on?accSoft:'transparent'};opacity:${dis?0.5:(hid?0.62:1)};`,
+        onClick: () => this.requestSwitch(id),
+      };
+    });
+    const groups = [['core'],['ext'],['report']].map(([mt]) => ({
+      label: TYPE[mt][0], badgeBg: TYPE[mt][1], badgeFg: TYPE[mt][2], items: mk(mt),
+    })).filter(g => g.items.length);
+
+    const cur = subs.find(s => s[0] === active) || subs[0];
+    const api = this.props.api || {};
+    const handlers = {};
+    Object.keys(this.MODKEYS).forEach(k => { handlers[this.MODKEYS[k]] = this.mkHandlers(this.MODKEYS[k]); });
+    const confirmId = this.state.confirm;
+    const confirmFrom = confirmId ? (subs.find(s => s[0] === active) || subs[0]) : null;
+    const confirmTo = confirmId ? (subs.find(s => s[0] === confirmId) || subs[0]) : null;
+    return {
+      handlers,
+      hasConfirm: !!confirmId,
+      confirmFromTh: confirmFrom ? confirmFrom[2] : '',
+      confirmToTh: confirmTo ? confirmTo[2] : '',
+      cancelSwitch: () => this.cancelSwitch(),
+      confirmSwitchAction: () => this.confirmSwitch(),
+      bg, fg, sub, panel, border, acc,
+      groups,
+      themeName: T.name || '(ยังไม่ได้ส่ง theme)',
+      activeTh: cur[2],
+      activeAbbr: cur[1],
+      activeCrumb: 'L1 · HRMS › L2 · ' + ({core:'Core Functions',ext:'Extensions',report:'Reports & Analytics'}[cur[3]]) + ' › L3 · ' + cur[2],
+      is_em: active === 'hrms-em',
+      is_pos: active === 'hrms-pos',
+      is_rec: active === 'hrms-rec',
+      is_att: active === 'hrms-att',
+      is_lev: active === 'hrms-lev',
+      is_ot: active === 'hrms-ot',
+      is_shf: active === 'hrms-shf',
+      is_pay: active === 'hrms-pay',
+      is_ben: active === 'hrms-ben',
+      is_claim: active === 'hrms-claim',
+      is_perf: active === 'hrms-perf',
+      is_kpi: active === 'hrms-kpi',
+      is_okr: active === 'hrms-okr',
+      is_comp: active === 'hrms-comp',
+      is_skill: active === 'hrms-skill',
+      is_time: active === 'hrms-time',
+      is_wfm: active === 'hrms-wfm',
+      is_lms: active === 'hrms-lms',
+      is_ats: active === 'hrms-ats',
+      is_portal: active === 'hrms-portal',
+      is_rpta: active === 'hrms-rpta',
+      showHidden,
+      theme: this.props.theme,
+      api: this.props.api,
+      win: this.props.win,
+    };
+  }
+}
+</script>
+</body>
+</html>

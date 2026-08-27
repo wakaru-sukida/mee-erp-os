@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  DBKEY = 'db:proc-po:v1';
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwBVfkM1SKbU9GBGqKl7HFSyYwQk68Pbgw4sLIuVDYauQNcjoexIKGq95jQo6t9G15kbw/exec';
+  SHEETS_TABS = { 'purchase-order': 'proc-po-header', 'po-detail': 'proc-po-detail' };
+  _resolveSheetUrl() { try { const b = this.K && this.K.bus && this.K.bus(); const m = b && b.get ? b.get('tenant.sheetUrls', null) : null; if (m && m.PROC) return m.PROC; } catch (e) {} return this.SHEETS_URL; }
+  _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); } K.dbPersist(this, this.DBKEY); }
+  _seedSheetIfEmpty() { /* sheet is source of truth — no local seed push */ }
+  _invtItems() {
+    try {
+      let rows = null;
+      const b = this.K && this.K.bus && this.K.bus();
+      if (b && b.get) { const db = b.get('db:invt-item:v1', null); if (db && db['item-main'] && db['item-main'].length) rows = db['item-main']; }
+      if (!rows) { let raw = {}; try { raw = JSON.parse(window.localStorage.getItem('meeerp.bus.v2') || '{}') || {}; } catch (e) {} const db = raw['db:invt-item:v1']; if (db && db['item-main'] && db['item-main'].length) rows = db['item-main']; }
+      if (!rows) return [];
+      return rows.filter(r => { const pur = r.pur !== undefined ? r.pur : (r.IsPurchasable ? 'ใช่' : undefined); return pur === undefined || pur === 'ใช่' || pur === true; });
+    } catch (e) { return []; }
+  }
+  _toDateInput(v) { if (v == null || v === '') return ''; const s = String(v); const m = s.match(/^(\d{4}-\d{2}-\d{2})/); if (m) return m[1]; const d = new Date(s); if (!isNaN(d)) { const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); } return ''; }
+  _fmtMoney(v) { if (v == null || v === '') return '—'; const n = Number(String(v).replace(/[^\d.-]/g, '')); if (isNaN(n)) return String(v); return '฿' + n.toLocaleString('th-TH', { maximumFractionDigits: 2 }); }
+  _fmtDate(v) { if (v == null || v === '') return '—'; const s = String(v); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + '-' + m[2] + '-' + m[3]; const d = new Date(s); if (!isNaN(d)) { const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); } return s; }
+  _prLines(r) { if (r) { if (Array.isArray(r.lineItems) && r.lineItems.length) return r.lineItems.map(l => Object.assign({}, l)); if (typeof r.lines === 'string' && r.lines) { try { const a = JSON.parse(r.lines); if (Array.isArray(a) && a.length) return a.map(l => Object.assign({}, l)); } catch (e) {} } } return [{ item: '', desc: '', uom: '', qty: 1, price: 0 }]; }
+  CC_NAME = { 'CC-1001': 'ฝ่ายขาย — สำนักงานใหญ่', 'CC-1002': 'แผนกขายต่างประเทศ', 'CC-1003': 'ฝ่ายจัดซื้อ — สำนักงานใหญ่', 'CC-1101': 'ฝ่ายขาย — เชียงใหม่', 'CC-1102': 'ฝ่ายจัดซื้อ — เชียงใหม่', 'CC-2001': 'ฝ่ายบัญชีการเงิน', 'CC-2002': 'แผนกการเงิน', 'CC-2101': 'ฝ่ายไอที — เชียงใหม่', 'CC-3001': 'ฝ่ายโลจิสติกส์', 'CC-3002': 'ฝ่ายคลังสินค้า' };
+  CC_KEYS = Object.keys(this.CC_NAME);
+  state = { nav: 'purchase-order', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {}, sheetsStatus: 'off' };
+  _tenantOpts() { const b = this.K && this.K.bus && this.K.bus(); const norm = a => (Array.isArray(a) ? a : []).map(t => ({ id: String(t.id || t.tent_id || t.code || t.tent_code || ''), code: t.code || t.tent_code || '', name_th: t.name_th || t.tent_name || t.name || t.name_en || '' })).filter(t => t.id); let l = (b && b.get && b.get('org.tenants', null)) || []; let fromBus = norm(l); if (fromBus.length) return fromBus; if (b && b.get) { const tdb = b.get('db:itsa-tent:v2', null) || b.get('db:itsa-tent:v1', null); const trows = (tdb && tdb['tenant-management']) || []; fromBus = norm(trows); if (fromBus.length) return fromBus; } return this.state._tenants || []; }
+  TENT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  _tenantPull() { if (this._tenantPulled || typeof fetch === 'undefined') return; this._tenantPulled = true; fetch(this.TENT_SHEETS_URL + '?tab=itsa-tent-management&_=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(j => { if (!j || !j.ok || !j.rows) { this._tenantPulled = false; return; } const list = j.rows.filter(r2 => r2 && (r2.tent_name || r2.tent_code)).map(r2 => ({ id: String(r2.tent_id || r2.tent_code || ''), code: r2.tent_code || '', name_th: r2.tent_name || r2.tent_name_en || '' })); if (list.length) this.setState({ _tenants: list }); else this._tenantPulled = false; }).catch(() => { this._tenantPulled = false; }); }
+  _tenantName(id) { const t = this._tenantOpts().find(x => x.id === String(id)); return t ? ((t.code ? t.code + ' - ' : '') + (t.name_th || '')) : (id || ''); }
+  componentDidMount() { this._tenantPull(); if (this.K) { this.SHEETS_URL = this._resolveSheetUrl(); if (this.K.sheetsBind) { this.K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS, { 'purchase-order': r => this._poNativeFromSchema(r) }); this._wrapPush(); } this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.SHEETS_URL = this._resolveSheetUrl(); if (K.sheetsBind) { K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS, { 'purchase-order': r => this._poNativeFromSchema(r) }); this._wrapPush(); } this.setState({ ready: true }); this._reportCatalog(); }); }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._handleReq(); this._seedSheetIfEmpty(); if (!this._poReconciled && this.state.sheetsStatus === 'connected') { this._poReconciled = true; this._reconcilePO(); } if (this.state.sheetsStatus === 'connected') this._drainAutoQueue(); }
+  _drainAutoQueue() {
+    try {
+      const b = this.K && this.K.bus && this.K.bus();
+      if (!b || !b.get || !b.set) return;
+      const q = b.get('proc.po.autoQueue', null) || [];
+      if (!q.length) return;
+      const key = 'purchase-order';
+      const cfg = this.CFG()[key];
+      const cur0 = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+      const existingRefs = new Set(cur0.map(r => r.prRef).filter(Boolean));
+      const todo = q.filter(d => !existingRefs.has(d.prRef));
+      if (!todo.length) { if (q.length) b.set('proc.po.autoQueue', []); return; }
+      const nowIso = new Date().toISOString();
+      const d0 = new Date(); const yy = String(d0.getFullYear() % 100).padStart(2, '0'); const mm = String(d0.getMonth() + 1).padStart(2, '0'); const pfx = 'PO-' + yy + mm + '-';
+      const used = new Set(cur0.map(r => r.no));
+      const created = todo.map(draft => {
+        let n = 1; while (used.has(pfx + String(n).padStart(3, '0'))) n++; const no = pfx + String(n).padStart(3, '0'); used.add(no);
+        const base = Object.assign({ no, vend: '', ts: nowIso.slice(0, 10), appr: 'รออนุมัติ', s: 'ใช้งาน', updatedAt: nowIso, updatedBy: draft.createdBy, rowVersion: 1 }, draft);
+        return this._poHeaderCols(base, null);
+      });
+      this.setState(s => { const db = Object.assign({}, s.db); const curNow = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = created.concat(curNow); db['po-detail'] = this._flattenDetailPO(db[key]); return { db }; });
+      b.set('proc.po.autoQueue', []);
+      this.toast('สร้างใบสั่งซื้ออัตโนมัติจาก PR ที่อนุมัติแล้ว ' + created.length + ' รายการ (โปรดระบุผู้จำหน่ายก่อนดำเนินการต่อ)');
+    } catch (e) {}
+  }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'doc', hidden: false, screens: cfg[k].screens.map(([id, lb, ic]) => [id, lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb, ic]) }))); }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); else if (r.kind === 'scr') this.setScr(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; const m = this.curMode(); if (m !== this._lastMode) { this._lastMode = m; this.props.onMode(m); } }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+
+  CFG() {
+    return {
+      'purchase-order': {
+        th: 'ใบสั่งซื้อ', ic: 'cart',
+        screens: [['list', 'ใบสั่งซื้อ List — รายการใบสั่งซื้อ', 'list'], ['detail', 'ใบสั่งซื้อ Detail — รายละเอียดใบสั่งซื้อ', 'doc'], ['create', 'Create — สร้างใหม่', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
+        kpi: [['PO เดือนนี้', '0', '—', 145], ['รออนุมัติ', '0', '—', 35], ['มูลค่ารวมเดือนนี้', '฿0', '—', 130]],
+        cols: [{ h: 'เลขที่ PO', k: 'no', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'ผู้จำหน่าย', k: 'vend' }, { h: 'อ้างอิง PR', k: 'prRef', render: r => r.prRef && r.prRef !== '— ไม่อ้างอิง —' ? r.prRef : '—' }, { h: 'วันที่สั่งซื้อ', k: 'ts', render: r => this._fmtDate(r.ts) }, { h: 'มูลค่ารวม', k: 'amt', render: r => this._fmtMoney(r.total != null && r.total !== '' ? r.total : r.amt) }, { h: 'ศูนย์ต้นทุน', k: 'cc', render: r => r.cc ? r.cc + ' · ' + (this.CC_NAME[r.cc] || '') : 'จากแผนก (อัตโนมัติ)' }],
+        rows: [],
+        form: [['ข้อมูลใบสั่งซื้อ (PO Header)', 'cart', [['เลขที่ PO', 0, 'สร้างอัตโนมัติ'], ['ผู้จำหน่าย', 1, ['บจ. สยามซัพพลาย', 'บจ. เอเชียโลจิสติกส์', 'บจ. โกลบอลอิเล็กทรอนิกส์', 'หจก. ไทยแพ็คเกจจิ้ง', 'ร้านวัสดุก่อสร้างรุ่งเรือง']], ['ศูนย์ต้นทุน', 1, this.CC_KEYS], ['ผู้สั่งซื้อ', 1, 'ชื่อผู้สั่งซื้อ']]], ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', [['กลุ่มผู้เช่า (Tenant)', 1, []], ['บริษัท', 1, ['บมจ. มี กรุ๊ป','บจก. มี เทรดดิ้ง','บจก. มี โลจิสติกส์']], ['สาขา', 1, ['สำนักงานใหญ่ (สาทร)','สำนักงานใหญ่ (ลาดพร้าว)','สำนักงานใหญ่ (บางนา)']]]], ['รายละเอียดการสั่งซื้อ (Details)', 'gauge', [['อ้างอิงใบขอจัดซื้อ (PR)', 1, ['— ไม่อ้างอิง —']], ['วันที่สั่งซื้อ', 1, 'YYYY-MM-DD'], ['วันที่ต้องการรับ', 1, 'YYYY-MM-DD'], ['เงื่อนไขการชำระเงิน', 1, ['เงินสด', 'เครดิต 30 วัน', 'เครดิต 60 วัน', 'เครดิต 90 วัน']], ['สถานะการจัดส่ง', 1, ['รอจัดส่ง', 'กำลังจัดส่ง', 'รับครบแล้ว']], ['หมายเหตุ', 0, 'หมายเหตุเพิ่มเติม']]]],
+        roMap: { 'ศูนย์ต้นทุน': 'cc', 'เลขที่ PO': 'no', 'บริษัท': 'co', 'สาขา': 'br', 'กลุ่มผู้เช่า (Tenant)': 'tid', 'ผู้จำหน่าย': 'vend', 'ผู้สั่งซื้อ': 'buyer', 'อ้างอิงใบขอจัดซื้อ (PR)': 'prRef', 'วันที่สั่งซื้อ': 'ts', 'วันที่ต้องการรับ': 'recvby', 'เงื่อนไขการชำระเงิน': 'payterm', 'สถานะการจัดส่ง': 'ship', 'หมายเหตุ': 'note' },
+        acts: ['Create', 'Update', 'Delete', 'Approve', 'Send to Vendor', 'Export']
+      },
+      'po-approval': {
+        th: 'อนุมัติ', ic: 'check',
+        screens: [['list', 'PO Approval — อนุมัติใบสั่งซื้อ', 'list'], ['detail', 'รายละเอียดสายอนุมัติ — อนุมัติใบสั่งซื้อ', 'detail']],
+        kpi: [['รออนุมัติ', '—', '—', 45], ['อนุมัติแล้ว', '—', '—', 130], ['มูลค่ารออนุมัติ', '—', '—', 210]]
+      },
+      'order-tracking': {
+        th: 'ติดตามคำสั่งซื้อ', ic: 'gauge',
+        screens: [['list', 'Order Tracking — ติดตามคำสั่งซื้อ', 'list']],
+        cols: [{ h: 'PO', k: 'a', b: true }, { h: 'สถานะการจัดส่ง', k: 'd' }],
+        rows: [
+          { a: 'PO-2607-101', d: 'ผู้จำหน่ายกำลังเตรียมจัดส่ง' },
+          { a: 'PO-2607-102', d: 'อยู่ระหว่างขนส่ง' }
+        ]
+      },
+      'order-closing': {
+        th: 'ปิดคำสั่งซื้อ', ic: 'check',
+        screens: [['list', 'Order Closing — ปิดคำสั่งซื้อ', 'list']],
+        cols: [{ h: 'PO', k: 'a', b: true }, { h: 'ปิดเมื่อ', k: 'ts' }],
+        rows: [
+          { a: 'PO-2606-088', ts: '2026-07-02' }
+        ]
+      }
+    };
+  }
+  statusHue(s) { return ({ 'ใช้งาน': 130, 'ปิดใช้งาน': 22, 'อนุมัติแล้ว': 130, 'รออนุมัติ': 45, 'ไม่อนุมัติ': 12 })[s] || 130; }
+  STATUS_OPTS = ['ใช้งาน', 'ปิดใช้งาน'];
+
+  curNav() { return this.props.nav || this.state.nav; }
+  _setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: 'list', mode: 'view', edit: null, sel: null }); }
+  setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
+  dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
+  curScr() { return this.props.scr || this.state.scr; }
+  curMode() { return this.state.mode; }
+  isDirty() { const m = this.curMode(); return m === 'create' || m === 'edit'; }
+  enterCreate() { this.setState({ mode: 'create', edit: null, draft: {} }); this._goScr('create'); }
+  enterEdit(r) { this.setState({ mode: 'edit', edit: r, sel: r, draft: {} }); this._goScr('edit'); }
+  askConfirm(run) { this.setState({ confirm: run }); }
+  _goScr(v) { if (this.props.onScr) this.props.onScr(v); else this.setState({ scr: v }); }
+  goScr(v) { if (this.isDirty() && v !== 'detail' && v !== 'create' && v !== 'edit') { this.askConfirm(() => this._goScr(v)); return; } this._goScr(v); }
+  setScr(v) { this.goScr(v); }
+  _savePO(cfg, er, dr, pre) {
+    const nowIso = new Date().toISOString();
+    const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+    const key = 'purchase-order';
+    const cur0 = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+    const base = er ? Object.assign({}, er) : {};
+    cfg.form.forEach(sc => sc[2].forEach(fld => { const lb = fld[0], mm = cfg.roMap[lb], v = dr[pre + lb]; if (v !== undefined && v !== '') { if (typeof mm === 'string') base[mm] = v; base['_f:' + lb] = v; } }));
+    const stV = dr[pre + 'สถานะ']; base.s = (stV !== undefined && stV !== '') ? stV : (base.s || 'ใช้งาน');
+    const linesKey = pre + '__lines';
+    const raw = dr[linesKey] !== undefined ? dr[linesKey] : this._prLines(er);
+    const lines = (raw || []).filter(l => (l.item || l.desc)).map(l => ({ item: l.item || '', desc: l.desc || '', uom: l.uom || '', qty: Number(l.qty) || 0, price: Number(l.price) || 0 }));
+    base.lineItems = lines; base.lines = JSON.stringify(lines);
+    const total = lines.reduce((s, l) => s + l.qty * l.price, 0);
+    base.total = total; base.items = lines.length; base.amt = '฿' + total.toLocaleString('th-TH');
+    if (!er) {
+      const d = new Date(); const yy = String(d.getFullYear() % 100).padStart(2, '0'); const mm = String(d.getMonth() + 1).padStart(2, '0'); const pfx = 'PO-' + yy + mm + '-';
+      const used = new Set(cur0.map(r => r.no)); let n = 1; while (used.has(pfx + String(n).padStart(3, '0'))) n++; base.no = pfx + String(n).padStart(3, '0');
+      if (!base.ts) base.ts = nowIso.slice(0, 10);
+      base.createdAt = nowIso; base.createdBy = who; base.rowVersion = 1;
+    } else { base.no = er.no; base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; base.rowVersion = (parseInt(er.rowVersion, 10) || 1) + 1; }
+    base.updatedAt = nowIso; base.updatedBy = who; base.IsActive = (base.s || 'ใช้งาน') === 'ใช้งาน';
+    this._poHeaderCols(base, null);
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = er ? cur.map(x => (x === er || (x.no != null && x.no === er.no)) ? base : x) : [base, ...cur]; db['po-detail'] = this._flattenDetailPO(db[key]); return { db, draft: {}, mode: 'view', sel: base, edit: null }; });
+    this.toast(er ? ('บันทึกการแก้ไข ' + base.no + ' แล้ว') : ('สร้างใบสั่งซื้อ ' + base.no + ' · ' + lines.length + ' รายการ · ' + base.amt));
+  }
+  _setApproval(no, status) {
+    const key = 'purchase-order';
+    const cfg = this.CFG()[key];
+    const nowIso = new Date().toISOString();
+    const who = (this.props.api && this.props.api.user) || 'ผู้อนุมัติ';
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = cur.map(x => (x.no != null && x.no === no) ? this._poHeaderCols(Object.assign({}, x, { appr: status, apprBy: who, apprAt: nowIso }), null) : x); db['po-detail'] = this._flattenDetailPO(db[key]); const sel = s.sel && s.sel.no === no ? Object.assign({}, s.sel, { appr: status, apprBy: who, apprAt: nowIso }) : s.sel; return { db, sel }; });
+    this.toast(status === 'อนุมัติแล้ว' ? ('อนุมัติใบ ' + no + ' เรียบร้อย') : ('ไม่อนุมัติใบ ' + no));
+  }
+
+  _wrapPush() { if (this._pushWrapped || typeof this._sheetsPush !== 'function') return; this._pushWrapped = true; const orig = this._sheetsPush; this._sheetsPush = (key, rowsIn) => orig(key, key === 'purchase-order' ? (rowsIn || []).map(r => this._poHeaderProject(r)) : rowsIn); }
+  _poNativeFromSchema(r) {
+    if (r && r.company_id === undefined && r.companyId === undefined && (r.co !== undefined || r.dept !== undefined || r.lineItems !== undefined)) return r;
+    const apprMap = { Approved: 'อนุมัติแล้ว', Rejected: 'ไม่อนุมัติ', Pending: 'รออนุมัติ' };
+    const st = r.Status || 'Pending';
+    const note = r.Description || '';
+    return {
+      POId: r.POId, no: r.PONo || '', PONo: r.PONo || '',
+      co: r.company_id || r.companyId || '', br: r.branch_id || r.branchId || '', tid: r.tenant_id || r.tenantId || '',
+      vend: r.VendorId || '', buyer: r.BuyerId || '',
+      prRef: r.PRRef || '— ไม่อ้างอิง —',
+      ts: r.PODate || '', recvby: r.RequiredDate || '',
+      payterm: r.PaymentTerm || '', ship: r.ShipStatus || 'รอจัดส่ง',
+      note: note, '_f:หมายเหตุ': note,
+      appr: st === 'Cancelled' ? '' : (apprMap[st] || 'รออนุมัติ'),
+      s: st === 'Cancelled' ? 'ปิดใช้งาน' : 'ใช้งาน',
+      createdAt: r.CreatedAt || '', createdBy: r.CreatedBy || '',
+      updatedAt: r.UpdatedAt || '', updatedBy: r.UpdatedBy || '',
+      rowVersion: r.RowVersion != null ? r.RowVersion : 1
+    };
+  }
+  _poHeaderCols(r, i) {
+    if (!r) return r;
+    const stMap = { 'รออนุมัติ': 'Pending', 'อนุมัติแล้ว': 'Approved', 'ไม่อนุมัติ': 'Rejected' };
+    const status = r.appr ? (stMap[r.appr] || 'Pending') : (r.s === 'ปิดใช้งาน' ? 'Cancelled' : 'Pending');
+    const noDigits = String(r.no || '').replace(/\D/g, '');
+    r.POId = r.POId != null ? r.POId : (noDigits ? Number(noDigits) : (i != null ? i + 1 : Date.now()));
+    r.PONo = r.no || r.PONo || '';
+    r.company_id = r.co || r.company_id || r.companyId || '';
+    r.branch_id = r.br || r.branch_id || r.branchId || '';
+    r.tenant_id = r.tid || r.tenant_id || r.tenantId || '';
+    r.VendorId = r.vend || r.VendorId || '';
+    r.BuyerId = r.buyer || r.BuyerId || '';
+    r.PRRef = (r.prRef && r.prRef !== '— ไม่อ้างอิง —') ? r.prRef : (r.PRRef || '');
+    r.PODate = r.ts || r.PODate || '';
+    r.RequiredDate = r.recvby || r.RequiredDate || '';
+    r.PaymentTerm = r.payterm || r.PaymentTerm || '';
+    r.ShipStatus = r.ship || r.ShipStatus || 'รอจัดส่ง';
+    r.Status = status;
+    r.Description = (r['_f:หมายเหตุ'] != null ? r['_f:หมายเหตุ'] : r.note) || r.Description || '';
+    r.CreatedAt = r.createdAt || r.CreatedAt || '';
+    r.CreatedBy = r.createdBy || r.CreatedBy || '';
+    r.UpdatedAt = r.updatedAt || r.UpdatedAt || '';
+    r.UpdatedBy = r.updatedBy || r.UpdatedBy || '';
+    r.RowVersion = r.rowVersion != null ? r.rowVersion : 1;
+    return r;
+  }
+  _poHeaderProject(r) {
+    if (r && r.PONo != null && r.co === undefined && r.company_id !== undefined) return r;
+    const t = this._poHeaderCols(Object.assign({}, r), null);
+    const keys = ['POId', 'PONo', 'company_id', 'branch_id', 'tenant_id', 'VendorId', 'BuyerId', 'PRRef', 'PODate', 'RequiredDate', 'PaymentTerm', 'ShipStatus', 'Status', 'Description', 'CreatedAt', 'CreatedBy', 'UpdatedAt', 'UpdatedBy', 'RowVersion'];
+    const o = {}; keys.forEach(k => o[k] = t[k]);
+    o.companyId = o.company_id; o.branchId = o.branch_id; o.tenantId = o.tenant_id;
+    return o;
+  }
+  _poDetailCols(hdr, l, lineNo) {
+    const qty = Number(l.qty) || 0, price = Number(l.price) || 0;
+    const poId = hdr.POId != null ? hdr.POId : (Number(String(hdr.no || '').replace(/\D/g, '')) || 0);
+    const status = hdr.s === 'ปิดใช้งาน' ? 'Cancelled' : 'Open';
+    return {
+      POLineId: Number(String(poId) + String(lineNo).padStart(3, '0')),
+      POId: poId, LineNo: lineNo, ItemId: l.item || '', Description: l.desc || '',
+      OrderedQty: qty, UOMId: l.uom || '', UnitPrice: price, Amount: qty * price,
+      Remark: l.remark || '', Status: status,
+      CreatedAt: hdr.createdAt || '', CreatedBy: hdr.createdBy || '',
+      UpdatedAt: hdr.updatedAt || '', UpdatedBy: hdr.updatedBy || ''
+    };
+  }
+  _flattenDetailPO(headerRows) {
+    const out = [];
+    (headerRows || []).forEach(hdr => { const lines = this._prLines(hdr).filter(l => l.item || l.desc); lines.forEach((l, i) => out.push(this._poDetailCols(hdr, l, i + 1))); });
+    return out;
+  }
+  _reconcilePO() {
+    const hk = 'purchase-order', dk = 'po-detail';
+    const hdrs = this.state.db[hk], dets = this.state.db[dk];
+    if (!Array.isArray(hdrs)) return;
+    const byPo = {};
+    (Array.isArray(dets) ? dets : []).forEach(d => { const id = d.POId; (byPo[id] = byPo[id] || []).push(d); });
+    let changed = false;
+    const out = hdrs.map(r => {
+      if (r && r.no != null && r.lineItems) return r;
+      if (r && r.no != null && r.company_id === undefined) { const nn = Object.assign({}, r); const dl0 = (byPo[nn.POId] || []).slice().sort((a, b) => (Number(a.LineNo) || 0) - (Number(b.LineNo) || 0)); if (dl0.length && !nn.lineItems) { const ls = dl0.map(d => ({ item: d.ItemId || '', desc: d.Description || '', uom: d.UOMId || '', qty: Number(d.RequestedQty != null ? d.RequestedQty : d.OrderedQty) || 0, price: Number(d.EstimatedUnitPrice != null ? d.EstimatedUnitPrice : d.UnitPrice) || 0 })); nn.lineItems = ls; nn.lines = JSON.stringify(ls); const tt = ls.reduce((a, l) => a + l.qty * l.price, 0); nn.total = tt; nn.items = ls.length; nn.amt = '฿' + tt.toLocaleString('th-TH'); changed = true; } return nn; }
+      const n = this._poNativeFromSchema(Object.assign({}, r));
+      const dl = (byPo[n.POId] || []).slice().sort((a, b) => (Number(a.LineNo) || 0) - (Number(b.LineNo) || 0));
+      const lines = dl.map(d => ({ item: d.ItemId || '', desc: d.Description || '', uom: d.UOMId || '', qty: Number(d.OrderedQty) || 0, price: Number(d.UnitPrice) || 0 }));
+      n.lineItems = lines; n.lines = JSON.stringify(lines);
+      const total = lines.reduce((s, l) => s + l.qty * l.price, 0);
+      n.total = total; n.items = lines.length; n.amt = '฿' + total.toLocaleString('th-TH');
+      changed = true;
+      return n;
+    });
+    if (changed) this.setState(s => ({ db: Object.assign({}, s.db, { [hk]: out }) }));
+  }
+  _prAll() { const key = 'purchase-order'; const cfg = this.CFG()[key]; return this.dbRows(key, cfg.rows || []); }
+  _prSource() { try { let db = null; const b = this.K && this.K.bus && this.K.bus(); if (b && b.get) db = b.get('db:proc-pr:v1', null); if (!db) { let raw = {}; try { raw = JSON.parse(window.localStorage.getItem('meeerp.bus.v2') || '{}') || {}; } catch (e) {} db = raw['db:proc-pr:v1']; } const rows = db && db['purchase-requisition']; return Array.isArray(rows) ? rows : []; } catch (e) { return []; } }
+  doSave() {
+    const key = this.curNav();
+    const cfg = this.CFG()[key];
+    const er = this.state.edit;
+    const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
+    const dr = this.state.draft || {}, pre = mode + '|';
+    if (key === 'purchase-order') { this._savePO(cfg, er, dr, pre); return; }
+    const base = er ? Object.assign({}, er) : Object.assign({}, (cfg.rows || [])[0]);
+    if (cfg.roMap && cfg.form) cfg.form.forEach(sc => sc[2].forEach(fld => { const lb = fld[0], mm = cfg.roMap[lb], v = dr[pre + lb]; if (v !== undefined && v !== '') { if (typeof mm === 'string') base[mm] = v; base['_f:' + lb] = v; } }));
+    const stV = dr[pre + 'สถานะ']; if (stV !== undefined && stV !== '') base.s = stV;
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = er ? cur.map(x => (x === er || (x.no != null && x.no === er.no)) ? base : x) : [base, ...cur]; return { db, draft: {}, mode: 'view', sel: base, edit: null }; });
+    this.toast(er ? 'บันทึกการแก้ไขแล้ว' : 'บันทึกเรียบร้อย');
+  }
+  confirmSave() { const r = this.state.confirm; this.doSave(); this.setState({ confirm: null, scr: 'detail' }, () => r && r()); }
+  confirmDiscard() { const r = this.state.confirm; this.setState({ confirm: null, draft: {}, mode: 'view', edit: null, scr: 'list' }, () => r && r()); this.toast('ยกเลิกการเปลี่ยนแปลง'); }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const sl0 = this.K.sheetsLoading ? this.K.sheetsLoading(this, 'ใบสั่งซื้อ · PROC-PO') : null; if (sl0) return sl0;
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
+    const scr = this.curScr();
+    const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const _cbM = (this.K && this.K.liveCoBr) ? this.K.liveCoBr() : { COS: [], BR_MAP: {} };
+    const PROC_COMPANIES = _cbM.COS;
+    const PROC_BR_MAP = _cbM.BR_MAP;
+    const coSel = this.props.filterCo || this.state.filterCo || ((this.props.api && this.props.api.userCo && PROC_COMPANIES.indexOf(this.props.api.userCo) > -1) ? [this.props.api.userCo] : PROC_COMPANIES.slice());
+    const coAll = coSel.length === PROC_COMPANIES.length;
+    const brOpts = Array.from(new Set([].concat(...(coAll ? PROC_COMPANIES : coSel).map(o => PROC_BR_MAP[o] || []))));
+    const brSel = (this.props.filterBr || this.state.filterBr || ['สำนักงานใหญ่ (สาทร)']).filter(o => brOpts.indexOf(o) > -1);
+    const brSelFinal = brSel.length ? brSel : brOpts;
+    const brAll = brSelFinal.length === brOpts.length;
+    const rows = this.dbRows(nav, cfg.rows || []).filter(r => (!r.co || coAll || PROC_COMPANIES.indexOf(r.co) === -1 || coSel.indexOf(r.co) > -1) && (!r.br || brAll || brOpts.indexOf(r.br) === -1 || brSelFinal.indexOf(r.br) > -1));
+    const selRow = this.state.sel || rows[0] || null;
+    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'ACTIONS'), list.map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+    let body;
+    if (nav === 'po-approval') {
+      const prCfg = cfgAll['purchase-order'];
+      const prRows = this._prAll().filter(r => (!r.co || coAll || PROC_COMPANIES.indexOf(r.co) === -1 || coSel.indexOf(r.co) > -1) && (!r.br || brAll || brOpts.indexOf(r.br) === -1 || brSelFinal.indexOf(r.br) > -1));
+      const apprOf = r => r.appr || 'รออนุมัติ';
+      if (scr === 'detail') {
+        const r = this.state.sel && this.state.sel.no ? (prRows.find(x => x.no === this.state.sel.no) || this.state.sel) : prRows[0];
+        if (!r) { this.setScr('list'); body = [null]; }
+        else {
+          const st = apprOf(r);
+          const back = K.btn(T, 'กลับ', false, 'doc', () => { this.setState({ sel: null }); this.goScr('list'); });
+          const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'รายละเอียดสายอนุมัติ · พิจารณาอนุมัติใบสั่งซื้อ')), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, st, this.statusHue(st)), back))], { marginBottom: 14, padding: '12px 16px' });
+          const fld = (lb, v) => h('div', { style: { flex: '1 1 180px', minWidth: 160 } }, h('div', { style: { fontSize: 10.5, fontWeight: 700, color: sub, marginBottom: 3 } }, lb), h('div', { style: { fontSize: 13, fontWeight: 600 } }, v || '—'));
+          const info = K.card(T, [h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 16 } }, fld('บริษัท', r.co), fld('สาขา', r.br), fld('ผู้จำหน่าย', r.vend), fld('ผู้สั่งซื้อ', r.buyer), fld('อ้างอิง PR', r.prRef && r.prRef !== '— ไม่อ้างอิง —' ? r.prRef : '—'), fld('วันที่สั่งซื้อ', this._fmtDate(r.ts)), fld('วันที่ต้องการรับ', this._fmtDate(r.recvby)), fld('เงื่อนไขชำระเงิน', r.payterm))], { marginBottom: 14, padding: '14px 16px' });
+          const prLines = this._prLines(r).filter(l => l.item || l.desc);
+          const m2 = n => '฿' + (Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+          const prTotal = prLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+          const linesTable = K.card(T, [
+            h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('box', 16)), h('span', { style: { fontSize: 13.5, fontWeight: 700 } }, 'รายการสินค้าที่สั่งซื้อ'), h('span', { style: { marginLeft: 'auto', fontSize: 11.5, color: sub } }, prLines.length + ' รายการ')),
+            prLines.length ? h('div', { key: 'hd', style: { display: 'flex', fontSize: 10.5, fontWeight: 700, color: sub, letterSpacing: .3, padding: '0 4px 8px' } }, h('span', { style: { flex: 2.4 } }, 'สินค้า'), h('span', { style: { flex: 1.6 } }, 'รายละเอียด'), h('span', { style: { width: 80, textAlign: 'right' } }, 'จำนวน'), h('span', { style: { width: 58, textAlign: 'right' } }, 'หน่วย'), h('span', { style: { width: 100, textAlign: 'right' } }, 'ราคา/หน่วย'), h('span', { style: { width: 110, textAlign: 'right' } }, 'จำนวนเงิน')) : null,
+            ...(prLines.length ? prLines.map((l, i) => h('div', { key: i, style: { display: 'flex', alignItems: 'center', padding: '9px 4px', borderTop: `1px solid ${c.line}`, fontSize: 12.5 } }, h('span', { style: { flex: 2.4, fontWeight: 600 } }, l.item || '—'), h('span', { style: { flex: 1.6, color: sub } }, l.desc || '—'), h('span', { style: { width: 80, textAlign: 'right' } }, (Number(l.qty) || 0).toLocaleString('th-TH')), h('span', { style: { width: 58, textAlign: 'right', color: sub } }, l.uom || '—'), h('span', { style: { width: 100, textAlign: 'right' } }, m2(l.price)), h('span', { style: { width: 110, textAlign: 'right', fontWeight: 600 } }, m2((Number(l.qty) || 0) * (Number(l.price) || 0))))) : [h('div', { key: 'e', style: { padding: '10px 4px', fontSize: 12, color: sub } }, 'ไม่มีรายการสินค้า')]),
+            prLines.length ? h('div', { key: 'tot', style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 12, paddingTop: 12, borderTop: `2px solid ${c.border}` } }, h('span', { style: { fontSize: 12.5, color: sub } }, 'มูลค่ารวมทั้งสิ้น'), h('span', { style: { fontSize: 18, fontWeight: 800, color: acc } }, m2(prTotal))) : null
+          ], { marginBottom: 14, padding: '14px 16px' });
+          const actionCard = st === 'รออนุมัติ'
+            ? K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, 'การพิจารณาอนุมัติ'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 2 } }, 'ตรวจสอบรายการแล้วเลือกอนุมัติ หรือไม่อนุมัติใบขอจัดซื้อนี้')), h('div', { style: { display: 'flex', gap: 8 } }, h('button', { onClick: () => { this._setApproval(r.no, 'ไม่อนุมัติ'); this.setState({ sel: null }); this.goScr('list'); }, style: { fontSize: 12.5, fontWeight: 700, padding: '9px 18px', borderRadius: 9, border: `1px solid oklch(0.62 0.2 25)`, background: c.win, color: 'oklch(0.55 0.2 25)', cursor: 'pointer', fontFamily: c.font } }, 'ไม่อนุมัติ'), h('button', { onClick: () => { this._setApproval(r.no, 'อนุมัติแล้ว'); this.setState({ sel: null }); this.goScr('list'); }, style: { fontSize: 12.5, fontWeight: 700, padding: '9px 22px', borderRadius: 9, border: 'none', background: 'oklch(0.6 0.15 150)', color: '#fff', cursor: 'pointer', fontFamily: c.font, display: 'flex', alignItems: 'center', gap: 7 } }, K.Icon('check', 15), 'อนุมัติ')))], { marginBottom: 14, padding: '14px 16px' })
+            : K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 12 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('check', 18)), h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, 'ผลการพิจารณา: ' + st), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 2 } }, (r.apprBy ? 'โดย ' + r.apprBy : '') + (r.apprAt ? ' · ' + this._fmtDate(r.apprAt) : ''))), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, st, this.statusHue(st))))], { marginBottom: 14, padding: '14px 16px' });
+          body = [hdr, info, linesTable, actionCard];
+        }
+      } else {
+        const openAppr = (r) => { this.setState({ sel: r }); this.goScr('detail'); };
+        const apprCols = [
+          { h: 'เลขที่ PO', k: 'no', b: true },
+          { h: 'บริษัท', k: 'co' },
+          { h: 'ผู้จำหน่าย', k: 'vend' },
+          { h: 'ผู้สั่งซื้อ', k: 'buyer' },
+          { h: 'วันที่สั่งซื้อ', render: r => this._fmtDate(r.ts) },
+          { h: 'มูลค่ารวม', render: r => this._fmtMoney(r.total != null && r.total !== '' ? r.total : r.amt) },
+          { h: 'สถานะอนุมัติ', render: r => K.pill(T, apprOf(r), this.statusHue(apprOf(r))) },
+          { h: '', render: r => h('div', { style: { display: 'flex', justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); openAppr(r); }, style: { fontSize: 11.5, fontWeight: 700, padding: '5px 13px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, apprOf(r) === 'รออนุมัติ' ? 'พิจารณา' : 'ดู')) }
+        ];
+        const pending = prRows.filter(r => apprOf(r) === 'รออนุมัติ').length;
+        const approved = prRows.filter(r => apprOf(r) === 'อนุมัติแล้ว').length;
+        const pendAmt = prRows.filter(r => apprOf(r) === 'รออนุมัติ').reduce((s, r) => s + (Number(r.total) || Number(String(r.amt).replace(/[^\d.-]/g, '')) || 0), 0);
+        const kpi = [['รออนุมัติ', String(pending), '—', 45], ['อนุมัติแล้ว', String(approved), '—', 130], ['มูลค่ารออนุมัติ', this._fmtMoney(pendAmt), '—', 210]];
+        const selectApprA = (r) => this.setState({ sel: r });
+        const hrA = this.state.sel && this.state.sel.no ? (prRows.find(x => x.no === this.state.sel.no) || prRows[0] || null) : (prRows[0] || null);
+        const poLA = hrA ? this._prLines(hrA).filter(l => l.item || l.desc) : [];
+        const m4 = n => '฿' + (Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+        const poTotA = poLA.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+        const lineGridA = K.card(T, [
+          h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('box', 16)), h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, 'รายการสินค้า (PO Line)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, hrA ? ('ใบสั่งซื้อ ' + (hrA.no || '—') + ' · ' + (hrA.vend || '') + (hrA.ts ? ' · ' + this._fmtDate(hrA.ts) : '')) : 'เลือกใบสั่งซื้อจากตารางด้านบนเพื่อดูรายการสินค้า')), h('span', { style: { marginLeft: 'auto', fontSize: 11.5, color: sub } }, poLA.length + ' รายการ')),
+          !hrA ? null : (poLA.length ? h('div', { key: 'hd', style: { display: 'flex', fontSize: 10.5, fontWeight: 700, color: sub, letterSpacing: .3, padding: '0 4px 8px', borderBottom: `1px solid ${c.line}` } }, h('span', { style: { flex: 2.4 } }, 'สินค้า'), h('span', { style: { flex: 1.6 } }, 'รายละเอียด'), h('span', { style: { width: 80, textAlign: 'right' } }, 'จำนวน'), h('span', { style: { width: 58, textAlign: 'right' } }, 'หน่วย'), h('span', { style: { width: 100, textAlign: 'right' } }, 'ราคา/หน่วย'), h('span', { style: { width: 110, textAlign: 'right' } }, 'จำนวนเงิน')) : null),
+          ...(!hrA ? [] : (poLA.length ? poLA.map((l, i) => h('div', { key: i, style: { display: 'flex', alignItems: 'center', padding: '9px 4px', borderTop: i ? `1px solid ${c.line}` : 'none', fontSize: 12.5 } }, h('span', { style: { flex: 2.4, fontWeight: 600 } }, l.item || '—'), h('span', { style: { flex: 1.6, color: sub } }, l.desc || '—'), h('span', { style: { width: 80, textAlign: 'right' } }, (Number(l.qty) || 0).toLocaleString('th-TH')), h('span', { style: { width: 58, textAlign: 'right', color: sub } }, l.uom || '—'), h('span', { style: { width: 100, textAlign: 'right' } }, m4(l.price)), h('span', { style: { width: 110, textAlign: 'right', fontWeight: 600 } }, m4((Number(l.qty) || 0) * (Number(l.price) || 0))))) : [h('div', { key: 'e', style: { padding: '10px 4px', fontSize: 12, color: sub } }, 'ใบสั่งซื้อนี้ยังไม่มีรายการสินค้า')])),
+          (hrA && poLA.length) ? h('div', { key: 'tot', style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 12, paddingTop: 12, borderTop: `2px solid ${c.border}` } }, h('span', { style: { fontSize: 12.5, color: sub } }, 'มูลค่ารวมทั้งสิ้น'), h('span', { style: { fontSize: 18, fontWeight: 800, color: acc } }, m4(poTotA))) : null
+        ], { marginTop: 4, padding: '14px 16px' });
+        body = [K.kpi(T, kpi), K.grid(T, apprCols, prRows, openAppr, hrA, null, null, nav, hrA ? hrA.no : null, 'อนุมัติ', null, selectApprA), lineGridA];
+      }
+    } else if (scr === 'create' || scr === 'edit') {
+      const er = scr === 'edit' ? this.state.edit : null;
+      const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
+      const dr = this.state.draft || {}, pre = mode + '|';
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, er ? (er.a || er.no) : 'สร้างรายการใหม่'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, er ? 'โหมดแก้ไข (Edit)' : 'โหมดสร้างใหม่ (New)')), K.btn(T, 'กลับ', false, 'doc', () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }))], { marginBottom: 14, padding: '12px 16px' });
+      const secs = cfg.form.map(([title, ic, fields]) => { const coFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'co'); const brFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'br'); return K.formSec(T, title, ic, fields.map(([lb, ty, opt]) => {
+        const m = cfg.roMap && cfg.roMap[lb];
+        const ev = er ? (er['_f:' + lb] !== undefined ? er['_f:' + lb] : (m ? er[m] : null)) : null;
+        const dk = pre + lb;
+        const _tdef = (m === 'tid' && !er && this._tenantOpts().length === 1) ? ((this._tenantOpts()[0] || {}).id || '') : '';
+        const cur0 = dr[dk] !== undefined ? dr[dk] : (ev != null ? ev : '');
+        const cur = (m === 'tid' && !cur0 && _tdef) ? _tdef : cur0;
+        const _cbF = (this.K && this.K.liveCoBr) ? this.K.liveCoBr() : { COS: [], BR_MAP: {} };
+        const BR_MAP = _cbF.BR_MAP;
+        let effOpt = opt;
+        if (m === 'co' && Array.isArray(opt) && _cbF.COS.length) effOpt = _cbF.COS;
+        if (m === 'tid' && Array.isArray(opt)) { effOpt = this._tenantOpts().map(t => t.id); }
+        if (m === 'br' && Array.isArray(opt) && coFieldLb) {
+          const coLb = coFieldLb[0];
+          const coDk = pre + coLb;
+          const coM = cfg.roMap && cfg.roMap[coLb];
+          const coEv = er ? (er['_f:' + coLb] !== undefined ? er['_f:' + coLb] : (coM ? er[coM] : null)) : null;
+          const coCur = dr[coDk] !== undefined ? dr[coDk] : (coEv != null ? coEv : '');
+          effOpt = (coCur && BR_MAP[coCur]) ? BR_MAP[coCur] : (_cbF.COS.length ? [].concat.apply([], Object.keys(BR_MAP).map(k => BR_MAP[k] || [])) : opt);
+        }
+        if (m === 'prRef') { effOpt = ['— ไม่อ้างอิง —'].concat(this._prSource().map(p => p.no)); }
+        const onCh = e => { const v = e.target.value; this.setState(s => { const patch = { [dk]: v }; if (m === 'co' && brFieldLb) patch[pre + brFieldLb[0]] = ''; if (m === 'prRef') { const pr = (v && v !== '— ไม่อ้างอิง —') ? this._prSource().find(x => x.no === v) : null; if (pr) { const ls = this._prLines(pr).filter(l => l.item || l.desc); if (ls.length) patch[pre + '__lines'] = ls.map(l => Object.assign({}, l)); } } return { draft: Object.assign({}, s.draft, patch) }; }); };
+        const isDate = (m === 'ts' || m === 'recvby') || opt === 'YYYY-MM-DD';
+        const node = Array.isArray(opt)
+          ? h('select', { value: cur || '', onChange: onCh, style: Object.assign({}, K.inp(T), { cursor: 'pointer' }) }, [h('option', { key: '_', value: '' }, '— เลือก —'), ...(m === 'tid' && cur && effOpt.indexOf(cur) === -1 ? effOpt.concat([cur]) : effOpt).map(o => h('option', { key: o, value: o }, m === 'tid' ? this._tenantName(o) : o))])
+          : isDate
+          ? h('input', { type: 'date', value: this._toDateInput(cur), onChange: onCh, style: Object.assign({}, K.inp(T), { cursor: 'pointer' }) })
+          : h('input', { placeholder: typeof opt === 'string' ? opt : '', value: cur, onChange: onCh, style: K.inp(T) });
+        return K.field(T, lb, node, ty === 1);
+      })); });
+      const invtItems = this._invtItems();
+      const linesKey = pre + '__lines';
+      const curLines = dr[linesKey] !== undefined ? dr[linesKey] : this._prLines(er);
+      const setLines = (next) => this.setState(s => ({ draft: Object.assign({}, s.draft, { [linesKey]: next }) }));
+      const updL = (i, patch) => setLines(curLines.map((l, j) => j === i ? Object.assign({}, l, patch) : l));
+      const rmL = (i) => setLines(curLines.filter((l, j) => j !== i));
+      const addL = () => setLines(curLines.concat([{ item: '', desc: '', uom: '', qty: 1, price: 0 }]));
+      const pickItem = (i, code) => { const it = invtItems.find(x => x.no === code); updL(i, { item: code, desc: it ? (it.a || it.en || '') : '', uom: it ? (it.puruom || it.uom || '') : '' }); };
+      const money = (n) => '฿' + (Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+      const prRefCur = dr[pre + 'อ้างอิงใบขอจัดซื้อ (PR)'] !== undefined ? dr[pre + 'อ้างอิงใบขอจัดซื้อ (PR)'] : (er ? (er.prRef || '') : '');
+      const hasPrRef = prRefCur && prRefCur !== '— ไม่อ้างอิง —';
+      const copyFromPR = () => { const pr = this._prSource().find(x => x.no === prRefCur); if (!pr) { this.toast('ไม่พบใบขอจัดซื้อ ' + prRefCur); return; } const ls = this._prLines(pr).filter(l => l.item || l.desc); if (!ls.length) { this.toast('ใบขอจัดซื้อนี้ไม่มีรายการสินค้า'); return; } setLines(ls.map(l => Object.assign({}, l))); this.toast('คัดลอก ' + ls.length + ' รายการจาก ' + pr.no); };
+      const lineTotal = curLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+      const hdrRow = h('div', { key: 'hd', style: { display: 'flex', gap: 8, fontSize: 10.5, fontWeight: 700, color: sub, letterSpacing: .3, padding: '0 4px 8px' } }, h('span', { style: { flex: 2.4 } }, 'สินค้า (จาก INVT-ITEM)'), h('span', { style: { flex: 1.6 } }, 'รายละเอียด'), h('span', { style: { width: 70 } }, 'จำนวน'), h('span', { style: { width: 62 } }, 'หน่วย'), h('span', { style: { width: 96 } }, 'ราคา/หน่วย'), h('span', { style: { width: 96, textAlign: 'right' } }, 'จำนวนเงิน'), h('span', { style: { width: 30 } }));
+      const rowsEl = curLines.map((l, i) => h('div', { key: i, style: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 } },
+        h('select', { value: l.item || '', onChange: e => pickItem(i, e.target.value), style: Object.assign({}, K.inp(T), { flex: 2.4, cursor: 'pointer' }) }, [h('option', { key: '_', value: '' }, invtItems.length ? '— เลือกสินค้า —' : '— ไม่พบสินค้า (เปิด INVT-ITEM ก่อน) —'), ...invtItems.map(it => h('option', { key: it.no, value: it.no }, it.no + ' - ' + (it.a || it.en || '')))]),
+        h('input', { value: l.desc || '', onChange: e => updL(i, { desc: e.target.value }), placeholder: 'รายละเอียด', style: Object.assign({}, K.inp(T), { flex: 1.6 }) }),
+        h('input', { type: 'number', value: l.qty == null ? '' : l.qty, onChange: e => updL(i, { qty: e.target.value }), style: Object.assign({}, K.inp(T), { width: 70 }) }),
+        h('input', { value: l.uom || '', onChange: e => updL(i, { uom: e.target.value }), placeholder: 'หน่วย', style: Object.assign({}, K.inp(T), { width: 62 }) }),
+        h('input', { type: 'number', value: l.price == null ? '' : l.price, onChange: e => updL(i, { price: e.target.value }), style: Object.assign({}, K.inp(T), { width: 96 }) }),
+        h('span', { style: { width: 96, textAlign: 'right', fontSize: 12.5, fontWeight: 600 } }, money((Number(l.qty) || 0) * (Number(l.price) || 0))),
+        h('button', { onClick: () => rmL(i), title: 'ลบ', style: { flexShrink: 0, width: 30, height: 30, borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: sub, cursor: 'pointer', fontFamily: c.font, fontSize: 16, lineHeight: 1 } }, '×')));
+      const linesEditor = K.card(T, [
+        h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('box', 17)), h('div', { style: { flex: 1 } }, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, 'รายการสินค้าที่สั่งซื้อ (PO Lines)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, (hasPrRef ? 'อ้างอิง ' + prRefCur + ' · ' : '') + 'เลือกสินค้าจากคลังข้อมูลสินค้า (INVT-ITEM) · ' + invtItems.length + ' รายการ')), hasPrRef ? h('button', { onClick: copyFromPR, style: { fontSize: 11.5, fontWeight: 700, padding: '6px 12px', borderRadius: 8, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font, display: 'flex', alignItems: 'center', gap: 6 } }, K.Icon('doc', 14), 'คัดลอกรายการจาก PR') : null),
+        hdrRow, ...rowsEl,
+        h('div', { key: 'add', style: { marginTop: 4 } }, K.btn(T, 'เพิ่มรายการ', false, 'plus', addL)),
+        h('div', { key: 'tot', style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 12, paddingTop: 12, borderTop: `1px solid ${c.line}` } }, h('span', { style: { fontSize: 12.5, color: sub } }, 'มูลค่ารวมทั้งสิ้น'), h('span', { style: { fontSize: 18, fontWeight: 800, color: acc } }, money(lineTotal)))
+      ], { marginBottom: 14, padding: '14px 16px' });
+      const save = K.btn(T, 'บันทึก', true, 'check', () => { this.doSave(); this.goScr('detail'); });
+      const stDk = pre + 'สถานะ';
+      const stCur = dr[stDk] !== undefined ? dr[stDk] : (er ? (er.s || 'ใช้งาน') : 'ใช้งาน');
+      const statusFormEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, stCur, this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPTS.map(o => h('option', { key: o, value: o }, o)))))], { marginBottom: 14, padding: '12px 16px' });
+      body = [hdr, ...secs, linesEditor, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts || ['Export'])];
+    } else if (scr === 'detail' && cfg.roMap) {
+      const r = selRow;
+      if (!r) { this.setScr('list'); body = [null]; }
+      else {
+        const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.a || r.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only)')), h('div', { style: { display: 'flex', gap: 7, flexWrap: 'wrap' } }, K.btn(T, 'พิมพ์', false, 'doc', () => this.toast('พิมพ์')), K.btn(T, 'แก้ไข', true, 'doc', () => this.enterEdit(r)), K.btn(T, 'สร้างใหม่', false, 'plus', () => this.enterCreate())))], { marginBottom: 14, padding: '12px 16px' });
+        const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb]) => { const m = cfg.roMap[lb]; const ov = r['_f:' + lb]; let val = ov !== undefined ? ov : (m ? r[m] : ''); if ((m === 'ts' || m === 'recvby') && val) val = this._fmtDate(val); if (m === 'tid') val = this._tenantName(val); return K.field(T, lb, K.roField(T, val)); })));
+        const prLines = this._prLines(r).filter(l => l.item || l.desc);
+        const money2 = n => '฿' + (Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+        const prTotal = prLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+        const linesTable = K.card(T, [
+          h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('box', 16)), h('span', { style: { fontSize: 13.5, fontWeight: 700 } }, 'รายการสินค้าที่สั่งซื้อ'), h('span', { style: { marginLeft: 'auto', fontSize: 11.5, color: sub } }, prLines.length + ' รายการ')),
+          prLines.length ? h('div', { key: 'hd', style: { display: 'flex', fontSize: 10.5, fontWeight: 700, color: sub, letterSpacing: .3, padding: '0 4px 8px' } }, h('span', { style: { flex: 2.4 } }, 'สินค้า'), h('span', { style: { flex: 1.6 } }, 'รายละเอียด'), h('span', { style: { width: 80, textAlign: 'right' } }, 'จำนวน'), h('span', { style: { width: 58, textAlign: 'right' } }, 'หน่วย'), h('span', { style: { width: 100, textAlign: 'right' } }, 'ราคา/หน่วย'), h('span', { style: { width: 110, textAlign: 'right' } }, 'จำนวนเงิน')) : null,
+          ...(prLines.length ? prLines.map((l, i) => h('div', { key: i, style: { display: 'flex', alignItems: 'center', padding: '9px 4px', borderTop: `1px solid ${c.line}`, fontSize: 12.5 } }, h('span', { style: { flex: 2.4, fontWeight: 600 } }, l.item || '—'), h('span', { style: { flex: 1.6, color: sub } }, l.desc || '—'), h('span', { style: { width: 80, textAlign: 'right' } }, (Number(l.qty) || 0).toLocaleString('th-TH')), h('span', { style: { width: 58, textAlign: 'right', color: sub } }, l.uom || '—'), h('span', { style: { width: 100, textAlign: 'right' } }, money2(l.price)), h('span', { style: { width: 110, textAlign: 'right', fontWeight: 600 } }, money2((Number(l.qty) || 0) * (Number(l.price) || 0))))) : [h('div', { key: 'empty', style: { padding: '10px 4px', fontSize: 12, color: sub } }, 'ยังไม่มีรายการสินค้า — เพิ่มได้ในโหมดแก้ไข')]),
+          prLines.length ? h('div', { key: 'tot', style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 12, paddingTop: 12, borderTop: `2px solid ${c.border}` } }, h('span', { style: { fontSize: 12.5, color: sub } }, 'มูลค่ารวมทั้งสิ้น'), h('span', { style: { fontSize: 18, fontWeight: 800, color: acc } }, money2(prTotal))) : null
+        ], { marginBottom: 14, padding: '14px 16px' });
+        const curSt = r.s || 'ใช้งาน';
+        const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือโหมดสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, curSt, this.statusHue(curSt))))], { marginBottom: 14, padding: '12px 16px' });
+        body = [hdr, ...secs, linesTable, statusEditor, actLegend(cfg.acts || ['Export'])];
+      }
+    } else {
+      const canEdit = !!(cfg.form && cfg.roMap);
+      const openDetail = (r) => { this.setState({ sel: r }); this.goScr('detail'); };
+      const statusCol = { h: 'สถานะ', render: r => K.pill(T, r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) };
+      const baseCols = cfg.cols.some(cc => cc.h === 'สถานะ') ? cfg.cols : cfg.cols.concat([statusCol]);
+      const cols = canEdit ? baseCols.concat([{ h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู'), h('button', { onClick: e => { e.stopPropagation(); this.enterEdit(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'แก้ไข')) }]) : baseCols;
+      const sortSt = this.state.sort || { key: 'no', dir: 'asc' };
+      const setSort = (key) => this.setState(s => { const cur = s.sort || { key: 'no', dir: 'asc' }; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: { key, dir } }; });
+      const sortedRows = sortSt.key ? rows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); }) : rows;
+      const isPO = nav === 'purchase-order';
+      const selectRow = (r) => this.setState({ sel: r });
+      body = [cfg.kpi ? K.kpi(T, (() => { const now = new Date(); const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'); const thisMo = rows.filter(r => String(r.ts || '').indexOf(ym) === 0); const pend = rows.filter(r => (r.appr || 'รออนุมัติ') === 'รออนุมัติ'); const moTotal = thisMo.reduce((s, r) => s + (Number(r.total) || Number(String(r.amt).replace(/[^\d.-]/g, '')) || 0), 0); return [['PO เดือนนี้', String(thisMo.length), '—', 145], ['รออนุมัติ', String(pend.length), '—', 35], ['มูลค่ารวมเดือนนี้', this._fmtMoney(moTotal), '—', 130]]; })()) : null, K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.no || selRow.a) : null, (cfg.th || nav), canEdit && K.btn(T, 'สร้างใหม่', true, 'plus', () => this.enterCreate()), selectRow), actLegend(cfg.acts || ['Export'])];
+      if (isPO) {
+        const hr = selRow;
+        const poL = hr ? this._prLines(hr).filter(l => l.item || l.desc) : [];
+        const m3 = n => '฿' + (Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+        const poTot = poL.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+        const lineGrid = K.card(T, [
+          h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('box', 16)), h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, 'รายการสินค้า (PO Line)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, hr ? ('ใบสั่งซื้อ ' + (hr.no || '—') + ' · ' + (hr.vend || '') + (hr.ts ? ' · ' + this._fmtDate(hr.ts) : '')) : 'เลือกใบสั่งซื้อจากตารางด้านบนเพื่อดูรายการสินค้า')), h('span', { style: { marginLeft: 'auto', fontSize: 11.5, color: sub } }, poL.length + ' รายการ')),
+          !hr ? null : (poL.length ? h('div', { key: 'hd', style: { display: 'flex', fontSize: 10.5, fontWeight: 700, color: sub, letterSpacing: .3, padding: '0 4px 8px', borderBottom: `1px solid ${c.line}` } }, h('span', { style: { flex: 2.4 } }, 'สินค้า'), h('span', { style: { flex: 1.6 } }, 'รายละเอียด'), h('span', { style: { width: 80, textAlign: 'right' } }, 'จำนวน'), h('span', { style: { width: 58, textAlign: 'right' } }, 'หน่วย'), h('span', { style: { width: 100, textAlign: 'right' } }, 'ราคา/หน่วย'), h('span', { style: { width: 110, textAlign: 'right' } }, 'จำนวนเงิน')) : null),
+          ...(!hr ? [] : (poL.length ? poL.map((l, i) => h('div', { key: i, style: { display: 'flex', alignItems: 'center', padding: '9px 4px', borderTop: i ? `1px solid ${c.line}` : 'none', fontSize: 12.5 } }, h('span', { style: { flex: 2.4, fontWeight: 600 } }, l.item || '—'), h('span', { style: { flex: 1.6, color: sub } }, l.desc || '—'), h('span', { style: { width: 80, textAlign: 'right' } }, (Number(l.qty) || 0).toLocaleString('th-TH')), h('span', { style: { width: 58, textAlign: 'right', color: sub } }, l.uom || '—'), h('span', { style: { width: 100, textAlign: 'right' } }, m3(l.price)), h('span', { style: { width: 110, textAlign: 'right', fontWeight: 600 } }, m3((Number(l.qty) || 0) * (Number(l.price) || 0))))) : [h('div', { key: 'e', style: { padding: '10px 4px', fontSize: 12, color: sub } }, 'ใบสั่งซื้อนี้ยังไม่มีรายการสินค้า')])),
+          (hr && poL.length) ? h('div', { key: 'tot', style: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 12, paddingTop: 12, borderTop: `2px solid ${c.border}` } }, h('span', { style: { fontSize: 12.5, color: sub } }, 'มูลค่ารวมทั้งสิ้น'), h('span', { style: { fontSize: 18, fontWeight: 800, color: acc } }, m3(poTot))) : null
+        ], { marginTop: 4, marginBottom: 14, padding: '14px 16px' });
+        body.splice(body.length - 1, 0, lineGrid);
+      }
+    }
+
+    const controlled = typeof this.props.onScr === 'function';
+    const modal = this.state.confirm ? h('div', { key: 'cf', style: controlled ? { position: 'fixed', top: 38, left: 0, right: 0, bottom: 0, zIndex: 100000, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } : { position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+      h('div', { style: { background: c.dark ? 'oklch(0.23 0.014 265)' : '#fff', borderRadius: 14, border: `1px solid ${c.border}`, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: 400, maxWidth: '100%', padding: '22px 24px', fontFamily: c.font, color: c.text } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } }, h('span', { style: { width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('doc', 18)), h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'บันทึกการเปลี่ยนแปลง?')),
+        h('div', { style: { fontSize: 12.5, color: sub, lineHeight: 1.6, marginBottom: 18 } }, 'คุณกำลัง' + (this.state.edit ? 'แก้ไข' : 'สร้าง') + 'รายการและยังไม่ได้บันทึก ต้องการบันทึกก่อนออกจากหน้านี้หรือไม่?'),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' } }, K.btn(T, 'ยกเลิก', false, null, () => this.setState({ confirm: null })), K.btn(T, 'ไม่บันทึก', false, null, () => this.confirmDiscard()), K.btn(T, 'บันทึก', true, 'check', () => this.confirmSave())))) : null;
+    if (controlled) return { fg: c.text, view: h('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column' } }, h('div', { style: { display: 'flex', flexDirection: 'column' } }, body), modal) };
+
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const collapsed = !!this.state.sideCollapsed;
+    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'doc']);
+    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
+      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th)); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const tabsEl = h('div', { style: { display: 'flex', gap: 6, rowGap: 0, flexWrap: 'wrap', borderBottom: `1px solid ${border}` } }, cfg.screens.filter(([id]) => id === 'create' ? this.curMode() === 'create' : id === 'edit' ? this.curMode() === 'edit' : true).map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb;
+      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const filterDd = (() => {
+      const ddOpenId = this.state.openDd || null;
+      const ddToggle = (id) => this.setState(s => ({ openDd: s.openDd === id ? null : id }));
+      const ddWrap = (id, label, active, content) => h('div', { key: 'dd-' + id, style: { position: 'relative', display: 'flex' } },
+        h('button', { type: 'button', onClick: () => ddToggle(id), style: { display: 'flex', alignItems: 'center', gap: 7, height: 30, width: '100%', fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 8, border: `1px solid ${c.border}`, background: active ? c.accSoft : c.win, color: active ? aTxt : c.text, cursor: 'pointer', fontFamily: c.font, whiteSpace: 'nowrap' } },
+          h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' } }, label), h('span', { style: { display: 'flex', color: sub } }, K.Icon('arrowdown', 13))),
+        ddOpenId === id ? h('div', { key: 'bd', onClick: () => this.setState({ openDd: null }), style: { position: 'fixed', inset: 0, zIndex: 199 } }) : null,
+        ddOpenId === id ? h('div', { key: 'pop', onClick: e => e.stopPropagation(), style: { position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', background: c.win, border: `1px solid ${c.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,20,35,.18)', padding: 6 } }, content) : null);
+      const coLabel = coAll ? 'บริษัท: ทั้งหมด' : (coSel.length === 1 ? coSel[0] : 'บริษัท (' + coSel.length + ')');
+      const coContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+        h('input', { type: 'checkbox', checked: coAll, ref: el => { if (el) el.indeterminate = coSel.length > 0 && !coAll; }, onChange: () => this.setState({ filterCo: coAll ? [] : PROC_COMPANIES.slice(), filterBr: [] }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+        .concat(PROC_COMPANIES.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: coSel.indexOf(o) > -1, onChange: () => { const next = coSel.indexOf(o) > -1 ? coSel.filter(x => x !== o) : coSel.concat([o]); this.setState({ filterCo: next, filterBr: [] }); }, style: { cursor: 'pointer' } }), h('span', null, o))));
+      const brLabel = brAll ? 'สาขา: ทั้งหมด' : (brSelFinal.length === 1 ? brSelFinal[0] : 'สาขา (' + brSelFinal.length + ')');
+      const brContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+        h('input', { type: 'checkbox', checked: brAll, ref: el => { if (el) el.indeterminate = brSelFinal.length > 0 && !brAll; }, onChange: () => this.setState({ filterBr: brAll ? [] : brOpts.slice() }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+        .concat(brOpts.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: brSelFinal.indexOf(o) > -1, onChange: () => { const next = brSelFinal.indexOf(o) > -1 ? brSelFinal.filter(x => x !== o) : brSelFinal.concat([o]); this.setState({ filterBr: next }); }, style: { cursor: 'pointer' } }), h('span', null, o))));
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, width: '100%' } }, ddWrap('co', coLabel, !coAll, coContent), ddWrap('br', brLabel, !brAll, brContent));
+    })();
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('cart', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('cart', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'ใบสั่งซื้อ (PO)')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns),
+        !collapsed ? h('div', { style: { flexShrink: 0, paddingTop: 10, marginTop: 6, borderTop: `1px solid ${border}` } }, filterDd) : null),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
+          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px' } }, h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2 } }, 'L1 · ระบบบริหารการจัดซื้อ (PROC)  ›  L2 · ใบสั่งซื้อ (PO)  ›  L3 · ' + cfg.th)), this.K.sheetsBadge ? this.K.sheetsBadge(T, this.state.sheetsStatus) : null),
+          h('div', { style: { padding: '0 14px' } }, tabsEl)),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view, modal) };
+  }
+}
+</script>
+</body>
+</html>
