@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  DBKEY = 'db:itsa-rpta:v1';
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  SHEETS_TABS = {'system-reports':'itsa-rpta-system-reports','security-reports':'itsa-rpta-security-reports','audit-reports':'itsa-rpta-audit-reports','usage-reports':'itsa-rpta-usage-reports','custom-report':'itsa-rpta-custom-report'};
+  _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); if (K.sheetsBind && this.SHEETS_URL) K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS); } K.dbPersist(this, this.DBKEY); }
+  state = { nav: 'system-reports' };
+  componentDidMount() { if (this.K) { this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); }); }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._reportSheetsStatus(); this._handleReq(); }
+  _reportSheetsStatus() { if (typeof this.props.onSheetsStatus !== 'function') return; const s2 = this.state.sheetsStatus; if (s2 !== this._lastSheetsStatus) { this._lastSheetsStatus = s2; this.props.onSheetsStatus(s2); } }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'report', hidden: false, screens: [['list', cfg[k].th, cfg[k].ic || 'report']] }))); }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; if ('view' !== this._lastMode) { this._lastMode = 'view'; this.props.onMode('view'); } }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+  curNav() { return this.props.nav || this.state.nav; }
+  setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id }); }
+
+  CFG() {
+    return {
+      'system-reports': {
+        th: 'รายงานระบบ', ic: 'report',
+        kpi: [['รายงานที่สร้างเดือนนี้', '46', '+12%', 145], ['ผู้ใช้งานดูรายงาน', '128', 'คน', 145], ['รายงานตามคำสั่ง', '9', 'Scheduled', 35]],
+        tableTitle: 'รายงานล่าสุด',
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อรายงาน', k: 'a', b: true }, { h: 'โมดูล', k: 'module' }, { h: 'สร้างเมื่อ', k: 'ts' }, { h: 'สร้างโดย', k: 'by' }],
+        rows: [
+          { no: 'RPT-1001', a: 'รายงานยอดขายรายเดือน', module: 'SALE', ts: '2026-07-11 09:00', by: 'ธนากร พลังงาน' },
+          { no: 'RPT-1002', a: 'รายงานสต็อกคงเหลือ', module: 'INVT', ts: '2026-07-11 08:30', by: 'ระบบ (อัตโนมัติ)' },
+          { no: 'RPT-1003', a: 'รายงานงบกำไรขาดทุน', module: 'ACCT', ts: '2026-07-10 17:00', by: 'ศิริพร แจ่มใส' },
+          { no: 'RPT-1004', a: 'รายงานการเข้างานพนักงาน', module: 'HRMS', ts: '2026-07-10 09:00', by: 'ระบบ (อัตโนมัติ)' }
+        ]
+      },
+      'security-reports': {
+        th: 'รายงานความปลอดภัย', ic: 'key',
+        kpi: [['ล็อกอินล้มเหลว (7 วัน)', '12', '—', 22], ['บัญชีถูกระงับ', '1', '—', 35]],
+        tableTitle: 'รายงานความปลอดภัยล่าสุด',
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'รายงาน', k: 'a', b: true }, { h: 'สร้างเมื่อ', k: 'ts' }],
+        rows: [ { no: 'SR-01', a: 'สรุปความพยายามเข้าสู่ระบบล้มเหลว', ts: '2026-07-31' }, { no: 'SR-02', a: 'สรุปบัญชีที่ถูกระงับ', ts: '2026-07-30' }, { no: 'SR-03', a: 'สรุปการเปลี่ยนรหัสผ่าน', ts: '2026-07-25' } ]
+      },
+      'audit-reports': {
+        th: 'รายงานการตรวจสอบ', ic: 'clock',
+        kpi: [['รายการตรวจสอบทั้งหมด', '132', 'เดือนนี้', 145]],
+        tableTitle: 'รายงานการตรวจสอบล่าสุด',
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'รายงาน', k: 'a', b: true }, { h: 'สร้างเมื่อ', k: 'ts' }],
+        rows: [ { no: 'AR-01', a: 'สรุปการตรวจสอบรายเดือน', ts: '2026-08-01' }, { no: 'AR-02', a: 'สรุปการตรวจสอบสิทธิ์ผู้ใช้', ts: '2026-07-15' }, { no: 'AR-03', a: 'สรุปเหตุการณ์ผิดปกติ', ts: '2026-07-31' } ]
+      },
+      'usage-reports': {
+        th: 'รายงานการใช้งาน', ic: 'gauge',
+        kpi: [['ผู้ใช้งานที่ใช้งานอยู่', '58', 'คน', 145], ['เซสชันเฉลี่ย/วัน', '210', '—', 200]],
+        tableTitle: 'รายงานการใช้งานล่าสุด',
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'รายงาน', k: 'a', b: true }, { h: 'ช่วงเวลา', k: 'ts' }],
+        rows: [ { no: 'UR-01', a: 'สรุปการใช้งานตามโมดูล', ts: 'ก.ค. 2569' }, { no: 'UR-02', a: 'สรุปการใช้งานตามผู้ใช้', ts: 'ก.ค. 2569' }, { no: 'UR-03', a: 'สรุปการใช้งานช่วงเวลาเร่งด่วน', ts: 'ก.ค. 2569' } ]
+      },
+      'custom-report': {
+        th: 'รายงานกำหนดเอง', ic: 'plus',
+        kpi: [['รายงานที่กำหนดเอง', '3', '—', 145]],
+        tableTitle: 'รายงานกำหนดเองของฉัน',
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อรายงาน', k: 'a', b: true }, { h: 'สร้างเมื่อ', k: 'ts' }],
+        rows: [ { no: 'CR-01', a: 'ยอดขายเทียบเป้าหมายรายไตรมาส', ts: '2026-07-15' }, { no: 'CR-02', a: 'ต้นทุนจัดซื้อเทียบงบประมาณ', ts: '2026-06-30' } ]
+      }
+    };
+  }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const sl = this.K.sheetsLoading ? this.K.sheetsLoading(this, 'รายงานผู้ดูแลระบบ · ITSA-RPTA') : null; if (sl) return sl;
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h, sub = c.sub, acc = c.acc, aTxt = c.aTxt;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
+    const body = [K.kpi(T, cfg.kpi), h('div', { key: 'tt', style: { fontSize: 13, fontWeight: 700, marginBottom: 10 } }, cfg.tableTitle), K.grid(T, cfg.cols, K.coBrFilter(this, cfg.rows), null, null)];
+
+    const controlled = typeof this.props.onScr === 'function';
+    if (controlled) return { fg: c.text, view: h('div', { style: { display: 'flex', flexDirection: 'column' } }, body) };
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const collapsed = !!this.state.sideCollapsed;
+    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'report']);
+    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
+      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th)); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('report', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('report', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'รายงานและการวิเคราะห์')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns), !collapsed ? h('div', { style: { flexShrink: 0, paddingTop: 10, marginTop: 6, borderTop: `1px solid ${border}` } }, K.coBrDropdown(this, T)) : null),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px' } }, h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2 } }, 'L1 · ระบบผู้ดูแลระบบไอที (ITSA)  ›  L2 · รายงานและการวิเคราะห์ (RPT)  ›  L3 · ' + cfg.th)), (() => K.sheetsBadge(T, this.state.sheetsStatus))()),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view) };
+  }
+}
+</script>
+</body>
+</html>

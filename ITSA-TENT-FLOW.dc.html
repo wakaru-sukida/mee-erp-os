@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  doc-page:not(:defined){visibility:hidden}
+  body{margin:0;background:#eceef2}
+  .doc{font-family:'IBM Plex Sans Thai',sans-serif;color:#1c2432;line-height:1.6}
+  .doc h1{font-size:24px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+  .doc .sub{font-size:13px;color:#5b6472;margin:0 0 18px}
+  .doc h2{font-size:15px;font-weight:700;margin:24px 0 10px;padding-bottom:6px;border-bottom:2px solid #e2e6ec}
+  .doc p{margin:0 0 10px;font-size:12.5px}
+  code{font-family:'IBM Plex Mono',monospace;background:#eef1f5;border-radius:4px;padding:1px 5px;font-size:11.5px;color:#334}
+  .lane{display:flex;flex-direction:column;gap:0;margin:4px 0 8px}
+  .step{display:flex;align-items:flex-start;gap:12px;position:relative;padding:0 0 14px 0}
+  .step:not(:last-child)::before{content:'';position:absolute;left:15px;top:32px;bottom:0;width:2px;background:#cbd3df}
+  .step .n{flex-shrink:0;width:32px;height:32px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;background:#1f2a44;z-index:1}
+  .step .n.plan{background:#7a5cc4}.step .n.approve{background:#1a7a43}
+  .step .bd{flex:1;padding-top:3px}
+  .step .bd h4{margin:0 0 3px;font-size:13.5px;font-weight:700}
+  .step .bd .tb{font-size:11px;color:#5b6472;font-family:'IBM Plex Mono',monospace}
+  .step .bd p{margin:4px 0 0;font-size:12px}
+  .badge{display:inline-block;font-size:10px;font-weight:700;border-radius:5px;padding:2px 7px;margin-left:6px;vertical-align:middle}
+  .badge.g{background:#e4f5ea;color:#1a7a43}.badge.y{background:#fdf3dc;color:#9a6a10}
+  .approve-box{margin:6px 0 6px;border:1px solid #b6ddc4;background:#f2f9f4;border-radius:12px;padding:14px 16px}
+  .approve-box h4{margin:0 0 8px;font-size:13.5px;font-weight:700;color:#155e37}
+  .approve-box ol{margin:0;padding-left:18px;font-size:12px}.approve-box li{margin-bottom:5px}
+  table{border-collapse:collapse;width:100%;font-size:11.5px;margin:6px 0}
+  th,td{border:1px solid #d9dee6;padding:7px 10px;text-align:left;vertical-align:top}
+  thead th{background:#1f2a44;color:#fff;font-weight:600}
+  tbody th{background:#f3f5f8;font-weight:600}
+  .ok{color:#1a7a43;font-weight:700}.no{color:#b23b3b;font-weight:700}
+  .note{margin-top:18px;border:1px solid #d9c6a6;background:#fdf8ee;border-radius:10px;padding:12px 15px;font-size:12px}
+  .note b{color:#8a5a12}
+  .foot{margin-top:20px;font-size:11px;color:#8a929e;border-top:1px solid #e2e6ec;padding-top:8px}
+</style>
+</helmet>
+<doc-page margin="0.7in">
+<div class="doc">
+  <h1>ITSA-TENT — ขั้นตอนการทำงาน (Tenant Lifecycle Flow)</h1>
+  <p class="sub">โมดูลจัดการผู้เช่า (Control Plane) · โมเดล Hybrid · signup-first + อนุมัติ · Mee-ERP OS</p>
+
+  <h2>ลำดับการทำงาน (Workflow)</h2>
+  <div class="lane">
+    <div class="step"><span class="n plan">0</span><div class="bd"><h4>แผนสมัครสมาชิก <span class="badge y">แค็ตตาล็อกกลาง</span></h4><div class="tb">tenant-subscription-plan · plan_id</div><p>ตั้งแค็ตตาล็อกแผนก่อนสุด เพราะคำขอ/ผู้เช่าต้องผูก <code>plan_id</code> — เป็นข้อมูลกลาง ไม่มี tenant_id</p></div></div>
+    <div class="step"><span class="n">1</span><div class="bd"><h4>จัดเตรียมผู้เช่า — ยื่นคำขอ <span class="badge y">signup</span></h4><div class="tb">tenant-provisioning · pstat = รออนุมัติ</div><p>สร้างคำขอด้วยชื่อ tenant ใหม่ (พิมพ์เอง เก็บใน <code>tent_req_name</code>) + เลือกแผน · ตอนนี้ <code>tent_id</code> ยัง<b>ว่าง</b> (nullable FK)</p></div></div>
+    <div class="step"><span class="n approve">2</span><div class="bd"><h4>อนุมัติคำขอ <span class="badge g">จุดสร้าง tenant</span></h4><div class="tb">Action: approveProvisioning()</div><p>กดปุ่ม "อนุมัติคำขอ" → ระบบสร้างผู้เช่าและออก <code>tent_id</code> (UUID) แล้ว back-fill กลับเข้าคำขอ (ดูกล่องด้านล่าง)</p></div></div>
+    <div class="step"><span class="n">3</span><div class="bd"><h4>จัดการผู้เช่า — Tenant Master</h4><div class="tb">tenant-management · tent_id (PK, UUID)</div><p>แถวผู้เช่าถูกสร้างจากการอนุมัติ · เป็น master ที่ทุกตารางอ้างอิง (single source of truth)</p></div></div>
+    <div class="step"><span class="n">4</span><div class="bd"><h4>ตั้งค่าผู้เช่า</h4><div class="tb">tenant-configuration · FK tent_id</div><p>timezone / currency / language ต่อผู้เช่า</p></div></div>
+    <div class="step"><span class="n">5</span><div class="bd"><h4>แยกข้อมูลผู้เช่า</h4><div class="tb">tenant-isolation · FK tent_id</div><p>กำหนดโหมด pooled / siloed + ปลายทางฐานข้อมูลต่อผู้เช่า</p></div></div>
+    <div class="step"><span class="n">6</span><div class="bd"><h4>เรียกเก็บผู้เช่า</h4><div class="tb">tenant-billing · FK tent_id</div><p>ออกบิลตามแผน/รอบการเรียกเก็บ</p></div></div>
+  </div>
+
+  <h2>รายละเอียดขั้นอนุมัติ (Approve)</h2>
+  <div class="approve-box">
+    <h4>เมื่อกด "อนุมัติคำขอ" — approveProvisioning(r)</h4>
+    <ol>
+      <li>อ่านชื่อผู้เช่าจากคำขอ (<code>tent_req_name</code>)</li>
+      <li>ถ้ายังไม่มี tenant ชื่อนี้ → <b>สร้างแถวใน tenant-management</b> ออกรหัส <code>TEN-xx</code> + <code>tent_id</code> เป็น UUID (deterministic) และผูกแผน</li>
+      <li>ถ้ามี tenant ชื่อนี้อยู่แล้ว → ใช้ <code>tent_id</code> เดิม (ไม่สร้างซ้ำ)</li>
+      <li><b>back-fill</b> <code>tent_id</code> กลับเข้าคำขอ + เปลี่ยน <code>pstat</code> = <code>อนุมัติแล้ว</code></li>
+      <li>บันทึกทั้ง tenant-management และ tenant-provisioning ลง Google Sheet อัตโนมัติ</li>
+    </ol>
+  </div>
+  <p style="font-size:12px">สถานะคำขอ (pstat): <code>รออนุมัติ</code> → <code>อนุมัติแล้ว</code> → <code>จัดเตรียมเสร็จ</code> · แสดงเป็น pill สีตามสถานะ</p>
+
+  <h2>โครงสร้างข้อมูล (Data Model)</h2>
+  <table>
+    <thead><tr><th style="width:170px">ตาราง</th><th>PK</th><th>tenant anchor</th><th>UUID</th></tr></thead>
+    <tbody>
+      <tr><th>tenant-management</th><td>tent_id</td><td>= PK (ตัวผู้เช่า)</td><td class="ok">UUID</td></tr>
+      <tr><th>tenant-provisioning</th><td>tent_request_id</td><td>tent_id — <b>FK nullable</b></td><td class="ok">UUID</td></tr>
+      <tr><th>tenant-subscription-plan</th><td>plan_id</td><td>— (แค็ตตาล็อกกลาง)</td><td class="no">เลข</td></tr>
+      <tr><th>tenant-configuration</th><td>tent_id</td><td>tent_id — FK</td><td class="ok">UUID</td></tr>
+      <tr><th>tenant-isolation</th><td>tent_id</td><td>tent_id — FK</td><td class="ok">UUID</td></tr>
+      <tr><th>tenant-billing</th><td>billing_id</td><td>tent_id — FK</td><td class="ok">UUID</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <p style="margin:0"><b>หลักการสำคัญ:</b> ITSA-TENT เป็น Control Plane — <code>tent_id</code> = tenant identity ที่ทุกตารางอ้างถึง · <code>tent_id</code> ใน provisioning เป็น <b>nullable FK</b> (ว่างตอนยื่นคำขอ เติมตอนอนุมัติ) จึงจำลอง signup-first ได้โดยไม่ย้ายความเป็น master · ชื่อผู้เช่าที่ยื่นขอเก็บใน <code>tent_req_name</code> อิสระจาก FK · PK ทุกตัวเป็น UUID เพื่อ export ตาม tenant ไป siloed โดย id ไม่ชนข้าม DB</p>
+  </div>
+
+  <p class="foot">Mee-ERP OS · ITSA-TENT Workflow · 14 ส.ค. 2026</p>
+</div>
+</doc-page>
+<script src="./doc-page.js"></script>
+</x-dc>
+</body>
+</html>

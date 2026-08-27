@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  DBKEY = 'db:itsa-logs:v1';
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  SHEETS_TABS = {'system-log':'itsa-logs-system-log','application-log':'itsa-logs-application-log','access-log':'itsa-logs-access-log','log-retention':'itsa-logs-log-retention','log-search':'itsa-logs-log-search'};
+  _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); if (K.sheetsBind && this.SHEETS_URL) K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS); } K.dbPersist(this, this.DBKEY); }
+  state = { nav: 'system-log', scr: 'list', sel: null, mode: 'view', filt: 'ทั้งหมด', sort: { key: 'ts', dir: 'desc' } };
+  componentDidMount() { if (this.K) { this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); }); }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._reportSheetsStatus(); this._handleReq(); }
+  _reportSheetsStatus() { if (typeof this.props.onSheetsStatus !== 'function') return; const s2 = this.state.sheetsStatus; if (s2 !== this._lastSheetsStatus) { this._lastSheetsStatus = s2; this.props.onSheetsStatus(s2); } }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'doc', hidden: false, screens: cfg[k].screens.map(([id, lb, ic]) => [id, lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb, ic]) }))); }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); else if (r.kind === 'scr') this.setScr(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; if ('view' !== this._lastMode) { this._lastMode = 'view'; this.props.onMode('view'); } }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+
+  CFG() {
+    return {
+      'system-log': {
+        th: 'บันทึกระบบ', ic: 'doc',
+        screens: [['list', 'Event Log — บันทึกเหตุการณ์ระบบ', 'list'], ['detail', 'Event Detail — รายละเอียดเหตุการณ์', 'doc']],
+        kpi: [['เหตุการณ์ทั้งหมด', '8', '—', 145], ['ระดับ Error', '2', '—', 35], ['ระดับ Warning', '2', '—', 35]],
+        cols: [{ h: 'เวลา', k: 'ts', b: true }, { h: 'ระดับ', render: r => this.K.pill(this.T(), r.level, this.levelHue(r.level)) }, { h: 'แหล่งที่มา', k: 'source' }, { h: 'ข้อความ', k: 'msg' }],
+        rows: [
+          { no: 'LOG-01', ts: '2026-07-11 08:00:00', level: 'Info', source: 'Scheduler', msg: 'งานสำรองข้อมูลรายวันเริ่มทำงาน' },
+          { no: 'LOG-02', ts: '2026-07-11 08:00:42', level: 'Info', source: 'Scheduler', msg: 'งานสำรองข้อมูลรายวันสำเร็จ' },
+          { no: 'LOG-03', ts: '2026-07-11 09:12:10', level: 'Warning', source: 'API Gateway', msg: 'อัตราการเรียกใช้ API สูงผิดปกติจาก IP 203.113.x.x' },
+          { no: 'LOG-04', ts: '2026-07-11 10:05:22', level: 'Error', source: 'Integration', msg: 'เชื่อมต่อระบบธนาคารล้มเหลว (timeout)' },
+          { no: 'LOG-05', ts: '2026-07-11 10:06:00', level: 'Info', source: 'Integration', msg: 'เชื่อมต่อระบบธนาคารสำเร็จ (retry)' },
+          { no: 'LOG-06', ts: '2026-07-11 11:30:15', level: 'Warning', source: 'Storage', msg: 'พื้นที่จัดเก็บไฟล์สำรองใกล้เต็ม (85%)' },
+          { no: 'LOG-07', ts: '2026-07-11 14:20:00', level: 'Error', source: 'Notification', msg: 'ส่ง SMS แจ้งเตือนล้มเหลว (ผู้ให้บริการขัดข้อง)' },
+          { no: 'LOG-08', ts: '2026-07-11 18:00:00', level: 'Info', source: 'Scheduler', msg: 'รีเซ็ตเลขที่เอกสารประจำเดือนสำเร็จ' }
+        ],
+        form: [['รายละเอียดเหตุการณ์', 'doc', [['เวลา', 0, ''], ['ระดับ', 0, ''], ['แหล่งที่มา', 0, ''], ['ข้อความ', 0, '']]]],
+        roMap: { 'เวลา': 'ts', 'ระดับ': 'level', 'แหล่งที่มา': 'source', 'ข้อความ': 'msg' },
+        acts: ['View', 'Export', 'Filter']
+      },
+      'application-log': {
+        th: 'บันทึกแอปพลิเคชัน', ic: 'doc',
+        screens: [['list', 'Application Log — บันทึกแอปพลิเคชัน', 'list']],
+        cols: [{ h: 'เวลา', k: 'ts', b: true }, { h: 'แอปพลิเคชัน', k: 'a' }, { h: 'ข้อความ', k: 'msg' }],
+        rows: [
+          { ts: '2026-07-30 08:10', a: 'SALE Service', msg: 'เริ่มบริการสำเร็จ' },
+          { ts: '2026-07-30 09:44', a: 'ACCT Service', msg: 'หน่วยความจำใช้งานสูง (78%)' }
+        ]
+      },
+      'access-log': {
+        th: 'บันทึกการเข้าถึง', ic: 'box',
+        screens: [['list', 'Access Log — บันทึกการเข้าถึง', 'list']],
+        cols: [{ h: 'เวลา', k: 'ts', b: true }, { h: 'ผู้ใช้งาน', k: 'a' }, { h: 'ทรัพยากร', k: 'res' }],
+        rows: [
+          { ts: '2026-07-30 08:30', a: 'suda.k', res: '/reports/sales' },
+          { ts: '2026-07-30 08:35', a: 'preecha.w', res: '/accounting/invoices' }
+        ]
+      },
+      'log-retention': {
+        th: 'นโยบายเก็บบันทึก', ic: 'settings',
+        screens: [['list', 'Log Retention — นโยบายเก็บบันทึก', 'list']],
+        cols: [{ h: 'ประเภทบันทึก', k: 'a', b: true }, { h: 'ระยะเวลาเก็บ', k: 'd' }, { h: 'สถานะ', k: 's' }],
+        rows: [
+          { a: 'System Log', d: '90 วัน', s: 'ใช้งาน' },
+          { a: 'Access Log', d: '180 วัน', s: 'ใช้งาน' },
+          { a: 'Application Log', d: '30 วัน', s: 'ใช้งาน' }
+        ]
+      },
+      'log-search': {
+        th: 'ค้นหาบันทึก', ic: 'search',
+        screens: [['list', 'Log Search — ค้นหาบันทึก', 'list']],
+        cols: [{ h: 'คำค้นล่าสุด', k: 'a', b: true }, { h: 'ผลลัพธ์ที่พบ', k: 'cnt' }, { h: 'ค้นเมื่อ', k: 'ts' }],
+        rows: [
+          { a: 'timeout', cnt: '4', ts: '2026-07-30 09:00' },
+          { a: 'login_failed', cnt: '2', ts: '2026-07-29 17:20' }
+        ]
+      }
+    };
+  }
+  levelHue(l) { return ({ Info: 220, Warning: 35, Error: 22 })[l] || 220; }
+
+  curNav() { return this.props.nav || this.state.nav; }
+  setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: 'list', sel: null }); }
+  curScr() { return this.props.scr || this.state.scr; }
+  _goScr(v) { if (this.props.onScr) this.props.onScr(v); else this.setState({ scr: v }); }
+  setScr(v) { this._goScr(v); }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const sl = this.K.sheetsLoading ? this.K.sheetsLoading(this, 'บันทึกระบบ · ITSA-LOGS') : null; if (sl) return sl;
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
+    const scr = this.curScr();
+    const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const rows = cfg.rows;
+    const selRow = this.state.sel || rows[0] || null;
+    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'ACTIONS'), list.map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+    let body;
+    if (scr === 'detail') {
+      const r = selRow;
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only)')), K.btn(T, 'กลับรายการ', false, 'list', () => this.setScr('list')))], { marginBottom: 14, padding: '12px 16px' });
+      const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb]) => { const m = cfg.roMap[lb]; return K.field(T, lb, K.roField(T, r[m])); })));
+      body = [hdr, ...secs, actLegend(cfg.acts || ['Export'])];
+    } else {
+      const openDetail = (r) => { this.setState({ sel: r }); this.setScr('detail'); };
+      const lvOpts = ['ทั้งหมด', 'Info', 'Warning', 'Error'];
+      const curLv = this.state.filt || 'ทั้งหมด';
+      const fRows = curLv === 'ทั้งหมด' ? rows : rows.filter(r => r.level === curLv);
+      const sortSt = this.state.sort;
+      const setSort = (key) => this.setState(s => { const cur = s.sort; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: { key, dir } }; });
+      const sortedRows = fRows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); });
+      const cols = cfg.cols.concat([{ h: '', render: r => h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู') }]);
+      body = [cfg.kpi ? K.kpi(T, cfg.kpi) : null, h('div', { key: 'tb', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 } },
+        h('select', { value: curLv, onChange: e => this.setState({ filt: e.target.value }), style: Object.assign({}, K.inp(T), { width: 160, cursor: 'pointer' }) }, lvOpts.map(o => h('option', { key: o, value: o }, o))),
+        h('div', { style: { flex: 1 } })),
+        K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.no || selRow.a) : null), actLegend(cfg.acts || ['Export'])];
+    }
+
+    const controlled = typeof this.props.onScr === 'function';
+    if (controlled) return { fg: c.text, view: h('div', { style: { display: 'flex', flexDirection: 'column' } }, body) };
+
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const collapsed = !!this.state.sideCollapsed;
+    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'doc']);
+    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
+      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th)); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const tabsEl = h('div', { style: { display: 'flex', gap: 6, rowGap: 0, flexWrap: 'wrap', borderBottom: `1px solid ${border}` } }, cfg.screens.map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb;
+      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon(cfg.ic || 'doc', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon(cfg.ic || 'doc', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, cfg.th)),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns)),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
+          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px' } }, h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2 } }, 'L1 · ระบบผู้ดูแลระบบไอที (ITSA)  ›  L2 · บริหารบันทึกเหตุการณ์ (LOGS)  ›  L3 · ' + cfg.th)), (() => K.sheetsBadge(T, this.state.sheetsStatus))()),
+          h('div', { style: { padding: '0 14px' } }, tabsEl)),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view) };
+  }
+}
+</script>
+</body>
+</html>

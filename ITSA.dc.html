@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'IBM Plex Sans Thai','Inter',system-ui,sans-serif;}
+</style>
+</helmet>
+<div style="display:flex;height:100vh;min-height:0;background:{{ bg }};color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">
+  <aside style="width:230px;flex-shrink:0;border-right:1px solid {{ border }};background:{{ panel }};display:flex;flex-direction:column;min-height:0;">
+    <div style="padding:16px 16px 12px;border-bottom:1px solid {{ border }};">
+      <div style="font-size:9.5px;font-weight:700;letter-spacing:.6px;color:{{ acc }};">L1 · ITSA</div>
+      <div style="font-size:14.5px;font-weight:800;margin-top:3px;letter-spacing:-.2px;">ระบบผู้ดูแลระบบไอที</div>
+      <div style="font-size:10.5px;color:{{ sub }};margin-top:2px;">IT System Administration</div>
+    </div>
+    <div style="flex:1;overflow:auto;padding:8px;min-height:0;">
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+        <div style="margin:6px 6px 2px;">
+          <span style="font-size:9px;font-weight:700;letter-spacing:.4px;padding:2px 7px;border-radius:5px;background:{{ g.badgeBg }};color:{{ g.badgeFg }};">{{ g.label }}</span>
+        </div>
+        <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="4">
+          <button onClick="{{ it.onClick }}" style="{{ it.style }}">
+            <span style="font-size:12.5px;font-weight:{{ it.weight }};">{{ it.th }}</span>
+            <span style="display:flex;align-items:center;gap:6px;">
+              <sc-if value="{{ it.dis }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:8px;font-weight:700;letter-spacing:.4px;padding:2px 5px;border-radius:5px;background:#e5484d;color:#fff;">ปิด</span>
+              </sc-if>
+              <sc-if value="{{ it.hid }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:8px;font-weight:700;letter-spacing:.4px;padding:2px 5px;border-radius:5px;background:{{ border }};color:{{ sub }};">HIDDEN</span>
+              </sc-if>
+              <span style="font-size:9.5px;font-weight:700;color:{{ it.abbrColor }};">{{ it.abbr }}</span>
+            </span>
+          </button>
+        </sc-for>
+      </sc-for>
+    </div>
+  </aside>
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;">
+    <sc-if value="{{ isOrg }}" hint-placeholder-val="{{ true }}">
+      <dc-import name="ITSA-ORG" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" show-hidden="{{ showHidden }}" on-catalog="{{ handlers.org.onCatalog }}" on-mode="{{ handlers.org.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isTent }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-TENT" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.tent.onCatalog }}" on-mode="{{ handlers.tent.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isUam }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-UAM" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.uam.onCatalog }}" on-mode="{{ handlers.uam.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isConf }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-CONF" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.conf.onCatalog }}" on-mode="{{ handlers.conf.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isAudt }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-AUDT" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.audt.onCatalog }}" on-mode="{{ handlers.audt.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isLogs }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-LOGS" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.logs.onCatalog }}" on-mode="{{ handlers.logs.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isNoti }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-NOTI" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.noti.onCatalog }}" on-mode="{{ handlers.noti.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isIntg }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-INTG" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.intg.onCatalog }}" on-mode="{{ handlers.intg.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isAien }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-AIEN" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.aien.onCatalog }}" on-mode="{{ handlers.aien.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isWfd }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-WFD" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.wfd.onCatalog }}" on-mode="{{ handlers.wfd.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isRptd }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-RPTD" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.rptd.onCatalog }}" on-mode="{{ handlers.rptd.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isFile }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-FILE" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.file.onCatalog }}" on-mode="{{ handlers.file.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isRpt }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-RPTA" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.rpt.onCatalog }}" on-mode="{{ handlers.rpt.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ isDash }}" hint-placeholder-val="{{ false }}">
+      <dc-import name="ITSA-DASH" theme="{{ theme }}" api="{{ api }}" win="{{ win }}" on-catalog="{{ handlers.dash.onCatalog }}" on-mode="{{ handlers.dash.onMode }}" hint-size="100%,100%"></dc-import>
+    </sc-if>
+    <sc-if value="{{ hasConfirm }}" hint-placeholder-val="{{ false }}">
+      <div style="position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.32);display:flex;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:{{ panel }};border-radius:14px;border:1px solid {{ border }};box-shadow:0 20px 60px rgba(0,0,0,0.25);width:400px;max-width:100%;padding:22px 24px;">
+          <div style="font-size:15.5px;font-weight:800;margin-bottom:10px;">ออกจากหน้านี้โดยไม่บันทึก?</div>
+          <div style="font-size:12.5px;color:{{ sub }};line-height:1.6;margin-bottom:18px;">โมดูล {{ confirmFromTh }} มีการแก้ไขที่ยังไม่ได้บันทึก การสลับไปยัง {{ confirmToTh }} จะละทิ้งการเปลี่ยนแปลงนี้</div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button onClick="{{ cancelSwitch }}" style="padding:8px 16px;border-radius:9px;border:1px solid {{ border }};background:{{ panel }};color:{{ fg }};font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">ยกเลิก</button>
+            <button onClick="{{ confirmSwitchAction }}" style="padding:8px 16px;border-radius:9px;border:none;background:{{ acc }};color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;">ไม่บันทึกและสลับ</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ notOrg }}" hint-placeholder-val="{{ true }}">
+    <header style="flex-shrink:0;padding:14px 20px;border-bottom:1px solid {{ border }};background:{{ panel }};">
+      <div style="font-size:16px;font-weight:800;letter-spacing:-.2px;">{{ activeTh }}</div>
+      <div style="font-size:11px;color:{{ sub }};margin-top:2px;">{{ activeCrumb }}</div>
+    </header>
+    <div style="flex:1;overflow:auto;padding:24px;min-height:0;">
+      <div style="max-width:560px;border:1px dashed {{ border }};border-radius:14px;padding:28px;background:{{ panel }};">
+        <div style="font-size:13.5px;font-weight:700;margin-bottom:8px;">โมดูล ITSA — Scaffold (module contract)</div>
+        <div style="font-size:12px;color:{{ sub }};line-height:1.7;">ไฟล์นี้เป็นโครงโมดูลแยก (Independent Module DC) ที่รับ context ผ่าน props: <b>theme</b>, <b>api</b>, <b>win</b> — ตรงกับ IModuleHost ใน ARCHITECTURE.md<br/>เลือกโมดูลย่อยทางซ้ายเพื่อดูค่าที่ resolve จาก contract ปัจจุบัน เนื้อหา renderer (ORG/Tenant …) จะทยอยย้ายเข้ามาไฟล์นี้ทีละตัวโดยไม่กระทบ Shell หลัก</div>
+        <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px;font-size:11.5px;">
+          <div style="display:flex;gap:8px;"><span style="color:{{ sub }};min-width:96px;">activeSub</span><b>{{ activeAbbr }}</b></div>
+          <div style="display:flex;gap:8px;"><span style="color:{{ sub }};min-width:96px;">theme.name</span><b>{{ themeName }}</b></div>
+          <div style="display:flex;gap:8px;"><span style="color:{{ sub }};min-width:96px;">api.toast</span><b>{{ apiStatus }}</b></div>
+        </div>
+        <button onClick="{{ pingApi }}" style="margin-top:18px;padding:8px 16px;border-radius:9px;border:none;background:{{ acc }};color:#fff;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;">ทดสอบ api.toast()</button>
+      </div>
+    </div>
+    </sc-if>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;showHidden&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;System&quot;}}">
+class Component extends DCLogic {
+  state = { active: 'itsa-uam', catalogs: {}, modes: {}, confirm: null };
+  MODKEYS = { 'itsa-org':'org','itsa-tent':'tent','itsa-uam':'uam','itsa-conf':'conf','itsa-audt':'audt','itsa-logs':'logs','itsa-noti':'noti','itsa-intg':'intg','itsa-aien':'aien','itsa-wfd':'wfd','itsa-rptd':'rptd','itsa-file':'file','itsa-rpt':'rpt','itsa-dash':'dash' };
+  _handlers = {};
+  mkHandlers(key) {
+    if (this._handlers[key]) return this._handlers[key];
+    const h = {
+      onCatalog: (cat) => this.setState(s => ({ catalogs: Object.assign({}, s.catalogs, { [key]: cat }) })),
+      onMode: (m) => this.setState(s => ({ modes: Object.assign({}, s.modes, { [key]: m }) })),
+    };
+    this._handlers[key] = h;
+    return h;
+  }
+  requestSwitch(id) {
+    if (id === this.state.active) return;
+    const curKey = this.MODKEYS[this.state.active];
+    const dirty = curKey && (this.state.modes[curKey] === 'create' || this.state.modes[curKey] === 'edit');
+    if (dirty) this.setState({ confirm: id }); else this.setState({ active: id });
+  }
+  confirmSwitch() { const id = this.state.confirm; this.setState({ active: id, confirm: null }); }
+  cancelSwitch() { this.setState({ confirm: null }); }
+
+  // ---- ITSA submodule registry (mirrors Shell; source of truth when migrated) ----
+  SUBS() {
+    return [
+      ['itsa-tent','TENT','ผู้เช่าระบบ (Single-Tenant)','core',false,false],
+      ['itsa-org','ORG','โครงสร้างองค์กร','core',false,false],
+      ['itsa-uam','UAM','บริหารผู้ใช้งานและสิทธิ์','core',false,false],
+      ['itsa-conf','CONF','กำหนดค่าระบบ','core',false,false],
+      ['itsa-audt','AUDT','บริหารการตรวจสอบการใช้งาน','core',false,false],
+      ['itsa-logs','LOGS','บริหารบันทึกเหตุการณ์','core',false,false],
+      ['itsa-noti','NOTI','บริหารการแจ้งเตือน','core',false,false],
+      ['itsa-intg','INTG','บริหารการเชื่อมต่อระบบ','core',false,false],
+      ['itsa-aien','AIEN','บริหารเครื่องมือ AI (AI Engine)','core',false,false],
+      ['itsa-auth','AUTH','บริหารการยืนยันตัวตน','core',true,true],
+      ['itsa-secu','SECU','บริหารความปลอดภัย','core',true,true],
+      ['itsa-jobs','JOBS','จัดการงานอัตโนมัติ','core',true,true],
+      ['itsa-sysm','SYSM','ติดตามและเฝ้าระวังระบบ','core',true,true],
+      ['itsa-bkup','BKUP','สำรองและกู้คืนข้อมูล','core',true,true],
+      ['itsa-licn','LICN','บริหารลิขสิทธิ์และใบอนุญาต','core',true,true],
+      ['itsa-stor','STOR','บริหารพื้นที่จัดเก็บข้อมูล','core',true,true],
+      ['itsa-mntn','MNTN','บำรุงรักษาระบบ','core',true,true],
+      ['itsa-wfd','WFD','ออกแบบกระบวนการทำงาน','ext',false,false],
+      ['itsa-rptd','RPTD','ออกแบบรายงาน','ext',false,false],
+      ['itsa-form','FORM','ออกแบบฟอร์ม','ext',true,true],
+      ['itsa-dashd','DASHD','ออกแบบแดชบอร์ด','ext',true,true],
+      ['itsa-file','FILE','บริหารพื้นที่จัดเก็บไฟล์','ext',false,false],
+      ['itsa-api','API','บริหาร API','ext',true,true],
+      ['itsa-sso','SSO','ลงชื่อเข้าใช้ครั้งเดียว','ext',true,true],
+      ['itsa-mfa','MFA','ยืนยันตัวตนหลายขั้นตอน','ext',true,true],
+      ['itsa-dev','DEV','บริหารอุปกรณ์','ext',true,true],
+      ['itsa-iam','IAM','บริหารอัตลักษณ์ผู้ใช้งาน','ext',true,true],
+      ['itsa-vpn','VPN','บริหารเครือข่าย VPN','ext',true,true],
+      ['itsa-cert','CERT','บริหารใบรับรองดิจิทัล','ext',true,true],
+      ['itsa-mail','MAIL','บริหารอีเมลเซิร์ฟเวอร์','ext',true,true],
+      ['itsa-rpt','RPTA','รายงานและการวิเคราะห์','report',false,false],
+      ['itsa-dash','DASH','แดชบอร์ดผู้ดูแลระบบ','report',false,false],
+      ['itsa-kpi','KPI','แดชบอร์ดตัวชี้วัดด้านไอที','report',true,true],
+      ['itsa-alrt','ALRT','แดชบอร์ดการแจ้งเตือน','report',true,true],
+      ['itsa-heal','HEAL','แดชบอร์ดสุขภาพระบบ','report',true,true],
+    ];
+  }
+
+  T() { return this.props.theme || {}; }
+
+  renderVals() {
+    const T = this.T();
+    const dark = T.name === 'dark';
+    const acc = T.acc || 'oklch(0.55 0.16 255)';
+    const bg = T.bg || (dark ? 'oklch(0.19 0.012 265)' : 'oklch(0.98 0.004 255)');
+    const panel = T.card || (dark ? 'oklch(0.23 0.014 265)' : '#fff');
+    const fg = T.text || (dark ? 'oklch(0.94 0.01 265)' : 'oklch(0.25 0.02 265)');
+    const sub = T.sub || (dark ? 'oklch(0.68 0.02 265)' : 'oklch(0.55 0.02 265)');
+    const border = T.border || (dark ? 'oklch(0.32 0.014 265)' : 'oklch(0.9 0.006 255)');
+    const accSoft = T.accSoft || (dark ? 'rgba(120,160,255,.16)' : 'rgba(60,110,240,.10)');
+
+    const TYPE = {
+      core:   ['Core Functions', dark?'rgba(90,140,255,.18)':'oklch(0.95 0.05 220)', dark?'oklch(0.8 0.1 220)':'oklch(0.45 0.15 220)'],
+      ext:    ['Extensions',     dark?'rgba(80,200,140,.18)':'oklch(0.95 0.05 158)', dark?'oklch(0.82 0.1 158)':'oklch(0.45 0.15 158)'],
+      report: ['Reports & Analytics', dark?'rgba(240,180,90,.18)':'oklch(0.95 0.05 35)', dark?'oklch(0.84 0.1 60)':'oklch(0.5 0.15 45)'],
+    };
+    const subs = this.SUBS();
+    const active = this.state.active;
+    const showHidden = this.props.showHidden !== undefined ? !!this.props.showHidden : true;
+    const mk = (mt) => subs.filter(s => s[3] === mt && (showHidden || !s[4])).map(([id, abbr, th, , hid, dis]) => {
+      const on = id === active;
+      return {
+        th, abbr, hid: !!hid, dis: !!dis,
+        weight: on ? 700 : 500,
+        abbrColor: on ? acc : sub,
+        style: `display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;border:none;cursor:pointer;font-family:inherit;padding:8px 10px;border-radius:9px;margin:1px 0;color:${on?fg:sub};background:${on?accSoft:'transparent'};opacity:${dis?0.5:(hid?0.62:1)};`,
+        onClick: () => this.requestSwitch(id),
+      };
+    });
+    const groups = [['core'],['ext'],['report']].map(([mt]) => ({
+      label: TYPE[mt][0], badgeBg: TYPE[mt][1], badgeFg: TYPE[mt][2], items: mk(mt),
+    })).filter(g => g.items.length);
+
+    const cur = subs.find(s => s[0] === active) || subs[0];
+    const api = this.props.api || {};
+    const handlers = {};
+    Object.keys(this.MODKEYS).forEach(k => { handlers[this.MODKEYS[k]] = this.mkHandlers(this.MODKEYS[k]); });
+    const confirmId = this.state.confirm;
+    const confirmFrom = confirmId ? (subs.find(s => s[0] === active) || subs[0]) : null;
+    const confirmTo = confirmId ? (subs.find(s => s[0] === confirmId) || subs[0]) : null;
+    return {
+      handlers,
+      hasConfirm: !!confirmId,
+      confirmFromTh: confirmFrom ? confirmFrom[2] : '',
+      confirmToTh: confirmTo ? confirmTo[2] : '',
+      cancelSwitch: () => this.cancelSwitch(),
+      confirmSwitchAction: () => this.confirmSwitch(),
+      bg, fg, sub, panel, border, acc,
+      groups,
+      themeName: T.name || '(ยังไม่ได้ส่ง theme)',
+      activeTh: cur[2],
+      activeAbbr: cur[1],
+      activeCrumb: 'L1 · ITSA › L2 · ' + ({core:'Core Functions',ext:'Extensions',report:'Reports & Analytics'}[cur[3]]) + ' › L3 · ' + cur[2],
+      isOrg: active === 'itsa-org',
+      isTent: active === 'itsa-tent',
+      isUam: active === 'itsa-uam',
+      isConf: active === 'itsa-conf',
+      isAudt: active === 'itsa-audt',
+      isLogs: active === 'itsa-logs',
+      isNoti: active === 'itsa-noti',
+      isIntg: active === 'itsa-intg',
+      isAien: active === 'itsa-aien',
+      isWfd: active === 'itsa-wfd',
+      isRptd: active === 'itsa-rptd',
+      isFile: active === 'itsa-file',
+      isRpt: active === 'itsa-rpt',
+      isDash: active === 'itsa-dash',
+      notOrg: ['itsa-org','itsa-tent','itsa-uam','itsa-conf','itsa-audt','itsa-logs','itsa-noti','itsa-intg','itsa-aien','itsa-wfd','itsa-rptd','itsa-file','itsa-rpt','itsa-dash'].indexOf(active) < 0,
+      showHidden,
+      theme: this.props.theme,
+      api: this.props.api,
+      win: this.props.win,
+      apiStatus: typeof api.toast === 'function' ? 'พร้อมใช้งาน ✓' : 'standalone (mock)',
+      pingApi: () => {
+        const msg = 'ITSA › ' + cur[1] + ' ส่งสัญญาณผ่าน contract';
+        if (api && typeof api.toast === 'function') api.toast(msg);
+        else alert(msg);
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

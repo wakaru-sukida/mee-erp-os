@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  DBKEY = 'db:itsa-uam:v2';
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  SHEETS_TABS = {'user-management':'itsa-uam-user','role-management':'itsa-uam-role','permission-management':'itsa-uam-permission'};
+  _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); if (K.sheetsBind && this.SHEETS_URL) K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS); } K.dbPersist(this, this.DBKEY); }
+  state = { nav: 'user-management', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: { key: 'no', dir: 'asc' } };
+  componentDidMount() { if (this.K) { this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); }); }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._reportSheetsStatus(); this._handleReq(); this._backfillUserFields(); this._syncAccAway(); this._fetchOrg(); }
+  _fetchOrg() { if (this._orgFetched) return; this._orgFetched = true; const U = this.SHEETS_URL; if (!U) return;
+    const norm = (r) => ({ a: r.name_th || r.a || '', co: r.company || r.co || '', par: r.branch || r.par || r.branch_count || '', dv: r.division || r.dv || '', s: r.status || r.s || 'ใช้งาน' });
+    const normConf = (r) => ({ no: r.code || r.no || '', co: r.company || r.co || '', br: r.branch_count || r.branch || r.br || '', parent: r.parent_company || r.parent || '', enabled: !(r.enabled === false || r.enabled === 'false' || r.enabled === 'ปิดใช้งาน' || r.enabled === 0 || r.enabled === '0') });
+    const go = (tab, key, fn) => fetch(U + '?tab=' + tab + '&_=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(j => { if (j && j.ok) this.setState({ [key]: (j.rows || []).map(fn) }); }).catch(() => {});
+    go('itsa-org-division', 'orgDivs', norm); go('itsa-org-department', 'orgDepts', norm); go('itsa-conf-modules', 'confMods', normConf); go('itsa-conf-submodules', 'confSubs', normConf); }
+  componentWillUnmount() { if (this._accListening) { document.removeEventListener('pointerdown', this._accAway, true); this._accListening = false; } }
+  _accAway = (e) => { if (this.state.openAccDd && !(e.target && e.target.closest && e.target.closest('[data-accdd]'))) this.setState({ openAccDd: null }); };
+  _syncAccAway() { const open = !!this.state.openAccDd; if (open && !this._accListening) { this._accListening = true; document.addEventListener('pointerdown', this._accAway, true); } else if (!open && this._accListening) { this._accListening = false; document.removeEventListener('pointerdown', this._accAway, true); } }
+  _backfillUserFields() {
+    if (this._userFieldsBackfilled || this.state.sheetsStatus !== 'connected') return;
+    const cur = this.state.db['user-management'];
+    if (cur === undefined) return;
+    this._userFieldsBackfilled = true;
+    const seedByNo = {}; (this.CFG()['user-management'].rows || []).forEach(r => { seedByNo[r.no] = r; });
+    let changed = false;
+    const merged = cur.map(r => {
+      const seed = seedByNo[r.no];
+      if (!seed) return r;
+      const patch = {};
+      if (r.division === undefined && seed.division !== undefined) patch.division = seed.division;
+      if (r.dept === undefined && seed.dept !== undefined) patch.dept = seed.dept;
+      if (Object.keys(patch).length) { changed = true; return Object.assign({}, r, patch); }
+      return r;
+    });
+    if (changed) this.setState(s => ({ db: Object.assign({}, s.db, { 'user-management': merged }) }));
+  }
+  _reportSheetsStatus() { if (typeof this.props.onSheetsStatus !== 'function') return; const s2 = this.state.sheetsStatus; if (s2 !== this._lastSheetsStatus) { this._lastSheetsStatus = s2; this.props.onSheetsStatus(s2); } }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'box', hidden: false, screens: cfg[k].screens.map(([id, lb, ic]) => [id, lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb, ic]) }))); }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); else if (r.kind === 'scr') this.setScr(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; const m = this.curMode(); if (m !== this._lastMode) { this._lastMode = m; this.props.onMode(m); } }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+
+  CFG() {
+    return {
+      'user-management': {
+        th: 'จัดการผู้ใช้งาน', ic: 'user',
+        screens: [['list', 'User List — รายชื่อผู้ใช้งาน', 'list'], ['detail', 'User Detail — รายละเอียดผู้ใช้งาน', 'doc'], ['create', 'Create User — เพิ่มผู้ใช้งาน', 'plus'], ['edit', 'Edit User — แก้ไขผู้ใช้งาน', 'doc']],
+        kpi: [['ผู้ใช้งานทั้งหมด', '6', 'คน', 145], ['ผู้ดูแลระบบ', '1', 'Admin', 35], ['ระงับการใช้งาน', '1', '—', 22]],
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อ-นามสกุล', k: 'a', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'สาขา', k: 'br' }, { h: 'แผนก', k: 'dept' }, { h: 'อีเมล', k: 'email' }, { h: 'ฝ่าย', k: 'division' }, { h: 'บทบาท', render: r => this.K.pill(this.T(), r.role, this.roleHue(r.role)) }],
+        rows: [],
+        form: [['ข้อมูลผู้ใช้งาน', 'user', [['รหัสผู้ใช้', 0, 'U-07'], ['ชื่อ-นามสกุล', 1, 'ชื่อ นามสกุล'], ['บริษัท', 1, []], ['สาขา', 1, []], ['อีเมล', 0, 'name@meeerp.co.th'], ['ฝ่าย', 1, ['ฝ่ายไอที', 'ฝ่ายขาย', 'ฝ่ายบัญชี', 'ฝ่ายคลังสินค้า', 'ฝ่ายจัดซื้อ', 'ฝ่ายผลิต']], ['แผนก', 1, ['แผนกขายในประเทศ', 'แผนกขายต่างประเทศ', 'แผนกลูกค้าสัมพันธ์', 'แผนกบัญชี', 'แผนกการเงิน', 'แผนกคลังสินค้า', 'แผนกจัดซื้อ', 'แผนกผลิต', 'แผนกไอที', 'แผนกทรัพยากรบุคคล']], ['บทบาท', 1, ['ผู้ดูแลระบบ', 'ผู้จัดการ', 'ผู้ใช้งานทั่วไป']], ['บริษัทที่เข้าถึงได้', 2, 'ACC_CO'], ['สาขาที่เข้าถึงได้', 2, 'ACC_BR']]]],
+        roMap: { 'รหัสผู้ใช้': 'no', 'ชื่อ-นามสกุล': 'a', 'บริษัท': 'co', 'สาขา': 'br', 'อีเมล': 'email', 'ฝ่าย': 'division', 'แผนก': 'dept', 'บทบาท': 'role', 'บริษัทที่เข้าถึงได้': 'accCos', 'สาขาที่เข้าถึงได้': 'accBrs' },
+        acts: ['Create', 'Update', 'Delete', 'Reset Password', 'Export']
+      },
+      'role-management': {
+        th: 'จัดการบทบาท', ic: 'crm',
+        screens: [['list', 'Role List — รายการบทบาท', 'list'], ['detail', 'Role Detail — รายละเอียดบทบาท', 'doc'], ['create', 'Create Role — เพิ่มบทบาท', 'plus'], ['edit', 'Edit Role — แก้ไขบทบาท', 'doc']],
+        kpi: [['บทบาททั้งหมด', '3', 'บทบาท', 145], ['ผู้ใช้งานรวม', '6', 'คน', 35]],
+        cols: [{ h: 'รหัสบทบาท', k: 'no', b: true }, { h: 'บทบาท', k: 'a', b: true }, { h: 'คำอธิบาย', k: 'd' }, { h: 'จำนวนผู้ใช้', k: 'cnt' }, { h: 'สถานะ', k: 's' }],
+        rows: [],
+        form: [['ข้อมูลบทบาท', 'crm', [['รหัสบทบาท', 0, 'RL-04'], ['ชื่อบทบาท', 1, 'เช่น ผู้ตรวจสอบ'], ['คำอธิบาย', 0, 'ขอบเขตสิทธิ์ของบทบาทนี้']]]],
+        roMap: { 'รหัสบทบาท': 'no', 'ชื่อบทบาท': 'a', 'คำอธิบาย': 'd' },
+        acts: ['Create', 'Update', 'Delete', 'Export']
+      },
+      'permission-management': {
+        th: 'จัดการสิทธิ์การเข้าถึง', ic: 'gauge',
+        screens: [['list', 'Permission List — รายการสิทธิ์ตามโมดูล', 'list'], ['detail', 'Permission Detail — รายละเอียดสิทธิ์', 'doc'], ['create', 'Create Permission — เพิ่มสิทธิ์', 'plus'], ['edit', 'Edit Permission — แก้ไขสิทธิ์', 'doc']],
+        kpi: [['โมดูลที่กำหนดสิทธิ์', '3', 'โมดูล', 145]],
+        cols: [{ h: 'รหัสโมดูล', k: 'no', b: true }, { h: 'โมดูล', k: 'a', b: true }, { h: 'สิทธิ์ที่กำหนด', k: 'd' }, { h: 'บทบาทที่ได้รับ', k: 'role' }],
+        rows: [],
+        form: [['ข้อมูลสิทธิ์', 'gauge', [['รหัสโมดูล', 0, 'PROC'], ['ชื่อโมดูล', 1, 'เช่น ระบบจัดซื้อ'], ['สิทธิ์ที่กำหนด', 0, 'เช่น View / Create / Approve'], ['บทบาทที่ได้รับ', 1, ['ผู้ดูแลระบบ', 'ผู้จัดการ', 'ผู้ใช้งานทั่วไป']]]]],
+        roMap: { 'รหัสโมดูล': 'no', 'ชื่อโมดูล': 'a', 'สิทธิ์ที่กำหนด': 'd', 'บทบาทที่ได้รับ': 'role' },
+        acts: ['Create', 'Update', 'Delete', 'Export']
+      }
+    };
+  }
+  _liveKpi(nav, rows, base) {
+    const n = (rows || []).length;
+    if (nav === 'user-management') return [['ผู้ใช้งานทั้งหมด', String(n), 'คน', 145], ['ผู้ดูแลระบบ', String((rows || []).filter(r => (r.role || '').indexOf('ผู้ดูแล') > -1).length), 'Admin', 35], ['ระงับการใช้งาน', String((rows || []).filter(r => (r.s || '') !== 'ใช้งาน').length), '—', 22]];
+    if (nav === 'role-management') return [['บทบาททั้งหมด', String(n), 'บทบาท', 145], ['ผู้ใช้งานรวม', String((rows || []).reduce((a, r) => a + (Number(r.cnt) || 0), 0)), 'คน', 35]];
+    if (nav === 'permission-management') return [['โมดูลที่กำหนดสิทธิ์', String(n), 'โมดูล', 145]];
+    return base;
+  }
+  roleHue(r) { return ({ 'ผู้ดูแลระบบ': 340, 'ผู้จัดการ': 35, 'ผู้ใช้งานทั่วไป': 220 })[r] || 220; }
+
+  curNav() { return this.props.nav || this.state.nav; }
+  _setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: 'list', mode: 'view', edit: null, sel: null }); }
+  setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
+  dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
+  curScr() { return this.props.scr || this.state.scr; }
+  curMode() { return this.state.mode; }
+  isDirty() { const m = this.curMode(); return m === 'create' || m === 'edit'; }
+  enterCreate() { this.setState({ mode: 'create', edit: null, draft: {} }); this._goScr('create'); }
+  enterEdit(r) { this.setState({ mode: 'edit', edit: r, sel: r, draft: {} }); this._goScr('edit'); }
+  askConfirm(run) { this.setState({ confirm: run }); }
+  _goScr(v) { if (this.props.onScr) this.props.onScr(v); else this.setState({ scr: v }); }
+  goScr(v) { if (this.isDirty() && v !== 'detail' && v !== 'create' && v !== 'edit') { this.askConfirm(() => this._goScr(v)); return; } this._goScr(v); }
+  setScr(v) { this.goScr(v); }
+  doSave() {
+    const key = this.curNav();
+    const cfg = this.CFG()[key];
+    const er = this.state.edit;
+    const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
+    const dr = this.state.draft || {}, pre = mode + '|';
+    const base = er ? Object.assign({}, er) : Object.assign({}, (cfg.rows || [])[0]);
+    if (cfg.roMap && cfg.form) cfg.form.forEach(sc => sc[2].forEach(fld => { const lb = fld[0], ty = fld[1], mm = cfg.roMap[lb]; let v = dr[pre + lb]; if (v !== undefined && v !== '') { if (ty === 2 && Array.isArray(v)) v = v.join(', '); if (typeof mm === 'string') base[mm] = v; base['_f:' + lb] = v; } }));
+    ['accCos', 'accBrs'].forEach(k => { if (Array.isArray(base[k])) base[k] = base[k].join(', '); });
+    ['บริษัทที่เข้าถึงได้', 'สาขาที่เข้าถึงได้'].forEach(lb => { const fk = '_f:' + lb; if (Array.isArray(base[fk])) base[fk] = base[fk].join(', '); });
+    ['accMods', 'accSubs'].forEach(k => { const v = dr[pre + k]; if (v !== undefined) { base[k] = Array.isArray(v) ? v.join(', ') : v; base['_f:' + k] = base[k]; } if (Array.isArray(base[k])) base[k] = base[k].join(', '); });
+    const stV = dr[pre + 'สถานะ']; if (stV !== undefined && stV !== '') base.s = stV;
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = er ? cur.map(x => (x === er || (x.no != null && x.no === er.no)) ? base : x) : [base, ...cur]; return { db, draft: {}, mode: 'view', sel: base, edit: null }; });
+    this.toast(er ? 'บันทึกการแก้ไขแล้ว' : 'บันทึกเรียบร้อย');
+  }
+  confirmSave() { const r = this.state.confirm; this.doSave(); this.setState({ confirm: null, scr: 'detail' }, () => r && r()); }
+  confirmDiscard() { const r = this.state.confirm; this.setState({ confirm: null, draft: {}, mode: 'view', edit: null, scr: 'list' }, () => r && r()); this.toast('ยกเลิกการเปลี่ยนแปลง'); }
+  STATUS_OPTS = ['ใช้งาน', 'ปิดใช้งาน'];
+  statusHue(s) { return ({ 'ใช้งาน': 130, 'ปิดใช้งาน': 22 })[s] || 130; }
+
+  MOD_CATALOG = [{"no":"PROC","a":"ระบบบริหารการจัดซื้อ","en":"Procurement Management","subs":[{"no":"PROC-VM","a":"บริหารผู้จำหน่าย","en":"Vendor Management"},{"no":"PROC-PR","a":"ใบขอจัดซื้อ","en":"Purchase Requisition"},{"no":"PROC-RFQ","a":"ขอใบเสนอราคา","en":"Request for Quotation"},{"no":"PROC-PO","a":"ใบสั่งซื้อ","en":"Purchase Order"},{"no":"PROC-PA","a":"อนุมัติการจัดซื้อ","en":"Procurement Approval"},{"no":"PROC-GRN","a":"รับสินค้า","en":"Goods Receiving"},{"no":"PROC-PI","a":"ใบแจ้งหนี้จัดซื้อ","en":"Purchase Invoice"},{"no":"PROC-PRN","a":"คืนสินค้าให้ผู้จำหน่าย","en":"Purchase Return"},{"no":"PROC-PC","a":"บริหารสัญญาจัดซื้อ","en":"Purchase Contract"},{"no":"PROC-LC","a":"บริหารต้นทุนจัดซื้อ","en":"Procurement Cost"},{"no":"PROC-PB","a":"งบประมาณการจัดซื้อ","en":"Procurement Budget"},{"no":"PROC-TM","a":"บริหารงานประมูล","en":"Tender Management"},{"no":"PROC-VP","a":"พอร์ทัลผู้จำหน่าย","en":"Vendor Portal"},{"no":"PROC-MP","a":"จัดซื้อผ่านอุปกรณ์เคลื่อนที่","en":"Mobile Procurement"},{"no":"PROC-DMS","a":"จัดการเอกสารจัดซื้อ","en":"Document Management"},{"no":"PROC-RPTA","a":"รายงานและการวิเคราะห์","en":"Reports & Analytics"}]},{"no":"SALE","a":"ระบบบริหารงานขาย","en":"Sales Management","subs":[{"no":"SALE-CM","a":"บริหารลูกค้า","en":"Customer Management"},{"no":"SALE-QT","a":"ใบเสนอราคา","en":"Quotation"},{"no":"SALE-SO","a":"ใบสั่งขาย","en":"Sales Order"},{"no":"SALE-DO","a":"จัดส่งสินค้า","en":"Delivery"},{"no":"SALE-SI","a":"ใบแจ้งหนี้ขาย","en":"Sales Invoice"},{"no":"SALE-SRN","a":"รับคืนสินค้า","en":"Sales Return"},{"no":"SALE-PL","a":"บริหารราคาสินค้า","en":"Price List"},{"no":"SALE-PM","a":"บริหารโปรโมชั่น","en":"Promotion"},{"no":"SALE-COM","a":"บริหารค่าคอมมิชชั่น","en":"Commission"},{"no":"SALE-CRM","a":"บริหารความสัมพันธ์ลูกค้า","en":"Customer Relationship Management"},{"no":"SALE-POS","a":"ขายหน้าร้าน","en":"Point of Sale"},{"no":"SALE-EC","a":"ร้านค้าออนไลน์","en":"E-Commerce"},{"no":"SALE-MP","a":"เชื่อมต่อ Marketplace","en":"Marketplace"},{"no":"SALE-CP","a":"พอร์ทัลลูกค้า","en":"Customer Portal"},{"no":"SALE-LM","a":"สมาชิกและสะสมแต้ม","en":"Loyalty & Membership"},{"no":"SALE-RPTA","a":"รายงานและการวิเคราะห์","en":"Reports & Analytics"}]},{"no":"INVT","a":"ระบบบริหารสินค้าคงคลัง","en":"Inventory Management","subs":[{"no":"INVT-ITEM","a":"ระบบบริหารข้อมูลสินค้า","en":"Item Master"},{"no":"INVT-STK","a":"ระบบควบคุมสินค้าคงคลัง","en":"Stock Control"},{"no":"INVT-GRN","a":"ระบบรับสินค้าเข้าคลัง","en":"Goods Receipt"},{"no":"INVT-GIN","a":"ระบบเบิกจ่ายสินค้า","en":"Goods Issue"},{"no":"INVT-TRF","a":"ระบบโอนย้ายสินค้า","en":"Stock Transfer"},{"no":"INVT-ADJ","a":"ระบบปรับปรุงสินค้าคงคลัง","en":"Stock Adjustment"},{"no":"INVT-CNT","a":"ระบบตรวจนับสินค้าคงคลัง","en":"Stock Count"},{"no":"INVT-LOT","a":"ระบบบริหารล็อตสินค้า","en":"Lot Management"},{"no":"INVT-SER","a":"ระบบบริหารหมายเลข Serial","en":"Serial Number Management"},{"no":"INVT-BIN","a":"ระบบบริหารตำแหน่งจัดเก็บสินค้า","en":"Bin Location Management"},{"no":"INVT-EXP","a":"ระบบบริหารวันหมดอายุสินค้า","en":"Expiry Management"},{"no":"INVT-RSV","a":"ระบบสำรองสินค้า","en":"Stock Reservation"},{"no":"INVT-AVL","a":"ระบบตรวจสอบสินค้าพร้อมใช้งาน","en":"Available Stock"},{"no":"INVT-VAL","a":"ระบบประเมินมูลค่าสินค้าคงคลัง","en":"Inventory Valuation"},{"no":"INVT-MOV","a":"ระบบติดตามการเคลื่อนไหวสินค้า","en":"Stock Movement"},{"no":"INVT-WMS","a":"ระบบบริหารคลังสินค้า (WMS)","en":"Warehouse Management"},{"no":"INVT-PICK","a":"ระบบจัดการการหยิบสินค้า","en":"Picking Management"},{"no":"INVT-PACK","a":"ระบบจัดการการแพ็คสินค้า","en":"Packing Management"},{"no":"INVT-SHIP","a":"ระบบจัดการการจัดส่งสินค้า","en":"Shipping Management"},{"no":"INVT-BAR","a":"ระบบบริหารบาร์โค้ด","en":"Barcode Management"},{"no":"INVT-RFID","a":"ระบบบริหาร RFID","en":"RFID Management"},{"no":"INVT-MOB","a":"ระบบคลังสินค้าบนอุปกรณ์เคลื่อนที่","en":"Mobile Warehouse"},{"no":"INVT-AUTO","a":"ระบบคลังสินค้าอัตโนมัติ","en":"Warehouse Automation"},{"no":"INVT-RPTA","a":"ระบบรายงานและการวิเคราะห์","en":"Reports & Analytics"}]},{"no":"PROD","a":"ระบบบริหารการผลิต","en":"Production Management","subs":[{"no":"PROD-BOM","a":"ระบบโครงสร้างวัตถุดิบและส่วนประกอบ","en":"Bill of Materials"},{"no":"PROD-ROUT","a":"ระบบเส้นทางและขั้นตอนการผลิต","en":"Routing Management"},{"no":"PROD-MPS","a":"ระบบแผนการผลิตหลัก","en":"Master Production Schedule"},{"no":"PROD-MRP","a":"ระบบวางแผนความต้องการวัตถุดิบ","en":"Material Requirements Planning"},{"no":"PROD-WO","a":"ระบบจัดการใบสั่งผลิต","en":"Work Order Management"},{"no":"PROD-ISS","a":"ระบบเบิกวัตถุดิบเข้าการผลิต","en":"Material Issue"},{"no":"PROD-REC","a":"ระบบรับสินค้าสำเร็จรูปจากการผลิต","en":"Production Receipt"},{"no":"PROD-WIP","a":"ระบบติดตามงานระหว่างผลิต","en":"Work in Process"},{"no":"PROD-SFC","a":"ระบบควบคุมการผลิตหน้างาน","en":"Shop Floor Control"},{"no":"PROD-CAPA","a":"ระบบวางแผนกำลังการผลิต","en":"Capacity Planning"},{"no":"PROD-LABR","a":"ระบบติดตามแรงงานการผลิต","en":"Labor Tracking"},{"no":"PROD-MACH","a":"ระบบติดตามเครื่องจักรการผลิต","en":"Machine Tracking"},{"no":"PROD-SCRP","a":"ระบบจัดการของเสียและงานแก้ไข","en":"Scrap & Rework"},{"no":"PROD-COST","a":"ระบบคำนวณต้นทุนการผลิต","en":"Production Costing"},{"no":"PROD-COBY","a":"ระบบจัดการผลผลิตร่วมและผลพลอยได้","en":"Co-product & By-product"},{"no":"PROD-BTCH","a":"ระบบการผลิตแบบแบตช์","en":"Batch Production"},{"no":"PROD-SERI","a":"ระบบการผลิตแบบ Serial","en":"Serial Production"},{"no":"PROD-TRCE","a":"ระบบติดตามย้อนกลับการผลิต","en":"Production Traceability"},{"no":"PROD-APS","a":"ระบบวางแผนและจัดตารางการผลิตขั้นสูง","en":"Advanced Planning & Scheduling"},{"no":"PROD-MES","a":"ระบบปฏิบัติการการผลิต","en":"Manufacturing Execution System"},{"no":"PROD-IOT","a":"ระบบเชื่อมต่อ IoT การผลิต","en":"IoT Integration"},{"no":"PROD-OEE","a":"ระบบวิเคราะห์ประสิทธิผลเครื่องจักร","en":"Overall Equipment Effectiveness"},{"no":"PROD-ANDN","a":"ระบบแจ้งเตือนปัญหาหน้างาน","en":"Andon Management"},{"no":"PROD-KANB","a":"ระบบคัมบังและดึงการผลิต","en":"Kanban Management"},{"no":"PROD-LEAN","a":"ระบบการผลิตแบบลีน","en":"Lean Manufacturing"},{"no":"PROD-QMS","a":"ระบบเชื่อมโยงงานคุณภาพ","en":"Quality Integration"},{"no":"PROD-EAM","a":"ระบบเชื่อมโยงการบำรุงรักษา","en":"Maintenance Integration"},{"no":"PROD-MOB","a":"ระบบการผลิตผ่านอุปกรณ์เคลื่อนที่","en":"Mobile Production"},{"no":"PROD-RPTA","a":"ระบบรายงานและการวิเคราะห์","en":"Reports & Analytics"}]},{"no":"SRVC","a":"ระบบบริหารงานบริการ","en":"Service Management","subs":[{"no":"SRVC-CAT","a":"จัดการรายการบริการ","en":"Service Catalog"},{"no":"SRVC-SR","a":"จัดการคำขอรับบริการ","en":"Service Request"},{"no":"SRVC-SO","a":"จัดการคำสั่งงานบริการ","en":"Service Order"},{"no":"SRVC-WO","a":"จัดการใบสั่งงาน","en":"Work Order"},{"no":"SRVC-TASK","a":"บริหารงานและภารกิจ","en":"Task Management"},{"no":"SRVC-SCH","a":"วางแผนและจัดสรรทรัพยากร","en":"Resource Scheduling"},{"no":"SRVC-TE","a":"บันทึกเวลาและค่าใช้จ่าย","en":"Time & Expense"},{"no":"SRVC-SC","a":"บริหารสัญญาบริการ","en":"Service Contract"},{"no":"SRVC-SLA","a":"บริหารข้อตกลงระดับการให้บริการ","en":"SLA Management"},{"no":"SRVC-SB","a":"เรียกเก็บค่าบริการ","en":"Service Billing"},{"no":"SRVC-COMP","a":"ปิดงานบริการ","en":"Service Completion"},{"no":"SRVC-HD","a":"ศูนย์บริการลูกค้า","en":"Help Desk"},{"no":"SRVC-TKT","a":"จัดการทิกเก็ต","en":"Ticketing"},{"no":"SRVC-FSM","a":"บริการภาคสนาม","en":"Field Service"},{"no":"SRVC-APT","a":"บริหารการนัดหมาย","en":"Appointment"},{"no":"SRVC-PM","a":"บริหารโครงการบริการ","en":"Project Management"},{"no":"SRVC-MNT","a":"บริหารงานบำรุงรักษา","en":"Maintenance Management"},{"no":"SRVC-CP","a":"พอร์ทัลลูกค้า","en":"Customer Portal"},{"no":"SRVC-MS","a":"บริการผ่านอุปกรณ์เคลื่อนที่","en":"Mobile Service"},{"no":"SRVC-KB","a":"ฐานความรู้","en":"Knowledge Base"},{"no":"SRVC-RPTA","a":"รายงานและการวิเคราะห์","en":"Reports & Analytics"}]},{"no":"ACCT","a":"ระบบบริหารงานบัญชี","en":"Accounting Management","subs":[{"no":"ACCT-GL","a":"ระบบบัญชีแยกประเภททั่วไป","en":"General Ledger"},{"no":"ACCT-AP","a":"ระบบเจ้าหนี้การค้า","en":"Accounts Payable"},{"no":"ACCT-AR","a":"ระบบลูกหนี้การค้า","en":"Accounts Receivable"},{"no":"ACCT-CASH","a":"ระบบบริหารเงินสด","en":"Cash Management"},{"no":"ACCT-BANK","a":"ระบบบริหารบัญชีธนาคาร","en":"Bank Management"},{"no":"ACCT-FA","a":"ระบบสินทรัพย์ถาวร","en":"Fixed Assets"},{"no":"ACCT-BUDG","a":"ระบบบริหารงบประมาณ","en":"Budget Management"},{"no":"ACCT-COST","a":"ระบบบัญชีต้นทุน","en":"Cost Accounting"},{"no":"ACCT-TAX","a":"ระบบบริหารภาษี","en":"Tax Management"},{"no":"ACCT-CLOSE","a":"ระบบปิดบัญชี","en":"Financial Closing"},{"no":"ACCT-CONS","a":"ระบบงบการเงินรวม","en":"Financial Consolidation"},{"no":"ACCT-CURR","a":"ระบบบริหารหลายสกุลเงิน","en":"Multi-Currency Management"},{"no":"ACCT-ALLOC","a":"ระบบปันส่วนต้นทุน","en":"Cost Allocation"},{"no":"ACCT-CC","a":"ระบบบัญชีศูนย์ต้นทุน","en":"Cost Center Accounting"},{"no":"ACCT-PC","a":"ระบบบัญชีศูนย์กำไร","en":"Profit Center Accounting"},{"no":"ACCT-JV","a":"ระบบสมุดรายวัน","en":"Journal Voucher"},{"no":"ACCT-FS","a":"ระบบงบการเงิน","en":"Financial Statements"},{"no":"ACCT-EINV","a":"ระบบใบกำกับภาษีอิเล็กทรอนิกส์","en":"Electronic Invoice"},{"no":"ACCT-EPAY","a":"ระบบชำระเงินอิเล็กทรอนิกส์","en":"Electronic Payment"},{"no":"ACCT-EBANK","a":"ระบบเชื่อมต่อธนาคาร","en":"Electronic Banking"},{"no":"ACCT-LOAN","a":"ระบบบริหารเงินกู้","en":"Loan Management"},{"no":"ACCT-TREAS","a":"ระบบบริหารเงินทุน","en":"Treasury Management"},{"no":"ACCT-LEASE","a":"ระบบบัญชีสัญญาเช่า","en":"Lease Accounting"},{"no":"ACCT-INTC","a":"ระบบบัญชีระหว่างบริษัท","en":"Intercompany Accounting"},{"no":"ACCT-BI","a":"ระบบวิเคราะห์ข้อมูลทางการเงิน","en":"Financial Business Intelligence"},{"no":"ACCT-RPTA","a":"ระบบรายงานและการวิเคราะห์","en":"Reports & Analytics"}]},{"no":"HRMS","a":"ระบบบริหารทรัพยากรบุคคล","en":"Human Resource Management","subs":[{"no":"HRMS-EM","a":"ระบบบริหารข้อมูลพนักงาน","en":"Employee Management"},{"no":"HRMS-POS","a":"ระบบบริหารตำแหน่งงาน","en":"Position Management"},{"no":"HRMS-REC","a":"ระบบบริหารการสรรหาบุคลากร","en":"Recruitment Management"},{"no":"HRMS-ATT","a":"ระบบบริหารเวลาทำงาน","en":"Attendance Management"},{"no":"HRMS-LEV","a":"ระบบบริหารการลา","en":"Leave Management"},{"no":"HRMS-OT","a":"ระบบบริหารการทำงานล่วงเวลา","en":"Overtime Management"},{"no":"HRMS-SHF","a":"ระบบบริหารกะการทำงาน","en":"Shift Management"},{"no":"HRMS-PAY","a":"ระบบบริหารเงินเดือน","en":"Payroll Management"},{"no":"HRMS-BEN","a":"ระบบบริหารสวัสดิการ","en":"Benefits Management"},{"no":"HRMS-CLAIM","a":"ระบบบริหารค่าใช้จ่ายและการเบิก","en":"Expense & Claims Management"},{"no":"HRMS-PERF","a":"ระบบบริหารผลการปฏิบัติงาน","en":"Performance Management"},{"no":"HRMS-KPI","a":"ระบบบริหารตัวชี้วัดผลงาน","en":"KPI Management"},{"no":"HRMS-OKR","a":"ระบบบริหาร OKR","en":"OKR Management"},{"no":"HRMS-COMP","a":"ระบบบริหารค่าตอบแทน","en":"Compensation Management"},{"no":"HRMS-SKILL","a":"ระบบฝึกอบรมทักษะ & ใบรับรอง","en":"Skills Training & Certificate Management"},{"no":"HRMS-TIME","a":"ระบบติดตามเวลาการทำงาน","en":"Time Tracking"},{"no":"HRMS-WFM","a":"ระบบบริหารกำลังคน","en":"Workforce Management"},{"no":"HRMS-LMS","a":"ระบบบริหารการเรียนรู้","en":"Learning Management System"},{"no":"HRMS-ATS","a":"ระบบติดตามผู้สมัครงาน","en":"Applicant Tracking System"},{"no":"HRMS-PORTAL","a":"ระบบพอร์ทัลฝ่ายบุคคล","en":"HR Portal"},{"no":"HRMS-RPTA","a":"ระบบรายงานและการวิเคราะห์","en":"Reports & Analytics"}]},{"no":"ADMS","a":"ระบบบริหารงานส่วนกลาง","en":"Administration System","subs":[{"no":"ADMS-DMS","a":"ระบบบริหารเอกสาร","en":"Document Management"},{"no":"ADMS-CORR","a":"ระบบบริหารหนังสือรับ-ส่ง","en":"Correspondence Management"},{"no":"ADMS-MEET","a":"ระบบบริหารการประชุม","en":"Meeting Management"},{"no":"ADMS-CAL","a":"ระบบบริหารปฏิทินองค์กร","en":"Calendar Management"},{"no":"ADMS-TASK","a":"ระบบบริหารงานและภารกิจ","en":"Task Management"},{"no":"ADMS-APRV","a":"ระบบบริหารการอนุมัติ","en":"Approval Management"},{"no":"ADMS-WF","a":"ระบบบริหารเวิร์กโฟลว์","en":"Workflow Management"},{"no":"ADMS-NOTI","a":"ระบบบริหารการแจ้งเตือน","en":"Notification Management"},{"no":"ADMS-ANN","a":"ระบบบริหารประกาศองค์กร","en":"Announcement Management"},{"no":"ADMS-EVENT","a":"ระบบบริหารกิจกรรม","en":"Event Management"},{"no":"ADMS-ROOM","a":"ระบบจองห้องประชุม","en":"Room Reservation"},{"no":"ADMS-VEH","a":"ระบบบริหารยานพาหนะ","en":"Vehicle Management"},{"no":"ADMS-ASSET","a":"ระบบบริหารครุภัณฑ์สำนักงาน","en":"Office Asset Management"},{"no":"ADMS-FAC","a":"ระบบบริหารอาคารและสถานที่","en":"Facility Management"},{"no":"ADMS-VIS","a":"ระบบบริหารผู้มาติดต่อ","en":"Visitor Management"},{"no":"ADMS-MAIL","a":"ระบบบริหารไปรษณีย์และพัสดุ","en":"Mail & Parcel Management"},{"no":"ADMS-FORM","a":"ระบบบริหารแบบฟอร์มอิเล็กทรอนิกส์","en":"Electronic Form Management"},{"no":"ADMS-POL","a":"ระบบบริหารนโยบายองค์กร","en":"Policy Management"},{"no":"ADMS-KB","a":"ระบบบริหารองค์ความรู้","en":"Knowledge Management"},{"no":"ADMS-ARCH","a":"ระบบบริหารเอกสารเก็บถาวร","en":"Archive Management"},{"no":"ADMS-ESIGN","a":"ระบบลายมือชื่ออิเล็กทรอนิกส์","en":"Electronic Signature"},{"no":"ADMS-ECM","a":"ระบบบริหารเนื้อหาองค์กร","en":"Enterprise Content Management"},{"no":"ADMS-CHAT","a":"ระบบสื่อสารภายในองค์กร","en":"Internal Communication"},{"no":"ADMS-PORTAL","a":"ระบบพอร์ทัลองค์กร","en":"Employee Portal"},{"no":"ADMS-MOB","a":"ระบบบริหารผ่านอุปกรณ์เคลื่อนที่","en":"Mobile Administration"},{"no":"ADMS-AI","a":"ระบบผู้ช่วยอัจฉริยะ","en":"AI Assistant"},{"no":"ADMS-AUTO","a":"ระบบอัตโนมัติกระบวนการ","en":"Process Automation"},{"no":"ADMS-INTEG","a":"ระบบเชื่อมต่อบริการภายนอก","en":"Integration Services"},{"no":"ADMS-RPTA","a":"ระบบรายงานและการวิเคราะห์","en":"Reports & Analytics"}]},{"no":"ITSA","a":"ระบบผู้ดูแลระบบไอที","en":"IT System Administration","subs":[{"no":"ITSA-TENT","a":"ผู้เช่าระบบ (Single-Tenant)","en":"Tenant Management"},{"no":"ITSA-UAM","a":"บริหารผู้ใช้งานและสิทธิ์","en":"User & Access Management"},{"no":"ITSA-ORG","a":"โครงสร้างองค์กร","en":"Organization Management"},{"no":"ITSA-AUTH","a":"บริหารการยืนยันตัวตน","en":"Authentication Management"},{"no":"ITSA-SECU","a":"บริหารความปลอดภัย","en":"Security Management"},{"no":"ITSA-AUDT","a":"บริหารการตรวจสอบการใช้งาน","en":"Audit Management"},{"no":"ITSA-CONF","a":"กำหนดค่าระบบ","en":"System Configuration"},{"no":"ITSA-JOBS","a":"จัดการงานอัตโนมัติ","en":"Job Scheduler"},{"no":"ITSA-NOTI","a":"บริหารการแจ้งเตือน","en":"Notification Management"},{"no":"ITSA-INTG","a":"บริหารการเชื่อมต่อระบบ","en":"Integration Management"},{"no":"ITSA-SYSM","a":"ติดตามและเฝ้าระวังระบบ","en":"System Monitoring"},{"no":"ITSA-BKUP","a":"สำรองและกู้คืนข้อมูล","en":"Backup & Recovery"},{"no":"ITSA-LICN","a":"บริหารลิขสิทธิ์และใบอนุญาต","en":"License Management"},{"no":"ITSA-STOR","a":"บริหารพื้นที่จัดเก็บข้อมูล","en":"Storage Management"},{"no":"ITSA-LOGS","a":"บริหารบันทึกเหตุการณ์","en":"Log Management"},{"no":"ITSA-MNTN","a":"บำรุงรักษาระบบ","en":"System Maintenance"},{"no":"ITSA-API","a":"บริหาร API","en":"API Management"},{"no":"ITSA-SSO","a":"ลงชื่อเข้าใช้ครั้งเดียว","en":"Single Sign-On"},{"no":"ITSA-MFA","a":"ยืนยันตัวตนหลายขั้นตอน","en":"Multi-Factor Authentication"},{"no":"ITSA-DEV","a":"บริหารอุปกรณ์","en":"Device Management"},{"no":"ITSA-IAM","a":"บริหารอัตลักษณ์ผู้ใช้งาน","en":"Identity Management"},{"no":"ITSA-VPN","a":"บริหารเครือข่าย VPN","en":"VPN Management"},{"no":"ITSA-CERT","a":"บริหารใบรับรองดิจิทัล","en":"Certificate Management"},{"no":"ITSA-MAIL","a":"บริหารอีเมลเซิร์ฟเวอร์","en":"Mail Server Management"},{"no":"ITSA-FILE","a":"บริหารพื้นที่จัดเก็บไฟล์","en":"File Storage Management"},{"no":"ITSA-WFD","a":"ออกแบบกระบวนการทำงาน","en":"Workflow Designer"},{"no":"ITSA-FORM","a":"ออกแบบฟอร์ม","en":"Form Designer"},{"no":"ITSA-RPTD","a":"ออกแบบรายงาน","en":"Report Designer"},{"no":"ITSA-DASH","a":"ออกแบบแดชบอร์ด","en":"Dashboard Designer"},{"no":"ITSA-RPTA","a":"รายงานและการวิเคราะห์","en":"Reports & Analytics"},{"no":"ITSA-KPI","a":"แดชบอร์ดตัวชี้วัดด้านไอที","en":"IT KPI Dashboard"},{"no":"ITSA-ALRT","a":"แดชบอร์ดการแจ้งเตือน","en":"Alert Dashboard"},{"no":"ITSA-HEAL","a":"แดชบอร์ดสุขภาพระบบ","en":"System Health Dashboard"}]}];
+  _allSubNos() { return [].concat(...this.MOD_CATALOG.map(m => m.subs.map(s => s.no))); }
+  DIV_MOD = { 'ฝ่ายขาย': 'SALE', 'ฝ่ายบัญชี': 'ACCT', 'ฝ่ายการเงิน': 'ACCT', 'ฝ่ายจัดซื้อ': 'PROC', 'ฝ่ายคลังสินค้า': 'INVT', 'ฝ่ายผลิต': 'PROD', 'ฝ่ายไอที': 'ITSA', 'ฝ่ายบริการ': 'SRVC', 'ฝ่ายบุคคล': 'HRMS', 'ฝ่ายทรัพยากรบุคคล': 'HRMS', 'ฝ่ายธุรการ': 'ADMS', 'ฝ่ายส่วนกลาง': 'ADMS' };
+  _accModState(er, pre, kind) {
+    const dr = this.state.draft || {}; const dk = pre + kind;
+    if (dr[dk] !== undefined) return dr[dk];
+    const ev = er ? (er['_f:' + kind] !== undefined ? er['_f:' + kind] : er[kind]) : null;
+    if (ev != null && (Array.isArray(ev) || String(ev).trim())) return Array.isArray(ev) ? ev : String(ev).split(',').map(x => x.trim()).filter(Boolean);
+    const role = er ? String(er.role || er['_f:บทบาท'] || '').trim() : '';
+    const div = er ? String(er.division || er.dv || er.div || '').trim() : '';
+    const co = er ? String(er.co || er.company || '').trim() : '';
+    const br = er ? String(er.br || er.branch_count || er.branch || '').trim() : '';
+    const cMods = this.state.confMods, cSubs = this.state.confSubs;
+    let branchMods = null, branchSubs = null;
+    if (cMods && cMods.length) { const mm = cMods.filter(r => (!co || r.co === co) && (!br || r.br === br)); if (mm.length) branchMods = mm.filter(r => r.enabled).map(r => r.no); }
+    if (cSubs && cSubs.length) { const ss = cSubs.filter(r => (!co || r.co === co) && (!br || r.br === br)); if (ss.length) branchSubs = ss.filter(r => r.enabled).map(r => r.no); }
+    const defMods = branchMods != null ? Array.from(new Set(branchMods)) : this.MOD_CATALOG.map(m => m.no);
+    const defSubs = branchSubs != null ? Array.from(new Set(branchSubs)) : this._allSubNos();
+    if (role === 'ผู้ใช้งานทั่วไป') { const mcode = this.DIV_MOD[div]; if (mcode) { if (kind === 'accMods') return defMods.filter(x => x === mcode); const mm = this.MOD_CATALOG.find(x => x.no === mcode); const subNos = mm ? mm.subs.map(s => s.no) : []; return defSubs.filter(x => subNos.indexOf(x) > -1); } return []; }
+    return kind === 'accMods' ? defMods : defSubs;
+  }
+  moduleAccessCard(T, er, pre, readOnly) {
+    const K = this.K, h = K.h, c = K.tk(T), sub = c.sub, acc = c.acc;
+    const modsOn = this._accModState(er, pre, 'accMods');
+    const subsOn = this._accModState(er, pre, 'accSubs');
+    const expanded = this.state.expandedMods || {};
+    const modDk = pre + 'accMods', subDk = pre + 'accSubs';
+    const setDraft = (dk, arr) => this.setState(s => ({ draft: Object.assign({}, s.draft, { [dk]: arr }) }));
+    const sw = (on, onClick) => h('button', { onClick: readOnly ? undefined : onClick, disabled: readOnly, style: { width: 38, height: 22, borderRadius: 999, border: 'none', cursor: readOnly ? 'default' : 'pointer', background: on ? acc : c.line, position: 'relative', flexShrink: 0, opacity: readOnly && !on ? .5 : 1 } }, h('span', { style: { position: 'absolute', top: 2, left: on ? 18 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 3px rgba(0,0,0,.3)' } }));
+    const toggleMain = (no) => { const on = modsOn.indexOf(no) > -1; setDraft(modDk, on ? modsOn.filter(x => x !== no) : modsOn.concat([no])); };
+    const toggleSub = (sno) => { const on = subsOn.indexOf(sno) > -1; setDraft(subDk, on ? subsOn.filter(x => x !== sno) : subsOn.concat([sno])); };
+    const toggleGroup = (m) => { const kids = m.subs.map(s => s.no); const allOn = kids.every(k => subsOn.indexOf(k) > -1); setDraft(subDk, allOn ? subsOn.filter(x => kids.indexOf(x) < 0) : Array.from(new Set(subsOn.concat(kids)))); };
+    const rows = this.MOD_CATALOG.map(m => { const open = !!expanded[m.no]; const kids = m.subs; const onCnt = kids.filter(k => subsOn.indexOf(k.no) > -1).length; const mainOn = modsOn.indexOf(m.no) > -1; const allOn = kids.length > 0 && onCnt === kids.length;
+      return h('div', { key: m.no, style: { borderBottom: `1px solid ${c.line}` } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '12px 4px' } },
+          kids.length ? h('button', { onClick: () => this.setState(s => ({ expandedMods: Object.assign({}, s.expandedMods, { [m.no]: !open }) })), style: { border: 'none', background: 'transparent', cursor: 'pointer', color: sub, display: 'flex', padding: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' } }, K.Icon('chevron', 13)) : h('span', { style: { width: 13 } }),
+          h('div', { onClick: kids.length ? () => this.setState(s => ({ expandedMods: Object.assign({}, s.expandedMods, { [m.no]: !open }) })) : undefined, style: { flex: 1, cursor: kids.length ? 'pointer' : 'default' } }, h('div', { style: { fontSize: 13, fontWeight: 700 } }, m.no + ' · ' + m.a), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, m.en + ' · ' + onCnt + '/' + kids.length + ' โมดูลย่อยเปิดใช้งาน')),
+          (!readOnly && kids.length) ? h('button', { onClick: () => toggleGroup(m), title: 'เปิด/ปิดโมดูลย่อยทั้งหมด', style: { fontSize: 10.5, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: sub, cursor: 'pointer', fontFamily: c.font, flexShrink: 0 } }, allOn ? 'ปิดทั้งหมด' : 'เปิดทั้งหมด') : null,
+          sw(mainOn, () => toggleMain(m.no))),
+        open && kids.length ? h('div', { style: { padding: '0 4px 10px 27px', display: 'flex', flexDirection: 'column', gap: 2 } }, kids.map(kr => h('div', { key: kr.no, style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '7px 8px', borderRadius: 8 } },
+          h('div', null, h('div', { style: { fontSize: 12, fontWeight: 600 } }, kr.no + ' · ' + kr.a), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 1 } }, kr.en)),
+          sw(subsOn.indexOf(kr.no) > -1, () => toggleSub(kr.no))))) : null); });
+    return K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('box', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สิทธิ์การเข้าถึงโมดูล (Module Access)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, readOnly ? 'สิทธิ์การเข้าถึงเมนูโมดูลหลัก/โมดูลย่อยของผู้ใช้นี้' : 'เปิด/ปิดสิทธิ์การเข้าถึงเมนูโมดูลหลักและโมดูลย่อยของผู้ใช้นี้'))), h('div', null, rows)], { marginBottom: 14 });
+  }
+
+  accDropdown(T, key, label, opts, sel, onChange) {
+    const K = this.K, h = K.h, c = K.tk(T), sub = c.sub;
+    const open = this.state.openAccDd === key;
+    const all = opts.length > 0 && sel.length === opts.length;
+    const chip = (o) => h('span', { key: o, style: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, padding: '3px 6px 3px 9px', borderRadius: 7, background: c.accSoft, color: c.aTxt, maxWidth: '100%' } }, h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, o), h('span', { onClick: e => { e.stopPropagation(); onChange(sel.filter(x => x !== o)); }, title: 'นำออก', style: { display: 'flex', cursor: 'pointer', opacity: .6 } }, K.Icon('close', 11)));
+    return h('div', { 'data-accdd': key, style: { position: 'relative' } },
+      h('div', { onClick: () => this.setState(s => ({ openAccDd: s.openAccDd === key ? null : key })), style: Object.assign({}, K.inp(T), { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', width: '100%', cursor: 'pointer', height: 'auto', minHeight: 38, padding: '5px 10px' }) },
+        sel.length === 0 ? h('span', { style: { color: sub, fontSize: 12.5 } }, '— ยังไม่ได้เลือก —') : sel.map(chip),
+        h('span', { style: { marginLeft: 'auto', display: 'flex', color: sub, flexShrink: 0 } }, K.Icon('chevron', 13))),
+      open ? h('div', { onClick: e => e.stopPropagation(), style: { position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 81, maxHeight: 220, overflowY: 'auto', background: c.win, border: `1px solid ${c.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,20,35,.18)', padding: 6 } },
+        (opts.length === 0 ? [h('div', { key: '_e', style: { fontSize: 12, color: sub, padding: '8px 10px' } }, 'เลือกบริษัทก่อน')] :
+          [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+            h('input', { type: 'checkbox', checked: all, ref: el => { if (el) el.indeterminate = sel.length > 0 && !all; }, onChange: () => onChange(all ? [] : opts.slice()), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+            .concat(opts.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+              h('input', { type: 'checkbox', checked: sel.indexOf(o) > -1, onChange: () => { const next = sel.indexOf(o) > -1 ? sel.filter(x => x !== o) : sel.concat([o]); onChange(next); }, style: { cursor: 'pointer' } }), h('span', null, o)))))) : null);
+  }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const sl = this.K.sheetsLoading ? this.K.sheetsLoading(this, 'จัดการผู้ใช้งานและสิทธิ์ · ITSA-UAM') : null; if (sl) return sl;
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
+    const scr = this.curScr();
+    const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const _cbM = (this.K && this.K.liveCoBr) ? this.K.liveCoBr() : { COS: [], BR_MAP: {} };
+    const PROC_COMPANIES = _cbM.COS;
+    const toArr = v => Array.isArray(v) ? v : (typeof v === 'string' && v.trim() ? v.split(',').map(x => x.trim()).filter(Boolean) : []);
+    const COL_ALIAS = { no: ['no', 'code'], a: ['a', 'name_th'], co: ['co', 'company'], br: ['br', 'branch', 'branch_count'], email: ['email'], dv: ['dv', 'division', 'div'], division: ['division', 'div', 'dv'], dept: ['dept', 'department'], role: ['role'], accCos: ['accCos'], accBrs: ['accBrs'], accMods: ['accMods'], accSubs: ['accSubs'] };
+    const rv = (r, m) => { if (!r || !m) return undefined; const al = COL_ALIAS[m] || [m]; for (let i = 0; i < al.length; i++) { const k = al[i]; if (r[k] !== undefined && r[k] !== '') return r[k]; } return r[m]; };
+    const PROC_BR_MAP = _cbM.BR_MAP;
+    const coSel = this.props.filterCo || this.state.filterCo || ((this.props.api && this.props.api.userCo && PROC_COMPANIES.indexOf(this.props.api.userCo) > -1) ? [this.props.api.userCo] : PROC_COMPANIES.slice());
+    const coAll = coSel.length === PROC_COMPANIES.length;
+    const brOpts = Array.from(new Set([].concat(...(coAll ? PROC_COMPANIES : coSel).map(o => PROC_BR_MAP[o] || []))));
+    const brSel = (this.props.filterBr || this.state.filterBr || ['สำนักงานใหญ่ (สาทร)']).filter(o => brOpts.indexOf(o) > -1);
+    const brSelFinal = brSel.length ? brSel : brOpts;
+    const brAll = brSelFinal.length === brOpts.length;
+    const rows = this.dbRows(nav, cfg.rows || []).filter(r => (!r.co || coAll || PROC_COMPANIES.indexOf(r.co) === -1 || coSel.indexOf(r.co) > -1) && (!r.br || brAll || brOpts.indexOf(r.br) === -1 || brSelFinal.indexOf(r.br) > -1)).map(r => (nav === 'user-management' && r.division === undefined && (r.dv !== undefined || r.div !== undefined)) ? Object.assign({}, r, { division: rv(r, 'division') }) : r);
+    const selRow = this.state.sel || rows[0] || null;
+    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'ACTIONS'), list.map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+    let body;
+    if (scr === 'create' || scr === 'edit') {
+      const er = scr === 'edit' ? this.state.edit : null;
+      const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
+      const dr = this.state.draft || {}, pre = mode + '|';
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, er ? (er.a || er.no) : 'สร้างรายการใหม่'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, er ? 'โหมดแก้ไข (Edit)' : 'โหมดสร้างใหม่ (New)')), K.btn(T, 'กลับ', false, 'doc', () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }))], { marginBottom: 14, padding: '12px 16px' });
+      const secs = cfg.form.map(([title, ic, fields]) => { const coFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'co'); const brFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'br'); const dvFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'division'); const secFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'dept'); return K.formSec(T, title, ic, fields.map(([lb, ty, opt]) => {
+        const m = cfg.roMap && cfg.roMap[lb];
+        const ev = er ? (er['_f:' + lb] !== undefined ? er['_f:' + lb] : (m ? rv(er, m) : null)) : null;
+        const dk = pre + lb;
+        const cur = dr[dk] !== undefined ? dr[dk] : (ev != null ? ev : '');
+        const _cbF = (this.K && this.K.liveCoBr) ? this.K.liveCoBr() : { COS: [], BR_MAP: {} };
+        const BR_MAP = _cbF.BR_MAP;
+        const DEPT_OF = { 'ฝ่ายไอที': ['แผนกไอที', 'แผนกพัฒนาระบบ', 'แผนกดูแลระบบ'], 'ฝ่ายขาย': ['แผนกขายในประเทศ', 'แผนกขายต่างประเทศ', 'แผนกลูกค้าสัมพันธ์'], 'ฝ่ายบัญชี': ['แผนกบัญชี', 'แผนกการเงิน'], 'ฝ่ายคลังสินค้า': ['แผนกคลังสินค้า', 'แผนกจัดส่ง'], 'ฝ่ายจัดซื้อ': ['แผนกจัดซื้อ'], 'ฝ่ายผลิต': ['แผนกผลิต', 'แผนกควบคุมคุณภาพ'] };
+        let effOpt = opt;
+        if (m === 'co' && Array.isArray(opt) && _cbF.COS.length) effOpt = _cbF.COS;
+        if (m === 'br' && Array.isArray(opt) && coFieldLb) {
+          const coLb = coFieldLb[0];
+          const coDk = pre + coLb;
+          const coM = cfg.roMap && cfg.roMap[coLb];
+          const coEv = er ? (er['_f:' + coLb] !== undefined ? er['_f:' + coLb] : (coM ? rv(er, coM) : null)) : null;
+          const coCur = dr[coDk] !== undefined ? dr[coDk] : (coEv != null ? coEv : '');
+          effOpt = (coCur && BR_MAP[coCur]) ? BR_MAP[coCur] : (_cbF.COS.length ? [].concat.apply([], Object.keys(BR_MAP).map(k => BR_MAP[k] || [])) : opt);
+        }
+        if (m === 'dept' && Array.isArray(opt) && dvFieldLb) {
+          const dvLb = dvFieldLb[0];
+          const dvDk = pre + dvLb;
+          const dvM = cfg.roMap && cfg.roMap[dvLb];
+          const dvEv = er ? (er['_f:' + dvLb] !== undefined ? er['_f:' + dvLb] : (dvM ? rv(er, dvM) : null)) : null;
+          const dvCur = dr[dvDk] !== undefined ? dr[dvDk] : (dvEv != null ? dvEv : '');
+          effOpt = (dvCur && DEPT_OF[dvCur]) ? DEPT_OF[dvCur] : opt;
+        }
+        const _valOf = (fld) => { if (!fld) return ''; const dk2 = pre + fld[0]; const m2 = cfg.roMap[fld[0]]; const ev2 = er ? (er['_f:' + fld[0]] !== undefined ? er['_f:' + fld[0]] : (m2 ? rv(er, m2) : null)) : null; return dr[dk2] !== undefined ? dr[dk2] : (ev2 != null ? ev2 : ''); };
+        if (m === 'division') { const divs = this.state.orgDivs || []; if (divs.length) { const coF = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'co'); const brF = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'br'); const coCur = _valOf(coF), brCur = _valOf(brF); let src = divs.filter(d => (d.s || 'ใช้งาน') !== 'ปิดใช้งาน'); if (coCur) src = src.filter(d => !d.co || d.co === coCur); if (brCur) src = src.filter(d => !d.par || d.par === brCur); const names = Array.from(new Set(src.map(d => d.a).filter(Boolean))); if (names.length) effOpt = names; } }
+        if (m === 'dept') { const deps = this.state.orgDepts || []; if (deps.length) { const dvF = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'division'); const coF = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'co'); const dvCur2 = _valOf(dvF), coCur = _valOf(coF); let src = deps.filter(d => (d.s || 'ใช้งาน') !== 'ปิดใช้งาน'); if (coCur) src = src.filter(d => !d.co || d.co === coCur); if (dvCur2) src = src.filter(d => !d.dv || d.dv === dvCur2); const names = Array.from(new Set(src.map(d => d.a).filter(Boolean))); if (names.length) effOpt = names; } }
+        if (ty === 2) {
+          const isBr = opt === 'ACC_BR';
+          const accCoFld = fields.find(fx => fx[2] === 'ACC_CO');
+          let accCoVal = PROC_COMPANIES.slice();
+          if (accCoFld) { const cdk = pre + accCoFld[0]; const cev = er ? (er['_f:' + accCoFld[0]] !== undefined ? er['_f:' + accCoFld[0]] : er.accCos) : null; accCoVal = dr[cdk] !== undefined ? toArr(dr[cdk]) : ((cev != null && (Array.isArray(cev) || String(cev).trim())) ? toArr(cev) : (rv(er, 'co') ? [rv(er, 'co')] : PROC_COMPANIES.slice())); }
+          const optsList = isBr ? Array.from(new Set([].concat(...(accCoVal.length ? accCoVal : PROC_COMPANIES).map(o => PROC_BR_MAP[o] || [])))) : PROC_COMPANIES;
+          let selArr = Array.isArray(cur) ? cur : ((ev != null && (Array.isArray(ev) || String(ev).trim())) ? toArr(ev) : (isBr ? (rv(er, 'br') ? [rv(er, 'br')] : []) : (rv(er, 'co') ? [rv(er, 'co')] : [])));
+          if (isBr) selArr = selArr.filter(o => optsList.indexOf(o) > -1);
+          const onMulti = (next) => this.setState(s => { const patch = { [dk]: next }; if (!isBr) { const brFld2 = fields.find(fx => fx[2] === 'ACC_BR'); if (brFld2) { const allowed = Array.from(new Set([].concat(...(next.length ? next : PROC_COMPANIES).map(o => PROC_BR_MAP[o] || [])))); const bdk = pre + brFld2[0]; const curBr = s.draft[bdk] !== undefined ? s.draft[bdk] : (Array.isArray(er && er.accBrs) ? er.accBrs : []); patch[bdk] = (curBr || []).filter(o => allowed.indexOf(o) > -1); } } return { draft: Object.assign({}, s.draft, patch) }; });
+          return K.field(T, lb, this.accDropdown(T, dk, lb, optsList, selArr, onMulti), true);
+        }
+        const onCh = e => { const v = e.target.value; this.setState(s => { const patch = { [dk]: v }; if (m === 'co' && brFieldLb) patch[pre + brFieldLb[0]] = ''; if (m === 'division' && secFieldLb) patch[pre + secFieldLb[0]] = ''; return { draft: Object.assign({}, s.draft, patch) }; }); };
+        const node = Array.isArray(opt)
+          ? h('select', { value: cur || '', onChange: onCh, style: Object.assign({}, K.inp(T), { cursor: 'pointer' }) }, [h('option', { key: '_', value: '' }, '— เลือก —'), ...effOpt.map(o => h('option', { key: o, value: o }, o))])
+          : h('input', { placeholder: typeof opt === 'string' ? opt : '', value: cur, onChange: onCh, style: K.inp(T) });
+        return K.field(T, lb, node, ty === 1);
+      })); });
+      const save = K.btn(T, 'บันทึก', true, 'check', () => { this.doSave(); this.goScr('detail'); });
+      const stDk = pre + 'สถานะ';
+      const stCur = dr[stDk] !== undefined ? dr[stDk] : (er ? (er.s || 'ใช้งาน') : 'ใช้งาน');
+      const statusFormEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, stCur, this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPTS.map(o => h('option', { key: o, value: o }, o)))))], { marginBottom: 14, padding: '12px 16px' });
+      body = [hdr, ...secs, statusFormEditor, nav === 'user-management' ? this.moduleAccessCard(T, er, pre, false) : null, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts || ['Export'])];
+    } else if (scr === 'detail' && cfg.roMap) {
+      const r = selRow;
+      if (!r) { this.setScr('list'); body = [null]; }
+      else {
+        const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.a || r.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only)')), h('div', { style: { display: 'flex', gap: 7, flexWrap: 'wrap' } }, K.btn(T, 'พิมพ์', false, 'doc', () => this.toast('พิมพ์')), K.btn(T, 'แก้ไข', true, 'doc', () => this.enterEdit(r)), K.btn(T, 'สร้างใหม่', false, 'plus', () => this.enterCreate())))], { marginBottom: 14, padding: '12px 16px' });
+        const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map((fld) => { const lb = fld[0], ty = fld[1], opt = fld[2]; const m = cfg.roMap[lb]; if (ty === 2) { const isBr = opt === 'ACC_BR'; const ov = r['_f:' + lb]; const raw = (ov != null && (Array.isArray(ov) || String(ov).trim())) ? ov : (rv(r, m) != null ? rv(r, m) : (isBr ? rv(r, 'br') : rv(r, 'co'))); const arr = toArr(raw); const chips = arr.length ? h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, arr.map(o => h('span', { key: o, style: { display: 'inline-flex', alignItems: 'center', fontSize: 11.5, fontWeight: 600, padding: '3px 9px', borderRadius: 7, background: c.accSoft, color: aTxt } }, o))) : K.roField(T, '—'); return K.field(T, lb, chips); } const ov = r['_f:' + lb]; const val = ov !== undefined ? ov : (m ? rv(r, m) : ''); return K.field(T, lb, K.roField(T, val)); })));
+        const curSt = r.s || 'ใช้งาน';
+        const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือโหมดสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, curSt, this.statusHue(curSt))))], { marginBottom: 14, padding: '12px 16px' });
+        body = [hdr, ...secs, nav === 'user-management' ? this.moduleAccessCard(T, r, 'ro|' + (r.no || r.a || '') + '|', true) : null, statusEditor, actLegend(cfg.acts || ['Export'])];
+      }
+    } else {
+      const canEdit = !!(cfg.form && cfg.roMap);
+      const openDetail = (r) => { this.setState({ sel: r }); this.goScr('detail'); };
+      const statusCol = { h: 'สถานะ', render: r => K.pill(T, r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) };
+      const baseCols = cfg.cols.some(cc => cc.h === 'สถานะ') ? cfg.cols : cfg.cols.concat([statusCol]);
+      const cols = canEdit ? baseCols.concat([{ h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู'), h('button', { onClick: e => { e.stopPropagation(); this.enterEdit(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'แก้ไข')) }]) : baseCols;
+      const sortSt = this.state.sort || { key: 'no', dir: 'asc' };
+      const setSort = (key) => this.setState(s => { const cur = s.sort || { key: 'no', dir: 'asc' }; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: { key, dir } }; });
+      const sortedRows = sortSt.key ? rows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); }) : rows;
+      body = [cfg.kpi ? K.kpi(T, this._liveKpi(nav, rows, cfg.kpi)) : null, K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.no || selRow.a) : null, (cfg.th || nav), canEdit && K.btn(T, 'สร้างใหม่', true, 'plus', () => this.enterCreate())), actLegend(cfg.acts || ['Export'])];
+    }
+
+    const controlled = typeof this.props.onScr === 'function';
+    const modal = this.state.confirm ? h('div', { key: 'cf', style: controlled ? { position: 'fixed', top: 38, left: 0, right: 0, bottom: 0, zIndex: 100000, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } : { position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+      h('div', { style: { background: c.dark ? 'oklch(0.23 0.014 265)' : '#fff', borderRadius: 14, border: `1px solid ${c.border}`, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: 400, maxWidth: '100%', padding: '22px 24px', fontFamily: c.font, color: c.text } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } }, h('span', { style: { width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('doc', 18)), h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'บันทึกการเปลี่ยนแปลง?')),
+        h('div', { style: { fontSize: 12.5, color: sub, lineHeight: 1.6, marginBottom: 18 } }, 'คุณกำลัง' + (this.state.edit ? 'แก้ไข' : 'สร้าง') + 'รายการและยังไม่ได้บันทึก ต้องการบันทึกก่อนออกจากหน้านี้หรือไม่?'),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' } }, K.btn(T, 'ยกเลิก', false, null, () => this.setState({ confirm: null })), K.btn(T, 'ไม่บันทึก', false, null, () => this.confirmDiscard()), K.btn(T, 'บันทึก', true, 'check', () => this.confirmSave())))) : null;
+    if (controlled) return { fg: c.text, view: h('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column' } }, h('div', { style: { display: 'flex', flexDirection: 'column' } }, body), modal) };
+
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const collapsed = !!this.state.sideCollapsed;
+    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'box']);
+    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
+      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th)); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const tabsEl = h('div', { style: { display: 'flex', gap: 6, rowGap: 0, flexWrap: 'wrap', borderBottom: `1px solid ${border}` } }, cfg.screens.filter(([id]) => id === 'create' ? this.curMode() === 'create' : id === 'edit' ? this.curMode() === 'edit' : true).map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb;
+      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const filterDd = (() => {
+      const ddOpenId = this.state.openDd || null;
+      const ddToggle = (id) => this.setState(s => ({ openDd: s.openDd === id ? null : id }));
+      const ddWrap = (id, label, active, content) => h('div', { key: 'dd-' + id, style: { position: 'relative', display: 'flex' } },
+        h('button', { type: 'button', onClick: () => ddToggle(id), style: { display: 'flex', alignItems: 'center', gap: 7, height: 30, width: '100%', fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 8, border: `1px solid ${c.border}`, background: active ? c.accSoft : c.win, color: active ? aTxt : c.text, cursor: 'pointer', fontFamily: c.font, whiteSpace: 'nowrap' } },
+          h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' } }, label), h('span', { style: { display: 'flex', color: sub } }, K.Icon('arrowdown', 13))),
+        ddOpenId === id ? h('div', { key: 'bd', onClick: () => this.setState({ openDd: null }), style: { position: 'fixed', inset: 0, zIndex: 199 } }) : null,
+        ddOpenId === id ? h('div', { key: 'pop', onClick: e => e.stopPropagation(), style: { position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', background: c.win, border: `1px solid ${c.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,20,35,.18)', padding: 6 } }, content) : null);
+      const coLabel = coAll ? 'บริษัท: ทั้งหมด' : (coSel.length === 1 ? coSel[0] : 'บริษัท (' + coSel.length + ')');
+      const coContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+        h('input', { type: 'checkbox', checked: coAll, ref: el => { if (el) el.indeterminate = coSel.length > 0 && !coAll; }, onChange: () => this.setState({ filterCo: coAll ? [] : PROC_COMPANIES.slice(), filterBr: [] }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+        .concat(PROC_COMPANIES.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: coSel.indexOf(o) > -1, onChange: () => { const next = coSel.indexOf(o) > -1 ? coSel.filter(x => x !== o) : coSel.concat([o]); this.setState({ filterCo: next, filterBr: [] }); }, style: { cursor: 'pointer' } }), h('span', null, o))));
+      const brLabel = brAll ? 'สาขา: ทั้งหมด' : (brSelFinal.length === 1 ? brSelFinal[0] : 'สาขา (' + brSelFinal.length + ')');
+      const brContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
+        h('input', { type: 'checkbox', checked: brAll, ref: el => { if (el) el.indeterminate = brSelFinal.length > 0 && !brAll; }, onChange: () => this.setState({ filterBr: brAll ? [] : brOpts.slice() }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
+        .concat(brOpts.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: brSelFinal.indexOf(o) > -1, onChange: () => { const next = brSelFinal.indexOf(o) > -1 ? brSelFinal.filter(x => x !== o) : brSelFinal.concat([o]); this.setState({ filterBr: next }); }, style: { cursor: 'pointer' } }), h('span', null, o))));
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, width: '100%' } }, ddWrap('co', coLabel, !coAll, coContent), ddWrap('br', brLabel, !brAll, brContent));
+    })();
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon(cfg.ic || 'box', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon(cfg.ic || 'box', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, cfg.th)),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns),
+        !collapsed ? h('div', { style: { flexShrink: 0, paddingTop: 10, marginTop: 6, borderTop: `1px solid ${border}` } }, filterDd) : null),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
+          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px' } }, h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2 } }, 'L1 · ระบบผู้ดูแลระบบไอที (ITSA)  ›  L2 · บริหารผู้ใช้งานและสิทธิ์ (UAM)  ›  L3 · ' + cfg.th)), (() => K.sheetsBadge(T, this.state.sheetsStatus))()),
+          h('div', { style: { padding: '0 14px' } }, tabsEl)),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view, modal) };
+  }
+}
+</script>
+</body>
+</html>

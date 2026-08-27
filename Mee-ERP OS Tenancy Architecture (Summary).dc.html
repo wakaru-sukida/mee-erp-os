@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  doc-page:not(:defined){visibility:hidden}
+  body{margin:0;background:#eceef2}
+  .doc{font-family:'IBM Plex Sans Thai',sans-serif;color:#1c2432;line-height:1.6}
+  .doc h1{font-size:25px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+  .doc .sub{font-size:13px;color:#5b6472;margin:0 0 6px}
+  .doc .verdict{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;color:#155e37;background:#dcefe2;border:1px solid #b6ddc4;border-radius:999px;padding:4px 12px;margin:2px 0 18px}
+  .doc h2{font-size:15px;font-weight:700;margin:22px 0 9px;padding-bottom:6px;border-bottom:2px solid #e2e6ec}
+  .doc p{margin:0 0 10px;font-size:12.5px}
+  code{font-family:'IBM Plex Mono',monospace;background:#eef1f5;border-radius:4px;padding:1px 5px;font-size:11.5px;color:#334}
+  ul{margin:6px 0 10px;padding-left:18px;font-size:12.5px}li{margin-bottom:5px}
+  table{border-collapse:collapse;width:100%;font-size:12px;break-inside:avoid;margin:6px 0}
+  th,td{border:1px solid #d9dee6;padding:8px 11px;vertical-align:top;text-align:left}
+  thead th{background:#1f2a44;color:#fff;font-weight:600}
+  tbody th{background:#f3f5f8;font-weight:600;width:190px}
+  .ok{color:#1a7a43;font-weight:700}.no{color:#b23b3b;font-weight:700}
+  .flow{display:flex;align-items:center;gap:8px;margin:6px 0 12px;font-size:12px;flex-wrap:wrap}
+  .flow .box{border:1px solid #c3d6ea;background:#eef4fb;border-radius:8px;padding:8px 12px;font-weight:600;color:#1f4d7a}
+  .flow .box.silo{border-color:#e5cfa5;background:#fdf6ec;color:#8a5a12}
+  .flow .arr{color:#8a929e;font-weight:700}
+  .grid2{display:flex;gap:12px;break-inside:avoid;margin:6px 0}
+  .col{flex:1;border:1px solid #d9dee6;border-radius:10px;padding:12px 14px}
+  .col h4{margin:0 0 7px;font-size:12.5px;font-weight:700}
+  .col.pro h4{color:#155e37}.col.con h4{color:#8f2e2e}
+  .col ul{margin:0;padding-left:16px;font-size:11.8px}
+  .risk{margin:6px 0 4px;border:1px solid #d9c6a6;background:#fdf8ee;border-radius:10px;padding:12px 15px;break-inside:avoid;font-size:12px}
+  .risk b{color:#8a5a12}
+  .risk ol{margin:6px 0 0;padding-left:18px}.risk li{margin-bottom:5px}
+  .foot{margin-top:20px;font-size:11px;color:#8a929e;border-top:1px solid #e2e6ec;padding-top:8px}
+</style>
+</helmet>
+<doc-page margin="0.7in">
+<div class="doc">
+  <h1>Mee-ERP OS — สถาปัตยกรรม Multi-Tenant (สรุปการตัดสินใจ)</h1>
+  <p class="sub">เอกสารสรุปแนวทาง Tenancy ที่เลือกใช้ · รวมข้อสรุปจากการพิจารณาทั้งหมด</p>
+  <span class="verdict">✓ ตัดสินใจ: HYBRID (POOLED-FIRST) — เหมาะสมกับ ERP SaaS</span>
+
+  <h2>แนวทางที่เลือก</h2>
+  <p><b>Hybrid (Pooled-first)</b> — เริ่มให้บริการแบบ Pooled แล้วเปิด Siloed เป็นแพ็กเกจ Enterprise โดยออกแบบ schema ให้รองรับทั้งสองแบบตั้งแต่วันแรก</p>
+  <div class="flow">
+    <span class="box">Pooled<br><span style="font-weight:400;font-size:10.5px">SME / ลูกค้าเล็ก-กลาง</span></span>
+    <span class="arr">──  โตขึ้น / ขอ isolation  ──▶</span>
+    <span class="box silo">Siloed (DB-per-tenant)<br><span style="font-weight:400;font-size:10.5px">Enterprise tier</span></span>
+  </div>
+  <ul>
+    <li><b>Pooled:</b> DB เดียว + <code>tenant_id</code> NOT NULL บนตาราง tenant-owned + Row-Level Security</li>
+    <li><b>Siloed:</b> แยก DB/instance ต่อราย — แพ็กเกจ Enterprise สำหรับลูกค้าที่ต้อง compliance/แยกกายภาพ/ปรับแต่ง</li>
+    <li><b>Global master</b> (geo/currency) เป็น platform-global ไม่มี tenant_id · ปรับแต่งรายเจ้าผ่าน override table</li>
+  </ul>
+
+  <h2>ทำไม Hybrid เหมาะกับ ERP โดยเฉพาะ</h2>
+  <div class="grid2">
+    <div class="col pro"><h4>ได้อะไร</h4><ul>
+      <li>ข้อมูล ERP อ่อนไหว (บัญชี/HR/ลูกค้า) — ลูกค้าใหญ่บังคับ isolation ได้</li>
+      <li>มี tier siloed ไว้ปิดดีลองค์กร</li>
+      <li>pooled รองรับ SME จำนวนมากด้วยต้นทุนต่ำ</li>
+    </ul></div>
+    <div class="col con"><h4>ถ้าเลือกสุดขั้ว</h4><ul>
+      <li>Pooled ล้วน → เสียดีล Enterprise ที่ต้องแยกข้อมูล</li>
+      <li>Siloed ล้วน → แพงเกินไปสำหรับ SME</li>
+      <li>Hybrid จึงตอบได้ทั้งต้นทุนและความเชื่อมั่น</li>
+    </ul></div>
+  </div>
+
+  <h2>ทิศทางการย้าย</h2>
+  <p><span class="ok">pooled → siloed ง่าย:</span> <code>export WHERE tenant_id = X</code> แล้ว restore เข้า DB ใหม่ · <span class="no">siloed → pooled ยาก</span> (แต่แทบไม่มีเคสธุรกิจ เพราะเป็นการลด tier) — จึงออกแบบให้ <b><code>tenant_id</code> อยู่ในทุกตาราง tenant-owned ตั้งแต่วันแรก</b> การใส่ทีหลังคือ migration ที่แพงมาก</p>
+
+  <h2>สรุป tenant_id ต่อกลุ่มตาราง</h2>
+  <table>
+    <thead><tr><th style="width:190px">กลุ่มตาราง</th><th>tenant_id</th><th>การป้องกัน</th></tr></thead>
+    <tbody>
+      <tr><th>tenant-owned<br><span style="font-weight:400;font-size:11px">company · branch · department · transaction …</span></th><td class="ok">NOT NULL</td><td>RLS + composite FK คู่ <code>(tenant_id, …)</code></td></tr>
+      <tr><th>override<br><span style="font-weight:400;font-size:11px">tenant_geo_override · tenant_currency_override</span></th><td class="ok">NOT NULL</td><td>RLS + status</td></tr>
+      <tr><th>global master<br><span style="font-weight:400;font-size:11px">country/province/district/subdistrict · currency</span></th><td class="no">ไม่มีคอลัมน์</td><td>ใช้ร่วมทุกผู้เช่า · อ่านแบบ global ∪ override</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3 จุดที่ต้องล็อกให้ครบ</h2>
+  <div class="risk">
+    <ol>
+      <li><b>ID strategy กันชนตอนแยก/รวม:</b> ใช้ UUID หรือ id ที่ผูก tenant — ไม่ใช้ auto-increment ต่อ DB ล้วน</li>
+      <li><b>Global master ต้องตามไปตอน export:</b> snapshot master ทั้งชุด + override ของ tenant นั้น ไปตั้งต้น DB ใหม่ กัน FK หัก</li>
+      <li><b>Siloed คุมต้นทุนด้วย packaging:</b> เป็น tier ราคาสูง (Enterprise/Dedicated) เท่านั้น — ห้ามแจก siloed ให้ SME</li>
+    </ol>
+  </div>
+
+  <h2>สถานะปัจจุบันของ Mee-ERP OS</h2>
+  <p>วันนี้เป็น <b>Siloed (Single-Tenant)</b> — แต่ละองค์กรมี deployment ของตัวเอง, ขอบเขตข้อมูล = <code>company_id</code>, tenant anchor ที่ตาราง company · เก็บข้อมูลบน Google Sheet จึงยังบังคับ scope ที่ชั้นแอป (ยังไม่มี RLS/composite FK ระดับ DB) เมื่อย้ายไปฐานข้อมูลจริงและทำ Pooled ค่อยเพิ่ม <code>tenant_id</code> เฉพาะตาราง tenant-owned แล้วเปิด RLS + composite FK</p>
+
+  <p class="foot">Mee-ERP OS · Architecture Decision Record · 14 ส.ค. 2026 — สรุปแนวทาง Multi-Tenant ที่เลือกใช้</p>
+</div>
+</doc-page>
+<script src="./doc-page.js"></script>
+</x-dc>
+</body>
+</html>

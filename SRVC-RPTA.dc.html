@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  DBKEY = 'db:srvc-rpta:v1';
+  _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); } K.dbPersist(this, this.DBKEY); }
+  state = { nav: 'srvc-reports' };
+  componentDidMount() { if (this.K) { this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); }); }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._handleReq(); }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'reports', hidden: false, screens: [['list', cfg[k].th, cfg[k].ic || 'reports']] }))); }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; if ('view' !== this._lastMode) { this._lastMode = 'view'; this.props.onMode('view'); } }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+  curNav() { return this.props.nav || this.state.nav; }
+  setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id }); }
+
+  CFG() {
+    return {
+      'srvc-reports': {
+        th: 'แดชบอร์ดงานบริการ', ic: 'reports',
+        kpi: [['งานบริการเดือนนี้', '148', '—', 145], ['อัตราการปฏิบัติตาม SLA', '94%', '—', 200], ['ความพึงพอใจลูกค้าเฉลี่ย', '4.6/5', '—', 130]],
+        tableTitle: 'รายงานล่าสุด',
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อรายงาน', k: 'a', b: true }, { h: 'สร้างเมื่อ', k: 'ts' }],
+        rows: [
+          { no: 'RPTA-01', a: 'สรุปงานบริการรายเดือน', ts: '2026-07-31' },
+          { no: 'RPTA-02', a: 'รายงานการปฏิบัติตาม SLA', ts: '2026-07-28' },
+          { no: 'RPTA-03', a: 'รายงานความพึงพอใจลูกค้า', ts: '2026-07-20' }
+        ]
+      },
+      'sla-report': {
+        th: 'รายงาน SLA', ic: 'gauge',
+        kpi: [['อัตราการปฏิบัติตาม SLA เฉลี่ย', '94%', '—', 145]],
+        tableTitle: 'การปฏิบัติตาม SLA ตามระดับบริการ',
+        cols: [{ h: 'ระดับบริการ', k: 'a', b: true }, { h: 'อัตราปฏิบัติตาม', k: 'd' }],
+        rows: [ { a: 'Gold', d: '98%' }, { a: 'Silver', d: '90%' } ]
+      },
+      'technician-report': {
+        th: 'รายงานประสิทธิภาพช่าง', ic: 'user',
+        kpi: [['งานที่ปิดสำเร็จเฉลี่ย/คน', '18 งาน/เดือน', '—', 145]],
+        tableTitle: 'ประสิทธิภาพช่างเทคนิค',
+        cols: [{ h: 'ช่าง', k: 'a', b: true }, { h: 'งานที่ปิดสำเร็จ', k: 'd' }],
+        rows: [ { a: 'ช่างสมชาย', d: '22 งาน' }, { a: 'ช่างวิชัย', d: '19 งาน' } ]
+      },
+      'billing-report': {
+        th: 'รายงานค่าบริการ', ic: 'cash',
+        kpi: [['รายได้ค่าบริการเดือนนี้', '฿1.8M', '—', 145]],
+        tableTitle: 'รายได้ตามประเภทบริการ',
+        cols: [{ h: 'ประเภทบริการ', k: 'a', b: true }, { h: 'รายได้', k: 'd' }],
+        rows: [ { a: 'บริการซ่อม', d: '฿1.1M' }, { a: 'บริการติดตั้ง', d: '฿0.7M' } ]
+      },
+      'service-kpi': {
+        th: 'KPI งานบริการ', ic: 'gauge',
+        kpi: [['เวลาตอบสนองเฉลี่ย', '2.4 ชม.', '—', 145]],
+        tableTitle: 'ตัวชี้วัดหลักด้านบริการ',
+        cols: [{ h: 'ตัวชี้วัด', k: 'a', b: true }, { h: 'ค่าปัจจุบัน', k: 'd' }],
+        rows: [ { a: 'อัตราปิดงานครั้งแรก', d: '78%' }, { a: 'ระยะเวลาปิดงานเฉลี่ย', d: '1.8 วัน' } ]
+      }
+    };
+  }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h, sub = c.sub, acc = c.acc, aTxt = c.aTxt;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
+    const body = [K.kpi(T, cfg.kpi), h('div', { key: 'tt', style: { fontSize: 13, fontWeight: 700, marginBottom: 10 } }, cfg.tableTitle), K.grid(T, cfg.cols, K.coBrFilter(this, cfg.rows), null, null)];
+
+    const controlled = typeof this.props.onScr === 'function';
+    if (controlled) return { fg: c.text, view: h('div', { style: { display: 'flex', flexDirection: 'column' } }, body) };
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const collapsed = !!this.state.sideCollapsed;
+    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'reports']);
+    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
+      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th)); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('reports', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('reports', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'ระบบรายงานและการวิเคราะห์ (RPTA)')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns), !collapsed ? h('div', { style: { flexShrink: 0, paddingTop: 10, marginTop: 6, borderTop: `1px solid ${border}` } }, K.coBrDropdown(this, T)) : null),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px' } }, h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2 } }, 'L1 · ระบบบริหารการบริการ (SRVC)  ›  L2 · ระบบรายงานและการวิเคราะห์ (RPTA)  ›  L3 · ' + cfg.th))),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view) };
+  }
+}
+</script>
+</body>
+</html>

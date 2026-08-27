@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  doc-page:not(:defined){visibility:hidden}
+  body{margin:0;background:#eceef2}
+  .doc{font-family:'IBM Plex Sans Thai',sans-serif;color:#1c2432;line-height:1.6}
+  .doc h1{font-size:26px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+  .doc .sub{font-size:13.5px;color:#5b6472;margin:0 0 22px}
+  .doc h2{font-size:15px;font-weight:700;margin:26px 0 10px;padding-bottom:6px;border-bottom:2px solid #e2e6ec}
+  table{border-collapse:collapse;width:100%;font-size:12px;break-inside:avoid}
+  th,td{border:1px solid #d9dee6;padding:9px 11px;vertical-align:top;text-align:left}
+  thead th{background:#1f2a44;color:#fff;font-weight:600;font-size:12px}
+  tbody th{background:#f3f5f8;font-weight:600;width:150px;color:#2a3345}
+  .crit{white-space:nowrap}
+  .rec{margin-top:24px;border:1px solid #cfe0d4;background:#f2f9f4;border-radius:12px;padding:16px 18px;break-inside:avoid}
+  .rec .tag{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#1a7a43;background:#dcefe2;border-radius:999px;padding:3px 10px;margin-bottom:8px}
+  .rec h3{margin:0 0 6px;font-size:15px;font-weight:700;color:#155e37}
+  .rec p{margin:0 0 8px;font-size:12.5px}
+  .rec ul{margin:6px 0 0;padding-left:18px;font-size:12.5px}
+  .rec li{margin-bottom:4px}
+  .pill{display:inline-block;font-size:10.5px;font-weight:600;border-radius:6px;padding:2px 7px}
+  .g{background:#e4f5ea;color:#1a7a43}.y{background:#fdf3dc;color:#9a6a10}.r{background:#fce4e4;color:#b23b3b}
+  .foot{margin-top:22px;font-size:11px;color:#8a929e;border-top:1px solid #e2e6ec;padding-top:8px}
+</style>
+</helmet>
+<doc-page margin="0.7in">
+<div class="doc">
+  <h1>SaaS Multi-Tenant — โมเดลการแยกข้อมูลผู้เช่า</h1>
+  <p class="sub">เปรียบเทียบ 3 โมเดลหลัก และคำแนะนำสำหรับ Mee-ERP OS · ITSA-ORG</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="crit">เกณฑ์</th>
+        <th>1 · Pooled<br><span style="font-weight:400;font-size:11px">DB เดียว · schema เดียว · แยกด้วย tenant_id</span></th>
+        <th>2 · Bridge<br><span style="font-weight:400;font-size:11px">DB เดียว · แยก schema ต่อผู้เช่า</span></th>
+        <th>3 · Siloed<br><span style="font-weight:400;font-size:11px">คนละ DB / instance ต่อผู้เช่า</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><th>ต้นทุน / หน่วยผู้เช่า</th><td><span class="pill g">ต่ำสุด</span> แชร์ทรัพยากรเต็มที่</td><td><span class="pill y">ปานกลาง</span></td><td><span class="pill r">สูงสุด</span> ต้องจ่ายต่อ DB</td></tr>
+      <tr><th>ความปลอดภัย / การแยกข้อมูล</th><td><span class="pill y">ปานกลาง</span> พึ่ง RLS ถ้าพลาดรั่วได้</td><td><span class="pill y">ดี</span> แยกด้วย schema</td><td><span class="pill g">สูงสุด</span> แยกกายภาพ</td></tr>
+      <tr><th>การปรับแต่งรายลูกค้า</th><td><span class="pill r">จำกัด</span> schema เดียวทุกคน</td><td><span class="pill y">ได้บางส่วน</span></td><td><span class="pill g">อิสระเต็มที่</span> ต่อ version/SLA</td></tr>
+      <tr><th>การ Scale จำนวนผู้เช่า</th><td><span class="pill g">มากสุด</span> พัน–หมื่นราย</td><td><span class="pill y">ปานกลาง</span> schema เยอะแล้วหนัก</td><td><span class="pill r">น้อย</span> ops โตตามจำนวน</td></tr>
+      <tr><th>ความซับซ้อนในการดูแล (migration/backup)</th><td><span class="pill g">ง่าย</span> migrate ครั้งเดียว</td><td><span class="pill r">ยาก</span> วนทุก schema</td><td><span class="pill y">ปานกลาง</span> backup/restore รายรายง่าย</td></tr>
+      <tr><th>Backup / กู้คืนรายผู้เช่า</th><td><span class="pill r">ยาก</span> ต้องกรอง tenant_id</td><td><span class="pill g">ง่าย</span></td><td><span class="pill g">ง่ายสุด</span></td></tr>
+      <tr><th>เหมาะกับ</th><td>SME / freemium / ผู้เช่าจำนวนมาก</td><td>ระดับกลาง ต้องการแยกพอควร</td><td>Enterprise / compliance / dedicated</td></tr>
+    </tbody>
+  </table>
+
+  <h2>คำแนะนำสำหรับ Mee-ERP OS</h2>
+  <div class="rec">
+    <span class="tag">แนะนำ · HYBRID</span>
+    <h3>เริ่มที่ Pooled เป็นค่าเริ่มต้น + เปิด Siloed (DB-per-tenant) เป็นแพ็กเกจ Enterprise</h3>
+    <p>ERP เป็นข้อมูลอ่อนไหว (บัญชี/HR/ลูกค้า) ลูกค้าองค์กรมักต้องการการแยกข้อมูลระดับสูงและ compliance — โมเดลผสมจึงตอบได้ทั้งต้นทุนและความเชื่อมั่น:</p>
+    <ul>
+      <li><b>ลูกค้าเล็ก–กลาง → Pooled:</b> DB เดียว + <code>tenant_id</code> บนตารางที่ผู้เช่าเป็นเจ้าของ + Row-Level Security คุ้มต้นทุนและ scale ง่าย</li>
+      <li><b>ลูกค้าใหญ่ / ต้องการ isolation → Siloed:</b> แยก DB/instance ต่อราย ปรับแต่งและ SLA รายลูกค้าได้</li>
+      <li><b>Master กลาง (ประเทศ/จังหวัด/อำเภอ/ตำบล) → platform-global เสมอ:</b> ไม่ต้องมี <code>tenant_id</code> ใช้ร่วมได้ทุกผู้เช่า</li>
+      <li><b>สถานะปัจจุบันของ Mee-ERP OS = Siloed (Single-Tenant):</b> ขอบเขตข้อมูลคือ <code>company_id</code>, tenant anchor ที่ตาราง company — ถ้าจะไป Pooled ค่อยเพิ่ม <code>tenant_id</code> (nullable = global) เฉพาะตารางที่ผู้เช่าเป็นเจ้าของ แล้ว stamp/resolve อัตโนมัติตอน push/pull (แพทเทิร์นเดียวกับ company_id) โดยไม่แตะ geo/master</li>
+    </ul>
+  </div>
+
+  <p class="foot">Mee-ERP OS · Architecture Note — ปรับได้เมื่อกลยุทธ์ผลิตภัณฑ์เปลี่ยน · เอกสารประกอบการตัดสินใจ</p>
+</div>
+</doc-page>
+<script src="./doc-page.js"></script>
+</x-dc>
+</body>
+</html>

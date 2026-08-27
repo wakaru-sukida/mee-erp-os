@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>*{box-sizing:border-box;}@keyframes erpspin{to{transform:rotate(360deg)}}</style>
+</helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};background:transparent;font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;showHidden&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  state = { nav: 'company-management', scr: {}, sel: {}, edit: {}, mode: {}, db: {}, confirm: null, sideCollapsed: false, ready: !!this.K, sheetsStatus: 'off' };
+
+  bus() { if (typeof window === 'undefined') return null; if (!window.__erpBus) { const LS = 'meeerp.bus.v2'; const persist = (k) => k.indexOf('org.') !== 0; let saved = {}; try { saved = JSON.parse(window.localStorage.getItem(LS) || '{}') || {}; } catch (e) { saved = {}; } const st = { data: Object.assign({}, saved), subs: [] }; const flush = () => { try { const out = {}; Object.keys(st.data).forEach(k => { if (persist(k)) out[k] = st.data[k]; }); window.localStorage.setItem(LS, JSON.stringify(out)); } catch (e) {} }; window.__erpBus = { get: (k, d) => st.data[k] !== undefined ? st.data[k] : d, set: (k, v) => { st.data[k] = v; if (persist(k)) flush(); st.subs.forEach(f => f(k, v)); }, on: (f) => { st.subs.push(f); return () => { st.subs = st.subs.filter(x => x !== f); }; } }; } return window.__erpBus; }
+  _clean() { if (this._cleaned || typeof window === 'undefined') return; this._cleaned = true; try { window.localStorage.removeItem('mee-erp:itsa-org:db'); } catch (e) {} }
+  notifyUp(msg) { const a = this.props.api || {}; if (typeof a.notify === 'function') a.notify(msg); else this.toast(msg); }
+  DBKEY = 'db:itsa-org:v5';
+  _busWire() {
+    const b = this.bus(); if (!b || this._offBus) return;
+    if (b.get('db:itsa-org', null)) b.set('db:itsa-org', null);   // drop pre-v3 store (old code format)
+    const saved = b.get(this.DBKEY, null);
+    if (saved && typeof saved === 'object') { this._lastDb = saved; this.setState({ db: saved }); }
+    this._offBus = b.on((k, v) => {
+      if (k === this.DBKEY) { if (v === this._selfWrite) return; if (v !== this.state.db) { this._lastDb = v; this.setState(s => { const merged = Object.assign({}, v || {}); Object.keys(s.db).forEach(kk => { if (kk.indexOf('geo-') === 0 && merged[kk] === undefined) merged[kk] = s.db[kk]; }); return { db: merged }; }); } return; }
+      this.forceUpdate();
+    });
+  }
+  _persistDb() {
+    const b = this.bus(); if (b && this.state.db !== this._lastDb) { this._lastDb = this.state.db; const slim = {}; Object.keys(this.state.db).forEach(k => { if (k.indexOf('geo-') !== 0) slim[k] = this.state.db[k]; }); this._selfWrite = slim; b.set(this.DBKEY, slim); }
+    if (this._sheetsPush) Object.keys(this.SHEETS_TABS).forEach(key => { const rows = this.state.db[key]; if (rows !== undefined) this._sheetsPush(key, rows); });
+  }
+  componentWillUnmount() { if (this._offBus) this._offBus(); if (typeof window !== 'undefined' && this._onResizeBound) window.removeEventListener('resize', this._onResizeBound); }
+  _publishBiz() { const b = this.bus(); if (!b) return; const cfg = this.CFG(); const rows = this.dbRows('business-group', (cfg['business-group'] || {}).rows || []); const list = rows.filter(r => !r.status || this._normStatus(r.status) === 'ACTIVE').map(r => ({ no: r.code, a: r.name_th, en: r.en, bt: r.bt })); const sig = JSON.stringify(list); if (this._bizSig !== sig) { this._bizSig = sig; b.set('org.businessGroups', list); } }
+  _publishDepts() { const b = this.bus(); if (!b) return; const cfg = this.CFG()['department-management'] || {}; const rows = this.dbRows('department-management', cfg.rows || []); const sig = rows.map(r => r.code).join('|'); if (sig === this._deptSig) return; this._deptSig = sig; b.set('org.departments', rows.map(r => ({ no: r.code, a: r.name_th, co: r.scope_company, br: r.parent_branch, dv: r.division, cc: r.cost_center || '', ccAlt: r.cost_center_alt || '' }))); }
+  _publishCoBr() { const b = this.bus(); if (!b) return; const cfg = this.CFG(); const coRows = this.dbRows('company-management', (cfg['company-management'] || {}).rows || []); const brRows = this.dbRows('branch-management', (cfg['branch-management'] || {}).rows || []); const sig = coRows.map(r => r.code).join('|') + '~' + brRows.map(r => r.code).join('|'); if (sig === this._coBrSig) return; this._coBrSig = sig; b.set('org.companies', coRows.filter(r => this._normStatus(r.status) === 'ACTIVE').map(r => ({ no: r.code, a: r.name_th, t: r.tenant_id || '' }))); b.set('org.branches', brRows.filter(r => this._normStatus(r.status) === 'ACTIVE').map(r => ({ no: r.code, a: r.name_th, co: r.scope_company }))); }
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  SHEETS_TABS = { 'business-group': 'itsa-org-business-group', 'company-management': 'itsa-org-company', 'branch-management': 'itsa-org-branch', 'division-management': 'itsa-org-division', 'department-management': 'itsa-org-department', 'position-management': 'itsa-org-position' };
+  GEO_TABS = { 'geo-country': 'itsa-org-country', 'geo-province': 'itsa-org-province', 'geo-district': 'itsa-org-district', 'geo-subdistrict': 'itsa-org-subdistrict' };  // lazy: pulled only when the Geographic menu opens
+  SHEETS_NORM = { 'company-management': r => { const o = Object.assign({}, r); if (o.registered_capital != null && o.registered_capital !== '') { const n = Number(String(o.registered_capital).replace(/[^0-9.-]/g, '')); if (isFinite(n)) { const sym = (o.currency || 'THB') === 'USD' ? 'US$' : (o.currency || 'THB') === 'THB' ? '฿' : ''; o.registered_capital = sym + n.toLocaleString('en-US'); } } return o; } };
+  componentDidMount() {
+    this._clean();
+    if (typeof window !== 'undefined') { this._onResizeBound = () => this._onResize(); window.addEventListener('resize', this._onResizeBound); }
+    if (this.K && this.K.sheetsBind) this.K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS, this.SHEETS_NORM);
+    this._wrapOrgPush();
+    this._busWire();
+    if (this.K) { this._reportMode(); this._reportCatalog(); this._publishDepts(); this._publishCoBr(); this._publishBiz(); if (typeof window !== 'undefined') setTimeout(() => this._geoPull(), 800); return; }                       // kit already warm (cached from Shell) → rendered instantly
+    import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; if (K.sheetsBind) K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS, this.SHEETS_NORM); this._wrapOrgPush(); this.setState({ ready: true }); this._reportCatalog(); this._publishDepts(); if (typeof window !== 'undefined') setTimeout(() => this._geoPull(), 800); });
+  }
+  componentDidUpdate() { this._reportMode(); this._reportCatalog(); this._reportSheetsStatus(); this._handleReq(); this._tenantPull(); if (!this._orgReconciled && !this._orgReconciling && this.state.sheetsStatus === 'connected') { this._orgReconciling = true; this._reconcileOrg(); } this._persistDb(); if (this.state.sheetsStatus === 'connected' && !this._geoPulled && !this._geoPulling) this._geoPull(); if (this.K) { this._publishDepts(); this._publishCoBr(); this._publishBiz(); } this._measureChartLine(); }
+  _geoPull() {
+    if (this._geoPulled || this._geoPulling || !this.GEO_TABS) return; this._geoPulling = true; this.setState({ geoLoading: true });
+    const U = this.SHEETS_URL, tabs = this.GEO_TABS;
+    const gg = (kk) => { const d = this.state.db[kk]; return d !== undefined ? d : ((this.CFG()[kk] || {}).rows || []); };
+    const coById = {}, brById = {}, ctById = {}, pvById = {}, dtById = {};
+    gg('company-management').forEach(r => { if (r && r.name_th != null) coById[this._hashId(r.code || r.name_th)] = r.name_th; });
+    gg('branch-management').forEach(r => { if (r && r.name_th != null) brById[this._hashId(r.code || r.name_th)] = { name_th: r.name_th, scope_company: r.scope_company }; });
+    const getTab = (k, ms) => Promise.race([fetch(U + '?tab=' + encodeURIComponent(tabs[k]) + '&_=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(j => (j && j.ok) ? (j.rows || []) : null).catch(() => null), new Promise(res => setTimeout(() => res(null), ms || 15000))]);
+    const conv = (k, rows) => rows.map(r => (r && r.name_th === undefined) ? this._orgNative(k, r, { coById, brById, ctById, pvById, dtById }) : r);
+    // wave 1 — country / province / district (small, ~1s): show quickly
+    Promise.all(['geo-country', 'geo-province', 'geo-district'].map(k => getTab(k).then(rows => ({ k, rows })))).then(res => {
+      const patch = {}; const byKey = {}; res.forEach(x => byKey[x.k] = x.rows);
+      ['geo-country', 'geo-province', 'geo-district'].forEach(k => { const rows = byKey[k]; if (!rows || !rows.length) return; const app = conv(k, rows); patch[k] = app; app.forEach(r => { const id = this._hashId(r.code || r.name_th); if (k === 'geo-country') ctById[id] = r.name_th; else if (k === 'geo-province') pvById[id] = r.name_th; else if (k === 'geo-district') dtById[id] = r.name_th; }); });
+      if (Object.keys(patch).length) this.setState(s => ({ db: Object.assign({}, s.db, patch) }));
+      // wave 2 — subdistrict (large, several seconds)
+      getTab('geo-subdistrict', 30000).then(rows => { if (rows && rows.length) { const app = conv('geo-subdistrict', rows); this.setState(s => ({ db: Object.assign({}, s.db, { 'geo-subdistrict': app }) })); } this._geoPulled = true; this._geoPulling = false; this.setState({ geoLoading: false }); this._geoOvPull(); });
+    }).catch(() => { this._geoPulled = true; this._geoPulling = false; this.setState({ geoLoading: false }); });
+  }
+  _geoOvPull() {
+    if (this._geoOvPulled || !this.GEO_OV_TABS) return; this._geoOvPulled = true;
+    const U = this.SHEETS_URL;
+    const getTab = (tab) => Promise.race([fetch(U + '?tab=' + encodeURIComponent(tab) + '&_=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(j => (j && j.ok) ? (j.rows || []) : null).catch(() => null), new Promise(res => setTimeout(() => res(null), 15000))]);
+    Promise.all(Object.keys(this.GEO_OV_TABS).map(kind => getTab(this.GEO_OV_TABS[kind]).then(rows => ({ kind, rows })))).then(res => {
+      let any = false; const merged = [];
+      res.forEach(({ kind, rows }) => { if (!rows) return; any = true; rows.forEach(r => { const nat = this._orgNative('tenant-geo-override', r); if (nat.code) { nat.kind = nat.kind || kind; merged.push(nat); } }); });
+      if (!any) return; // endpoint failure — keep local copy intact
+      this.setState(s => ({ db: Object.assign({}, s.db, { 'tenant-geo-override': merged }) }));
+    }).catch(() => {});
+  }
+  GEO_OV_TABS = { country: 'itsa-org-country-override', province: 'itsa-org-province-override', district: 'itsa-org-district-override', subdistrict: 'itsa-org-subdistrict-override' };
+  _tenantOpts() { const b = this.bus && this.bus(); const l = (b && b.get && b.get('org.tenants', null)) || []; if (Array.isArray(l) && l.length) return l; return this.state._tenants || []; }
+  _tenantPull() {
+    if (this._tenantPulled) return; this._tenantPulled = true;
+    fetch(this.SHEETS_URL + '?tab=itsa-tent-management&_=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(j => {
+      if (!j || !j.ok || !j.rows) return;
+      const list = j.rows.filter(r => r && (r.tent_name || r.tent_code)).map(r => ({ id: String(r.tent_id || r.tent_code || ''), code: r.tent_code || '', name_th: r.tent_name || r.tent_name_en || '' }));
+      if (list.length) this.setState({ _tenants: list });
+    }).catch(() => {});
+  }
+  _geoOvPush() {
+    if (!this.GEO_OV_TABS || !this._sheetsPulled) return;
+    const all = this.state.db['tenant-geo-override']; if (all === undefined) return;
+    Object.keys(this.GEO_OV_TABS).forEach(kind => {
+      const tab = this.GEO_OV_TABS[kind];
+      const native = (all || []).filter(r => r && r.kind === kind).map(r => this._orgProject('tenant-geo-override', r));
+      fetch(this.SHEETS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ tab, action: 'replaceAll', rows: native }) }).then(r => r.json()).catch(() => {});
+    });
+  }
+  _geoPush(key) {
+    const tab = this.GEO_TABS && this.GEO_TABS[key]; if (!tab) return; const rows = this.state.db[key]; if (rows === undefined) return;
+    const native = rows.map(r => this._orgProject(key, r));
+    fetch(this.SHEETS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ tab, action: 'replaceAll', rows: native }) }).then(r => r.json()).then(j => { this.setState({ sheetsStatus: (j && j.ok) ? 'connected' : 'offline' }); if (!(j && j.ok)) this.toast('บันทึก ' + tab + ' ขึ้น Sheet ไม่สำเร็จ'); }).catch(() => { this.setState({ sheetsStatus: 'offline' }); this.toast('เชื่อมต่อ Sheet ไม่ได้'); });
+  }
+  _measureChartLine() {
+    const wrap = this._chartWrap, first = this._chartFirstCol, last = this._chartLastCol;
+    if (!wrap || !first || !last) return;
+    const wr = wrap.getBoundingClientRect(), fr = first.getBoundingClientRect(), lr = last.getBoundingClientRect();
+    if (!wr.width) return;
+    const l = Math.round((fr.left + fr.width / 2) - wr.left);
+    const r = Math.round(wr.right - (lr.left + lr.width / 2));
+    if (l !== this.state.chartLineL || r !== this.state.chartLineR) this.setState({ chartLineL: l, chartLineR: r });
+  }
+  _onResize() { this._measureChartLine(); }
+  _reportCatalog() {
+    if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return;
+    this._catReported = true;
+    const cfg = this.CFG();
+    const NAVIC = { 'organizational-elements': 'box', 'business-group': 'cash', 'company-management': 'doc', 'branch-management': 'box', 'division-management': 'box', 'department-management': 'box', 'business-unit': 'cash', 'position-management': 'user', 'organization-chart': 'crm', 'geographic-information': 'crm' };
+    const ORDER = ['company-management', 'branch-management', 'division-management', 'department-management', 'position-management', 'organization-chart', 'geographic-information'];
+    const keys = ORDER.filter(k => cfg[k]).concat(Object.keys(cfg).filter(k => ORDER.indexOf(k) < 0));
+    const cat = keys.map(k => ({ id: k, th: cfg[k].th, ic: NAVIC[k] || 'box', hidden: ORDER.indexOf(k) < 0, screens: (cfg[k].screens || []).map(([id, lb, ic]) => [id, lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb, ic]) }));
+    this.props.onCatalog(cat);
+  }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); else if (r.kind === 'scr') this.setScr(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; const m = this.curMode(); if (m !== this._lastMode) { this._lastMode = m; this.props.onMode(m); } }
+  _reportSheetsStatus() { if (typeof this.props.onSheetsStatus !== 'function') return; const s = this.state.sheetsStatus; if (s !== this._lastSheetsStatus) { this._lastSheetsStatus = s; this.props.onSheetsStatus(s); } }
+
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+
+  COMPANY_SEED = [{"code":"CO-01-MEE","name_th":"บมจ. มี กรุ๊ป","name_en":"Mee Group PCL","tax_id":"0-1055-xxxxx-00","branch_count":"12","status":"ใช้งาน","headcount":130,"address":"เลขที่ 88 อาคารมีทาวเวอร์ ถ.สาทร แขวงสีลม เขตบางรัก กรุงเทพฯ 10500","phone":"0-2555-1201","fax":"0-2555-1301","email":"info@mee-group.com","website":"www.mee-group.com","registered_capital":"฿500,000,000","currency":"THB","fiscal_year_start":"มกราคม","parent_company":"— ไม่มี (บริษัทแม่) —"},{"code":"CO-02-MET","name_th":"บจก. มี เทรดดิ้ง","name_en":"Mee Trading Co.","tax_id":"0-1055-xxxxx-01","branch_count":"8","status":"ใช้งาน","headcount":130,"address":"เลขที่ 88 ถ.ลาดพร้าว แขวงจันทรเกษม เขตจตุจักร กรุงเทพฯ 10900","phone":"0-2555-1202","fax":"0-2555-1302","email":"info@mee-trading.com","website":"www.mee-group.com","registered_capital":"฿100,000,000","currency":"THB","fiscal_year_start":"มกราคม","parent_company":"บมจ. มี กรุ๊ป"},{"code":"CO-03-MEL","name_th":"บจก. มี โลจิสติกส์","name_en":"Mee Logistics Co.","tax_id":"0-1055-xxxxx-02","branch_count":"5","status":"ใช้งาน","headcount":130,"address":"เลขที่ 55 ถ.บางนา-ตราด แขวงบางนา เขตบางนา กรุงเทพฯ 10260","phone":"0-2555-1203","fax":"0-2555-1303","email":"info@mee-logistics.com","website":"www.mee-group.com","registered_capital":"฿50,000,000","currency":"THB","fiscal_year_start":"มกราคม","parent_company":"บมจ. มี กรุ๊ป"},{"code":"CO-04-MEI","name_th":"บมจ. มี อินเตอร์เนชันนัล","name_en":"Mee International Ltd.","tax_id":"HK-xxxxxx","branch_count":"3","status":"ปิดใช้งาน","headcount":130,"address":"Suite 1200, Two IFC, 8 Finance Street, Central, Hong Kong","phone":"+852-2200-1000","fax":"+852-2200-1001","email":"info@mee-intl.com","website":"www.mee-group.com","registered_capital":"US$5,000,000","currency":"USD","fiscal_year_start":"เมษายน","parent_company":"บมจ. มี กรุ๊ป"}];
+  BRANCH_SEED = [{"code":"BR-MEI-01","name_th":"สำนักงานใหญ่ (ฮ่องกง)","scope_company":"บมจ. มี อินเตอร์เนชันนัล","province":"กรุงเทพฯ","type":"สำนักงานใหญ่","status":"ใช้งาน","headcount":130,"address":"Central, Hong Kong","phone":"+852-2200-1010","manager":"Alex Wong"},{"code":"BR-MEE-02","name_th":"สาขาเชียงใหม่","scope_company":"บมจ. มี กรุ๊ป","province":"เชียงใหม่","type":"สาขา","status":"ใช้งาน","headcount":130,"address":"ถ.นิมมานเหมินท์ ต.สุเทพ อ.เมือง เชียงใหม่ 50200","phone":"0-5388-5245","manager":"---"},{"code":"BR-MEE-01","name_th":"สำนักงานใหญ่ (สาทร)","scope_company":"บมจ. มี กรุ๊ป","province":"กรุงเทพฯ","type":"สำนักงานใหญ่","status":"ใช้งาน","headcount":130,"address":"เลขที่ 88 อาคารมีทาวเวอร์ ถ.สาทร กรุงเทพฯ 10500","phone":"0-2555-1200","manager":"สมชาย ใจดี"},{"code":"BR-MET-01","name_th":"สำนักงานใหญ่ (ลาดพร้าว)","scope_company":"บจก. มี เทรดดิ้ง","province":"กรุงเทพฯ","type":"สำนักงานใหญ่","status":"ใช้งาน","headcount":130,"address":"เลขที่ 88 ถ.ลาดพร้าว กรุงเทพฯ 10900","phone":"0-2896-5324","manager":"วิภา สุขใจ"},{"code":"BR-MET-02","name_th":"สาขาเชียงใหม่","scope_company":"บจก. มี เทรดดิ้ง","province":"เชียงใหม่","type":"สาขา","status":"ใช้งาน","headcount":130,"address":"ถ.ห้วยแก้ว ต.ช้างเผือก อ.เมือง เชียงใหม่ 50300","phone":"0-5321-4567","manager":"ประยุทธ ตั้งมั่น"},{"code":"BR-MEL-01","name_th":"สำนักงานใหญ่ (บางนา)","scope_company":"บจก. มี โลจิสติกส์","province":"กรุงเทพฯ","type":"คลัง","status":"ใช้งาน","headcount":130,"address":"เลขที่ 55 ถ.บางนา-ตราด กรุงเทพฯ 10260","phone":"0-2854-7965","manager":"คุณเจมส์"}];
+
+  // ---- Geographic Information (L3 feature; 4 sub-entities as L4 tabs) ----
+  GEO_ORDER = ['country', 'province', 'district', 'subdistrict'];
+  GEO_META = {
+    country:     { db: 'geo-country',     th: 'ประเทศ',  en: 'Country',     ic: 'box', code: 'CT', parent: null,       parentField: null,       parentLabel: null,     eg: 'ประเทศไทย' },
+    province:    { db: 'geo-province',    th: 'จังหวัด', en: 'Province',    ic: 'box', code: 'PV', parent: 'country',  parentField: 'country',  parentLabel: 'ประเทศ', eg: 'กรุงเทพมหานคร' },
+    district:    { db: 'geo-district',    th: 'อำเภอ',   en: 'District',    ic: 'box', code: 'DT', parent: 'province', parentField: 'province', parentLabel: 'จังหวัด', eg: 'เขตบางรัก' },
+    subdistrict: { db: 'geo-subdistrict', th: 'ตำบล',    en: 'Subdistrict', ic: 'box', code: 'SD', parent: 'district', parentField: 'district', parentLabel: 'อำเภอ',  eg: 'สีลม' }
+  };
+  GEO_SEED = {
+    'geo-country': [
+      {code:'CT-001',name_th:'ประเทศไทย',en:'Thailand',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'},
+      {code:'CT-002',name_th:'สาธารณรัฐประชาธิปไตยประชาชนลาว',en:'Laos',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'},
+      {code:'CT-003',name_th:'สาธารณรัฐประชาชนจีน',en:'China',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'}
+    ],
+    'geo-province': [
+      {code:'PV-001',name_th:'กรุงเทพมหานคร',en:'Bangkok',country:'ประเทศไทย',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'},
+      {code:'PV-002',name_th:'เชียงใหม่',en:'Chiang Mai',country:'ประเทศไทย',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'},
+      {code:'PV-003',name_th:'ภูเก็ต',en:'Phuket',country:'ประเทศไทย',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'},
+      {code:'PV-004',name_th:'ขอนแก่น',en:'Khon Kaen',country:'ประเทศไทย',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'}
+    ],
+    'geo-district': [
+      {code:'DT-001',name_th:'เขตบางรัก',en:'Bang Rak',province:'กรุงเทพมหานคร',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'},
+      {code:'DT-002',name_th:'เขตจตุจักร',en:'Chatuchak',province:'กรุงเทพมหานคร',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'},
+      {code:'DT-003',name_th:'เมืองเชียงใหม่',en:'Mueang Chiang Mai',province:'เชียงใหม่',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'}
+    ],
+    'geo-subdistrict': [
+      {code:'SD-001',name_th:'สีลม',en:'Silom',district:'เขตบางรัก',zip:'10500',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'},
+      {code:'SD-002',name_th:'สุริยวงศ์',en:'Suriyawong',district:'เขตบางรัก',zip:'10500',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'},
+      {code:'SD-003',name_th:'จันทรเกษม',en:'Chan Kasem',district:'เขตจตุจักร',zip:'10900',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'},
+      {code:'SD-004',name_th:'สุเทพ',en:'Suthep',district:'เมืองเชียงใหม่',zip:'50200',scope_company:'',scope_branch:'',remark:'',status:'ใช้งาน'}
+    ]
+  };
+  _geoRoMap(entity) { const m = this.GEO_META[entity]; const r = { ['รหัส' + m.th]: 'code', ['ชื่อ' + m.th + ' (ไทย)']: 'name_th', ['ชื่อ' + m.th + ' (อังกฤษ)']: 'en', 'บริษัท': 'scope_company', 'สาขา': 'scope_branch', 'หมายเหตุ': 'remark' }; if (m.parentField) r[m.parentLabel] = m.parentField; if (entity === 'subdistrict') r['รหัสไปรษณีย์'] = 'zip'; return r; }
+  geoActive() { const s = this.curScr(); return this.GEO_META[s] ? s : 'country'; }
+  geoView(entity) { return (this.state.geoView || {})[entity] || 'list'; }
+  setGeoView(entity, v, extra) { this.setState(s => Object.assign({ geoView: Object.assign({}, s.geoView, { [entity]: v }) }, extra || {})); }
+  geoCreate(entity) { this.setState(s => ({ geoView: Object.assign({}, s.geoView, { [entity]: 'create' }), geoEdit: Object.assign({}, s.geoEdit, { [entity]: null }), geoDraft: {} })); }
+  geoEditRow(entity, r) { this.setState(s => ({ geoView: Object.assign({}, s.geoView, { [entity]: 'edit' }), geoEdit: Object.assign({}, s.geoEdit, { [entity]: r }), geoSel: Object.assign({}, s.geoSel, { [entity]: r }), geoDraft: {} })); }
+  geoOpen(entity, r) { this.setState(s => ({ geoSel: Object.assign({}, s.geoSel, { [entity]: r }), geoView: Object.assign({}, s.geoView, { [entity]: 'detail' }) })); }
+  geoCancel(entity) { this.setState(s => ({ geoDraft: {}, geoEdit: Object.assign({}, s.geoEdit, { [entity]: null }), geoView: Object.assign({}, s.geoView, { [entity]: 'list' }) })); }
+  doSaveGeo(entity) {
+    if (this._geoPulling) { this.toast('กำลังโหลดข้อมูลภูมิศาสตร์จาก Sheet — โปรดลองอีกครั้ง'); return; }
+    const meta = this.GEO_META[entity], dbk = meta.db, seed = this.GEO_SEED[dbk] || [];
+    const er = (this.state.geoEdit || {})[entity] || null;
+    const mode = er ? ('edit:' + (er.code || er.name_th || '')) : 'new';
+    const dr = this.state.geoDraft || {}, pre = dbk + '|' + mode + '|', roMap = this._geoRoMap(entity);
+    const base = er ? Object.assign({}, er) : { code: '', name_th: '', en: '', scope_company: '', scope_branch: '', remark: '', status: 'ใช้งาน' };
+    if (meta.parentField && base[meta.parentField] === undefined) base[meta.parentField] = '';
+    if (entity === 'subdistrict' && base.zip === undefined) base.zip = '';
+    Object.keys(roMap).forEach(lb => { const v = dr[pre + lb]; if (v !== undefined) base[roMap[lb]] = v; });
+    const stV = dr[pre + 'สถานะ']; if (stV !== undefined && stV !== '') base.status = stV;
+    const curRows = this.state.db[dbk] !== undefined ? this.state.db[dbk] : seed;
+    if (!base.name_th) { this.toast('กรุณาระบุชื่อ' + meta.th); return; }
+    if (meta.parentField && !base[meta.parentField]) { this.toast('กรุณาเลือก' + meta.parentLabel); return; }
+    if (meta.parent) { const M = this._orgMaps(); const pmap = { country: M.ctByName, province: M.pvByName, district: M.dtByName }[meta.parent] || {}; base[meta.parent + '_id'] = pmap[base[meta.parentField]] || ''; }
+    if (!er) {
+      if (!base.code) { let n = 1; const used = new Set(curRows.map(r => r.code)); while (used.has(meta.code + '-' + String(n).padStart(3, '0'))) n += 1; base.code = meta.code + '-' + String(n).padStart(3, '0'); }
+      if (curRows.some(r => r.code === base.code)) { this.toast('รหัส ' + base.code + ' มีอยู่แล้ว — กรุณาใช้รหัสอื่น'); return; }
+    }
+    const nowIso = new Date().toISOString(), who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+    if (!er) { if (!base.createdAt) base.createdAt = nowIso; if (!base.createdBy) base.createdBy = who; }
+    base.updatedAt = nowIso; base.updatedBy = who;
+    const ovrScope = dr[pre + '__ovrScope'] !== undefined ? dr[pre + '__ovrScope'] : (er && er._ovr ? (er.scope_company || 'tenant') : '');
+    if (ovrScope) {
+      const scope_company = ovrScope === 'tenant' ? '' : ovrScope;
+      const M = this._orgMaps();
+      const selT = dr[pre + '__ovrTenant'] || (er && er.tenant_id ? String(er.tenant_id) : '');
+      const t = selT || this._currentTenant() || (scope_company ? (M.coTenantByName[scope_company] || this._uuidFrom('CO|' + scope_company)) : null);
+      if (!t) { this.toast('ไม่พบผู้เช่าปัจจุบัน — กรุณาเลือกขอบเขตเป็นบริษัท หรือเข้าผ่านผู้เช่า'); return; }
+      const baseCode = (er && !er._ovrNew) ? (er.base_code || er.code) : '';
+      const ovCode = 'OV-' + meta.code + '-' + this._hashId(t + '|' + entity + '|' + scope_company + '|' + (baseCode || base.name_th));
+      const ovRow = { code: ovCode, tenant_id: t, scope_company: scope_company, kind: entity, base_code: baseCode, name_th: base.name_th, en: base.en || '', zip: base.zip || '', remark: base.remark || '', status: base.status || 'ใช้งาน', createdAt: (er && er.createdAt) || nowIso, createdBy: (er && er.createdBy) || who, updatedAt: nowIso, updatedBy: who };
+      this.setState(s => { const db = Object.assign({}, s.db); const cur = (db['tenant-geo-override'] || []).slice(); const i = cur.findIndex(x => x.code === ovCode); if (i >= 0) cur[i] = ovRow; else cur.push(ovRow); db['tenant-geo-override'] = cur; return { db, geoDraft: {}, geoView: Object.assign({}, s.geoView, { [entity]: 'list' }), geoEdit: Object.assign({}, s.geoEdit, { [entity]: null }) }; }, () => this._geoOvPush());
+      this.toast('บันทึก Override สำหรับ' + (scope_company || 'ผู้เช่านี้') + 'แล้ว');
+      return;
+    }
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db[dbk] !== undefined ? db[dbk] : seed; db[dbk] = er ? cur.map(x => (x === er || (x.code != null && x.code === er.code)) ? base : x) : cur.concat([base]); return { db, geoDraft: {}, geoView: Object.assign({}, s.geoView, { [entity]: 'detail' }), geoSel: Object.assign({}, s.geoSel, { [entity]: base }), geoEdit: Object.assign({}, s.geoEdit, { [entity]: null }) }; }, () => this._geoPush(dbk));
+    this.toast(er ? 'บันทึกการแก้ไขแล้ว' : 'บันทึกเรียบร้อย');
+  }
+  _importThaiGeo() {
+    if (this.state.geoImporting) return;
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function' && !window.confirm('นำเข้าข้อมูลจริงจะแทนที่ข้อมูล จังหวัด / อำเภอ / ตำบล ทั้งหมด และซิงก์ลง Google Sheet\nดำเนินการต่อหรือไม่?')) return;
+    this.setState({ geoImporting: true });
+    this.toast('กำลังดึงข้อมูลจริง (ประเทศไทย)…');
+    const BASE = 'https://cdn.jsdelivr.net/gh/thailand-geography-data/thailand-geography-json@main/src/';
+    const pad = (n, l) => String(n == null ? '' : n).padStart(l, '0');
+    Promise.all([
+      fetch(BASE + 'provinces.json').then(r => r.json()),
+      fetch(BASE + 'districts.json').then(r => r.json()),
+      fetch(BASE + 'subdistricts.json').then(r => r.json())
+    ]).then(([pv, dt, sd]) => {
+      const pvByCode = {}, dtByCode = {};
+      const provRows = pv.map(p => { pvByCode[p.provinceCode] = p.provinceNameTh; return { code: 'PV-' + pad(p.provinceCode, 2), name_th: p.provinceNameTh, en: p.provinceNameEn, country: 'ประเทศไทย', scope_company: '', scope_branch: '', remark: '', status: 'ใช้งาน' }; });
+      const distRows = dt.map(d => { dtByCode[d.districtCode] = d.districtNameTh; return { code: 'DT-' + pad(d.districtCode, 4), name_th: d.districtNameTh, en: d.districtNameEn, province: pvByCode[d.provinceCode] || '', scope_company: '', scope_branch: '', remark: '', status: 'ใช้งาน' }; });
+      const subRows = sd.map(s => ({ code: 'SD-' + pad(s.subdistrictCode, 6), name_th: s.subdistrictNameTh, en: s.subdistrictNameEn, district: dtByCode[s.districtCode] || '', zip: String(s.postalCode || ''), scope_company: '', scope_branch: '', remark: '', status: 'ใช้งาน' }));
+      const ctCur = this.state.db['geo-country'] !== undefined ? this.state.db['geo-country'] : this.GEO_SEED['geo-country'];
+      let ctRows = (ctCur || []).slice();
+      if (!ctRows.some(r => r.name_th === 'ประเทศไทย')) ctRows = [{ code: 'CT-001', name_th: 'ประเทศไทย', en: 'Thailand', scope_company: '', scope_branch: '', remark: '', status: 'ใช้งาน' }].concat(ctRows);
+      const nowIso = new Date().toISOString(), who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      const stamp = r => Object.assign({ createdAt: nowIso, createdBy: who, updatedAt: nowIso, updatedBy: who }, r);
+      this.setState(s => { const db = Object.assign({}, s.db); db['geo-country'] = ctRows.map(stamp); db['geo-province'] = provRows.map(stamp); db['geo-district'] = distRows.map(stamp); db['geo-subdistrict'] = subRows.map(stamp); return { db, geoImporting: false }; }, () => { this._geoPulled = true; ['geo-country', 'geo-province', 'geo-district', 'geo-subdistrict'].forEach(k => this._geoPush(k)); });
+      this.notifyUp('นำเข้าข้อมูลภูมิศาสตร์: ' + provRows.length + ' จังหวัด · ' + distRows.length + ' อำเภอ · ' + subRows.length + ' ตำบล — กำลังบันทึกลง Google Sheet');
+      this.toast('นำเข้าสำเร็จ ' + provRows.length + '/' + distRows.length + '/' + subRows.length + ' — กำลังซิงก์ลง Google Sheet');
+    }).catch(e => { this.setState({ geoImporting: false }); this.toast('ดึงข้อมูลไม่สำเร็จ: ' + (e && e.message || e)); });
+  }
+  _renderGeo(K, T, c, h, actLegend) {
+    const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const entity = this.geoActive(), meta = this.GEO_META[entity], dbk = meta.db;
+    const rows = this._geoResolve(entity, this.dbRows(dbk, this.GEO_SEED[dbk]) || [], ((this.state.geoFilt || {})['geoCo:' + entity]) || 'ทั้งหมด');
+    const view = this.geoView(entity), roMap = this._geoRoMap(entity);
+    const coAll = this.dbRows('company-management', this.COMPANY_SEED) || [];
+    const brAll = this.dbRows('branch-management', this.BRANCH_SEED) || [];
+    const coOpts = Array.from(new Set(coAll.filter(r => this._normStatus(r.status) === 'ACTIVE').map(r => r.name_th)));
+    const brOpts = Array.from(new Set(brAll.filter(r => this._normStatus(r.status) === 'ACTIVE').map(r => r.name_th)));
+    const parentOpts = meta.parent ? Array.from(new Set((this.dbRows(this.GEO_META[meta.parent].db, this.GEO_SEED[this.GEO_META[meta.parent].db]) || []).filter(r => this._normStatus(r.status) === 'ACTIVE').map(r => r.name_th))) : null;
+    const scopeCell = r => r._ovr ? h('span', null, h('div', { style: { fontWeight: 600, color: acc } }, 'Override' + (r._ovrNew ? ' (ใหม่)' : '')), h('div', { style: { fontSize: 11, color: sub } }, r._ovrScope || '')) : ((r.scope_company || r.scope_branch) ? h('span', null, h('div', { style: { fontWeight: 600 } }, r.scope_company || '—'), r.scope_branch ? h('div', { style: { fontSize: 11, color: sub } }, r.scope_branch) : null) : K.pill(T, 'ข้อมูลกลาง', 200));
+
+    if (view === 'create' || view === 'edit') {
+      const er = view === 'edit' ? (this.state.geoEdit || {})[entity] : null;
+      const mode = er ? ('edit:' + (er.code || er.name_th || '')) : 'new';
+      const dr = this.state.geoDraft || {}, pre = dbk + '|' + mode + '|';
+      const ovDk = pre + '__ovrScope';
+      const ovCur = dr[ovDk] !== undefined ? dr[ovDk] : (er && er._ovr ? (er.scope_company || 'tenant') : '');
+      const ovTk = pre + '__ovrTenant';
+      const ovTCur = dr[ovTk] !== undefined ? dr[ovTk] : (er && er.tenant_id ? String(er.tenant_id) : (this._currentTenant() || ''));
+      const tenantOpts = this._tenantOpts();
+      const _mrows = this.dbRows(dbk, this.GEO_SEED[dbk]) || [];
+      const _baseCode = er ? (er.base_code || er.code) : '';
+      const _master = er ? (_mrows.find(x => x.code === _baseCode) || er) : null;
+      const _sc = ovCur === 'tenant' ? '' : ovCur;
+      const _tid = ovTCur || this._currentTenant() || (_sc ? (this._orgMaps().coTenantByName[_sc] || this._uuidFrom('CO|' + _sc)) : '');
+      const _ovRows = this.dbRows('tenant-geo-override', []) || [];
+      const _ov = ovCur ? _ovRows.find(o => o && o.kind === entity && String(o.tenant_id) === String(_tid) && (o.scope_company || '') === _sc && (o.base_code || '') === _baseCode) : null;
+      const srcRow = ovCur ? (_ov || _master) : _master;
+      const f1 = [['รหัส' + meta.th, 0, meta.code + '-XXX'], ['ชื่อ' + meta.th + ' (ไทย)', 1, 'เช่น ' + meta.eg], ['ชื่อ' + meta.th + ' (อังกฤษ)', 0, meta.en + ' name (EN)']];
+      if (meta.parentField) f1.push([meta.parentLabel, 1, parentOpts]);
+      if (entity === 'subdistrict') f1.push(['รหัสไปรษณีย์', 0, '10500']);
+      const f2 = [['บริษัท', 0, coOpts], ['สาขา', 0, brOpts], ['หมายเหตุ', 0, 'หมายเหตุ', 1]];
+      const secDefs = [[meta.th, meta.ic, f1], ['ขอบเขตข้อมูล (ว่าง = ข้อมูลกลาง)', 'crm', f2]];
+      const mkField = (lb, req, opt, fw) => { const mkey = roMap[lb]; const ev = srcRow ? srcRow[mkey] : null; const dk = pre + lb; const cur = dr[dk] !== undefined ? dr[dk] : (ev != null ? ev : '');
+        const onCh = e => { const v = e.target.value; this.setState(s => ({ geoDraft: Object.assign({}, s.geoDraft, { [dk]: v }) })); };
+        const isSel = Array.isArray(opt);
+        const node = isSel
+          ? h('select', { value: cur || '', onChange: onCh, style: Object.assign({}, K.inp(T), { cursor: 'pointer' }) }, [h('option', { key: '_', value: '' }, /บริษัท|สาขา/.test(lb) ? '— ข้อมูลกลาง —' : '— เลือก —')].concat((opt || []).map(o => h('option', { key: o, value: o }, o))))
+          : h('input', { placeholder: typeof opt === 'string' ? opt : '', value: cur, onChange: onCh, style: K.inp(T) });
+        return K.field(T, lb, node, req === 1, fw); };
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, er ? (er.name_th || er.code) : 'สร้าง' + meta.th + 'ใหม่'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, er ? 'โหมดแก้ไข (Edit)' : 'โหมดสร้างใหม่ (New)')), K.btn(T, 'กลับ', false, 'doc', () => this.setGeoView(entity, er ? 'detail' : 'list')))], { marginBottom: 14, padding: '12px 16px' });
+      const secs = secDefs.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb, req, opt, fw]) => mkField(lb, req, opt, fw))));
+      const stDk = pre + 'สถานะ';
+      const stCur = dr[stDk] !== undefined ? dr[stDk] : (srcRow ? this.statusDesc(srcRow.status) : 'ใช้งาน');
+      const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, this.statusDesc(stCur), this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ geoDraft: Object.assign({}, s.geoDraft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPTS.map(o => h('option', { key: o, value: o }, o)))))], { marginBottom: 14, padding: '12px 16px' });
+      const tenantRow = ovCur ? h('div', { key: 'trow', style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 } }, h('span', { style: { fontSize: 12, fontWeight: 600, color: sub, minWidth: 90 } }, 'ผู้เช่า (Tenant)'), h('select', { value: ovTCur, onChange: e => { const v = e.target.value; this.setState(s => ({ geoDraft: { [ovDk]: ovCur, [ovTk]: v } })); }, style: Object.assign({}, K.inp(T), { width: 'auto', minWidth: 260, cursor: 'pointer' }) }, [h('option', { key: '_none', value: '' }, tenantOpts.length ? '— เลือกผู้เช่า —' : '— ไม่มีรายการผู้เช่า (อิงบริษัท) —'), ...tenantOpts.map(t => h('option', { key: t.id, value: t.id }, (t.code ? t.code + ' · ' : '') + t.name_th))])) : null;
+      const ovrCard = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('crm', 17)), h('div', { style: { flex: 1, minWidth: 180 } }, h('div', { style: { fontSize: 13, fontWeight: 700 } }, '๑. ขอบเขตการบันทึก (Override) — เลือกก่อน'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, ovCur ? 'กำลังแสดง/แก้ข้อมูล Override เฉพาะขอบเขตนี้' : 'กำลังแสดง/แก้ข้อมูลกลาง (master)')), h('select', { value: ovCur, onChange: e => { const v = e.target.value; this.setState(s => { const g = s.geoDraft || {}; return { geoDraft: { [ovDk]: v, [ovTk]: g[ovTk] } }; }); }, style: Object.assign({}, K.inp(T), { width: 'auto', minWidth: 220, cursor: 'pointer', borderColor: ovCur ? acc : undefined }) }, [h('option', { key: '_g', value: '' }, 'ข้อมูลกลาง (แก้ master)'), h('option', { key: '_t', value: 'tenant' }, 'เฉพาะผู้เช่านี้'), ...coOpts.map(o => h('option', { key: o, value: o }, 'เฉพาะบริษัท: ' + o))])), tenantRow], { marginBottom: 14, padding: '12px 16px' });
+      return [hdr, ovrCard, ...secs, statusEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => this.geoCancel(entity)), K.btn(T, 'บันทึก', true, 'check', () => this.doSaveGeo(entity))), actLegend(['Create', 'Update', 'Delete', 'Activate', 'Export'])];
+    }
+
+    if (view === 'detail') {
+      const r = (this.state.geoSel || {})[entity] || rows[0];
+      if (!r) { this.setGeoView(entity, 'list'); return []; }
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.name_th || r.code), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'รหัส ' + (r.code || '—') + ' · โหมดดูข้อมูล (Read-only)')), h('div', { style: { display: 'flex', gap: 7, flexWrap: 'wrap' } }, K.btn(T, 'กลับสู่รายการ', false, 'list', () => this.setGeoView(entity, 'list')), K.btn(T, 'แก้ไข', true, 'doc', () => this.geoEditRow(entity, r)), K.btn(T, 'สร้างใหม่', false, 'plus', () => this.geoCreate(entity))))], { marginBottom: 14, padding: '12px 16px' });
+      const f1 = [['รหัส' + meta.th], ['ชื่อ' + meta.th + ' (ไทย)'], ['ชื่อ' + meta.th + ' (อังกฤษ)']];
+      if (meta.parentField) f1.push([meta.parentLabel]);
+      if (entity === 'subdistrict') f1.push(['รหัสไปรษณีย์']);
+      const f2 = [['บริษัท'], ['สาขา'], ['หมายเหตุ', 0, 0, 1]];
+      const secDefs = [[meta.th, meta.ic, f1], ['ขอบเขตข้อมูล', 'crm', f2]];
+      const secs = secDefs.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb, , , fw]) => { const mkey = roMap[lb]; let val = r[mkey]; if ((mkey === 'scope_company' || mkey === 'scope_branch') && !val) val = 'ข้อมูลกลาง (Global)'; return K.field(T, lb, K.roField(T, val), false, fw); })));
+      const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, this.statusDesc(r.status || 'ใช้งาน'), this.statusHue(r.status || 'ใช้งาน'))))], { marginBottom: 14, padding: '12px 16px' });
+      const _fmtDtG = v => { if (!v) return '—'; try { return new Date(v).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return String(v); } };
+      const auditSecG = K.formSec(T, 'ข้อมูลระบบ (System Info)', 'gauge', [K.field(T, 'สร้างเมื่อ (CreatedAt)', K.roField(T, _fmtDtG(r.createdAt))), K.field(T, 'สร้างโดย (CreatedBy)', K.roField(T, r.createdBy || '—')), K.field(T, 'แก้ไขล่าสุด (UpdatedAt)', K.roField(T, _fmtDtG(r.updatedAt))), K.field(T, 'แก้ไขโดย (UpdatedBy)', K.roField(T, r.updatedBy || '—'))]);
+      return [hdr, ...secs, auditSecG, statusEditor];
+    }
+
+    // ---- list ----
+    const filtKey = 'geoCo:' + entity, coFilt = (this.state.geoFilt || {})[filtKey] || 'ทั้งหมด';
+    const setFilt = v => this.setState(s => ({ geoFilt: Object.assign({}, s.geoFilt, { [filtKey]: v }) }));
+    const active = rows.filter(r => this._normStatus(r.status) === 'ACTIVE');
+    const globalCnt = rows.filter(r => !r.scope_company && !r.scope_branch).length;
+    const kpiCards = [[meta.th + 'ทั้งหมด', String(rows.length), meta.en, 145], ['เปิดใช้งาน', String(active.length), 'ACTIVE', 130], ['ข้อมูลกลาง', String(globalCnt), 'ไม่ผูกบริษัท', 35], meta.parent ? [meta.parentLabel + 'อ้างอิง', String(new Set(rows.map(r => r[meta.parentField]).filter(Boolean)).size), '—', 145] : ['เฉพาะบริษัท', String(rows.length - globalCnt), '—', 145]];
+    // global rows (blank company) always shown under every selection
+    const fRows = coFilt === 'ทั้งหมด' ? rows : rows.filter(r => !r.scope_company || r.scope_company === coFilt);
+    const coFilterRow = h('div', { key: 'geocof', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 } }, h('span', { style: { fontSize: 11.5, fontWeight: 700, color: sub } }, 'บริษัท :'), h('select', { value: coFilt, onChange: e => setFilt(e.target.value), style: Object.assign({}, K.inp(T), { width: 'auto', minWidth: 200, cursor: 'pointer' }) }, ['ทั้งหมด'].concat(coOpts).map(o => h('option', { key: o, value: o }, o))), h('span', { style: { fontSize: 11, color: sub } }, 'ข้อมูลกลางแสดงในทุกตัวเลือก'));
+    const nameCol = { h: 'ชื่อ' + meta.th, render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.name_th), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) };
+    let cols = [{ h: 'รหัส', k:'code', b: true }, nameCol];
+    if (meta.parentField) cols.push({ h: meta.parentLabel, k: meta.parentField, b: true });
+    if (entity === 'subdistrict') cols.push({ h: 'รหัสไปรษณีย์', k: 'zip' });
+    cols.push({ h: 'ขอบเขต (บริษัท / สาขา)', render: scopeCell }, { h: 'สถานะ', render: r => K.pill(T, this.statusDesc(r.status), this.statusHue(r.status)) });
+    cols.push({ h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); this.geoOpen(entity, r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู'), h('button', { onClick: e => { e.stopPropagation(); this.geoEditRow(entity, r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'แก้ไข')) });
+    const sel = (this.state.geoSel || {})[entity] || null;
+    const sortSt = (this.state.sort || {})['geo:' + entity] || { key: 'code', dir: 'asc' };
+    const setSort = key => this.setState(s => { const cur = (s.sort || {})['geo:' + entity] || { key: 'code', dir: 'asc' }; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: Object.assign({}, s.sort, { ['geo:' + entity]: { key, dir } }) }; });
+    const sorted = sortSt.key ? fRows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); }) : fRows;
+    const createBtn = K.btn(T, 'สร้าง' + meta.th, true, 'plus', () => this.geoCreate(entity));
+    const importing = !!this.state.geoImporting;
+    const importRow = h('div', { key: 'geoimp', style: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14, padding: '11px 14px', borderRadius: 10, border: `1px dashed ${c.border}`, background: c.winHead } },
+      h('span', { style: { display: 'flex', width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: c.accSoft, color: acc, alignItems: 'center', justifyContent: 'center' } }, K.Icon('arrowdown', 16)),
+      h('div', { style: { flex: 1, minWidth: 180 } }, h('div', { style: { fontSize: 12.5, fontWeight: 700 } }, 'นำเข้าข้อมูลจริง — จังหวัด / อำเภอ / ตำบล (ประเทศไทย)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'ดึงจากชุดข้อมูลสาธารณะ (77 จังหวัด · 928 อำเภอ · 7,436 ตำบล พร้อมรหัสไปรษณีย์) แล้วบันทึกลง Google Sheet โดยอัตโนมัติ')),
+      K.btn(T, importing ? 'กำลังนำเข้า…' : 'นำเข้าข้อมูลจริง', true, 'arrowdown', () => this._importThaiGeo()));
+    return [K.kpi(T, kpiCards), importRow, this.state.geoLoading ? h('div', { key: 'geoload', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '10px 14px', borderRadius: 10, border: `1px solid ${c.border}`, background: c.accSoft, color: aTxt, fontSize: 12.5, fontWeight: 600 } }, h('span', { style: { display: 'inline-block', width: 15, height: 15, border: `2px solid ${acc}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'erpspin .7s linear infinite' } }), 'กำลังโหลดข้อมูลภูมิศาสตร์จาก Google Sheet… (ตำบลมี 7,436 รายการ อาจใช้เวลาสักครู่)') : null, coFilterRow, K.grid(T, cols, sorted, r => this.geoOpen(entity, r), sel, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, 'geo:' + entity, sel ? (sel.code || sel.name_th) : null, meta.th, createBtn), actLegend(['Create', 'Update', 'Delete', 'Activate', 'Export', 'Import'])];
+  }
+
+  CFG() {
+    const T = Object.assign({ sub: this.K.tk(this.T()).sub }, this.T());
+    const h = this.K.h;
+    const P = (t, hu) => this.K.pill(this.T(), t, hu);
+    const CC_NAME = { 'CC-1001': 'ฝ่ายขาย — สำนักงานใหญ่', 'CC-1002': 'แผนกขายต่างประเทศ', 'CC-1003': 'ฝ่ายจัดซื้อ — สำนักงานใหญ่', 'CC-1101': 'ฝ่ายขาย — เชียงใหม่', 'CC-1102': 'ฝ่ายจัดซื้อ — เชียงใหม่', 'CC-2001': 'ฝ่ายบัญชีการเงิน', 'CC-2002': 'แผนกการเงิน', 'CC-2101': 'ฝ่ายไอที — เชียงใหม่', 'CC-3001': 'ฝ่ายโลจิสติกส์', 'CC-3002': 'ฝ่ายคลังสินค้า' };
+    const ccMapShared = (this.bus() ? this.bus().get('cc.assign', {}) : {}) || {};
+    const ccOf = (r) => (ccMapShared[r.code] !== undefined ? ccMapShared[r.code] : (r.cost_center || ''));
+    const ccCell = (v) => v ? v + ' · ' + (CC_NAME[v] || '') : P('ยังไม่ผูก', 35);
+    // ---- generated organization seed: every company × branch × division × department × position ----
+    const DEPT_OF = {
+      'ฝ่ายขาย': ['แผนกขายในประเทศ', 'แผนกขายต่างประเทศ', 'แผนกลูกค้าสัมพันธ์'],
+      'ฝ่ายจัดซื้อ': ['แผนกจัดซื้อในประเทศ', 'แผนกจัดซื้อต่างประเทศ'],
+      'ฝ่ายบัญชีการเงิน': ['แผนกบัญชี', 'แผนกการเงิน'],
+      'ฝ่ายทรัพยากรบุคคล': ['แผนกสรรหาและว่าจ้าง', 'แผนกบริหารค่าตอบแทน'],
+      'ฝ่ายไอที': ['แผนกโครงสร้างพื้นฐาน', 'แผนกพัฒนาระบบ'],
+      'ฝ่ายผลิต': ['แผนกวางแผนการผลิต', 'แผนกประกอบ', 'แผนกควบคุมคุณภาพ'],
+      'ฝ่ายคลังสินค้า': ['แผนกคลังสินค้า', 'แผนกรับ-จ่ายสินค้า'],
+      'ฝ่ายบริหาร': ['แผนกธุรการ', 'แผนกกฎหมาย'],
+      'ฝ่ายโลจิสติกส์': ['แผนกขนส่ง', 'แผนกวางแผนเส้นทาง'],
+      'ฝ่ายบริการลูกค้า': ['แผนกบริการลูกค้า']
+    };
+    const DIV_TPL = {
+      MEE: [['ฝ่ายบริหาร', 'ฝ่ายขาย', 'ฝ่ายจัดซื้อ', 'ฝ่ายผลิต', 'ฝ่ายคลังสินค้า', 'ฝ่ายบัญชีการเงิน', 'ฝ่ายทรัพยากรบุคคล', 'ฝ่ายไอที'], ['ฝ่ายขาย', 'ฝ่ายจัดซื้อ', 'ฝ่ายคลังสินค้า', 'ฝ่ายบัญชีการเงิน']],
+      MET: [['ฝ่ายขาย', 'ฝ่ายจัดซื้อ', 'ฝ่ายคลังสินค้า', 'ฝ่ายบัญชีการเงิน', 'ฝ่ายทรัพยากรบุคคล', 'ฝ่ายไอที'], ['ฝ่ายขาย', 'ฝ่ายคลังสินค้า', 'ฝ่ายไอที']],
+      MEL: [['ฝ่ายโลจิสติกส์', 'ฝ่ายคลังสินค้า', 'ฝ่ายบริการลูกค้า', 'ฝ่ายบัญชีการเงิน', 'ฝ่ายทรัพยากรบุคคล'], ['ฝ่ายโลจิสติกส์', 'ฝ่ายคลังสินค้า']],
+      _: [['ฝ่ายบริหาร', 'ฝ่ายขาย', 'ฝ่ายบัญชีการเงิน'], ['ฝ่ายขาย']]
+    };
+    const coMaster = this.dbRows('company-management', this.COMPANY_SEED) || [];
+    const brMaster = this.dbRows('branch-management', this.BRANCH_SEED) || [];
+    const abbrOf = (row) => { const m = String(row.code || '').match(/([A-Z]{2,4})$/); return m ? m[1] : String(row.name_th || 'CO').slice(0, 3).toUpperCase(); };
+    const ORG = coMaster.map(co => {
+      const ab = abbrOf(co);
+      const tpl = DIV_TPL[ab] || DIV_TPL._;
+      const brs = brMaster.filter(b => b.scope_company === co.name_th).map(b => {
+        const ty = b.type || '';
+        const isHQ = ty ? ty === 'สำนักงานใหญ่' : /สำนักงานใหญ่/.test(String(b.name_th || ''));
+        const inactive = this._normStatus(co.status) !== 'ACTIVE' || this._normStatus(b.status) !== 'ACTIVE';
+        return [b.name_th, isHQ && !inactive, isHQ ? tpl[0] : tpl[1], inactive ? 'INACTIVE' : 'ACTIVE', String(b.code || '').replace(/^BR-/, '') || (ab + '-XX')];
+      });
+      return [co.name_th, ab, this._normStatus(co.status), brs];
+    });
+    const NAMES = ['ก. ธนกร', 'ส. ปรียา', 'ว. อนุชา', 'ม. กมล', 'เจน', 'คุณรบ', 'ธ. ชัยวัฒน์', 'ณ. วิไล', 'อ. สุชาติ', 'พ. มณฑา', 'ร. เอกชัย', 'จ. ศิริพร'];
+    const GH = { C9: 300, C8: 275, C7: 265, C6: 200, C5: 35, C4: 200, C3: 158, C2: 145, C1: 130 };
+    const DVROWS = [], DPROWS = [], PSROWS = [];
+    let nameI = 0;
+    const pick = () => NAMES[(nameI++) % NAMES.length];
+    const pad = (n) => String(n).padStart(3, '0');
+    ORG.forEach(([co, ab, cst, brs]) => {
+      brs.forEach(([br, isHQ, divs, brSt, brKey], bi) => {
+        const st = brSt || cst;
+        let dvN = 0, dpN = 0, psN = 0;
+        divs.forEach(dvName => {
+          dvN += 1;
+          const dvCode = 'DV-' + brKey + '-' + pad(dvN);
+          const deptList = isHQ ? (DEPT_OF[dvName] || []) : (DEPT_OF[dvName] || []).slice(0, 1);
+          const dvHead = pick();
+          DVROWS.push({ code: dvCode, name_th: dvName, scope_company: co, parent_branch: br, manager: dvHead, dcnt: '0', cnt: '0 / 0', status: st });
+          deptList.forEach((dpName, di) => {
+            dpN += 1;
+            const dpCode = 'DP-' + brKey + '-' + pad(dpN);
+            const dpHead = pick();
+            DPROWS.push({ code: dpCode, name_th: dpName, scope_company: co, parent_branch: br, division: dvName, manager: dpHead, cnt: '0 / 0', cost_center: '', cost_center_alt: '', status: st });
+            const short = dpName.replace('แผนก', '');
+            const posSpecs = [];
+            if (di === 0) posSpecs.push([(isHQ ? 'ผู้อำนวยการ' : 'ผู้จัดการ') + dvName, isHQ ? 'C8' : 'C7', '1 / 1']);
+            posSpecs.push(['หัวหน้า' + dpName, 'C6', '1 / 1']);
+            posSpecs.push(['เจ้าหน้าที่' + short, 'C3', (3 + ((dpN * 5) % 9)) + ' / ' + (4 + ((dpN * 5) % 9))]);
+            posSpecs.forEach(([pName, g, cnt]) => {
+              psN += 1;
+              PSROWS.push({ code: 'PS-' + brKey + '-' + pad(psN), name_th: pName, scope_company: co, parent_branch: br, division: dvName, department: dpName, g: g, gh: GH[g], cnt: cnt, rep: g === 'C3' ? 'หัวหน้า' + dpName : (g === 'C6' ? (isHQ ? 'ผู้อำนวยการ' : 'ผู้จัดการ') + dvName : 'กรรมการผู้จัดการ'), status: st });
+            });
+          });
+        });
+      });
+    });
+    const parseSeat = (v) => { const p = String(v || '').split('/'); return [parseInt(p[0], 10) || 0, parseInt(p[1], 10) || 0]; };
+    DPROWS.forEach(d => { let f = 0, t = 0; PSROWS.forEach(p => { if (p.scope_company === d.scope_company && p.parent_branch === d.parent_branch && p.department === d.name_th) { const c = parseSeat(p.cnt); f += c[0]; t += c[1]; } }); d.cnt = f + ' / ' + t; });
+    DVROWS.forEach(v => { let f = 0, t = 0, n = 0; DPROWS.forEach(d => { if (d.scope_company === v.scope_company && d.parent_branch === v.parent_branch && d.division === v.name_th) { n += 1; const c = parseSeat(d.cnt); f += c[0]; t += c[1]; } }); v.dcnt = String(n); v.cnt = f + ' / ' + t; });
+    const brHead = {}; PSROWS.forEach(p => { const k = p.scope_company + '|' + p.parent_branch; const c = parseSeat(p.cnt); brHead[k] = (brHead[k] || 0) + c[0]; });
+    this.BRANCH_SEED.forEach(b => { const k = b.scope_company + '|' + b.name_th; if (brHead[k] != null) b.headcount = brHead[k]; });
+    const coHead = {}; this.BRANCH_SEED.forEach(b => { coHead[b.scope_company] = (coHead[b.scope_company] || 0) + (brHead[b.scope_company + '|' + b.name_th] || 0); });
+    this.COMPANY_SEED.forEach(co => { if (coHead[co.name_th] != null) co.headcount = coHead[co.name_th]; });
+    brMaster.forEach(b => { const k = b.scope_company + '|' + b.name_th; if (brHead[k] != null) b.headcount = brHead[k]; });
+    coMaster.forEach(co => { if (coHead[co.name_th] != null) co.headcount = coHead[co.name_th]; });
+    const CFG={
+      'business-group':{th:'ข้อมูลกลุ่มธุรกิจ',en:'Business Group',
+        screens:[['list','Business Group List — รายการกลุ่มธุรกิจ','list'],['detail','Business Group Detail — รายละเอียดกลุ่มธุรกิจ','doc'],['create','Create Business Group — สร้างกลุ่มธุรกิจ','plus']],
+        kpi:[['กลุ่มธุรกิจทั้งหมด','3','Business Group',145],['ผลิต','1','Manufacturing',145],['ซื้อมาขายไป','1','Trading',35],['บริการ','1','Service',145]],
+        cols:[{h:'Business Code',k:'code',b:true},{h:'ชื่อกลุ่มธุรกิจ',render:r=>h('span',null,h('div',{style:{fontWeight:600}},r.name_th),h('div',{style:{fontSize:11,color:T.sub}},r.en||''))},{h:'ประเภทธุรกิจ',render:r=>P(r.bt,this.btHue(r.bt))},{h:'สถานะ',render:r=>P(this.statusDesc(r.status),this.statusHue(r.status))}],
+        rows:[
+          {code:'BG-01',bid:1,name_th:'กลุ่มการผลิต',en:'Manufacturing Group',bt:'ผลิต (Manufacturing)',status:'ใช้งาน',createdAt:'2026-01-05T03:00:00.000Z',createdBy:'ผู้ดูแลระบบ',updatedAt:'2026-01-05T03:00:00.000Z',updatedBy:'ผู้ดูแลระบบ',rowVersion:1},
+          {code:'BG-02',bid:2,name_th:'กลุ่มค้าปลีก-ค้าส่ง',en:'Trading Group',bt:'ซื้อมาขายไป (Trading)',status:'ใช้งาน',createdAt:'2026-01-05T03:00:00.000Z',createdBy:'ผู้ดูแลระบบ',updatedAt:'2026-01-05T03:00:00.000Z',updatedBy:'ผู้ดูแลระบบ',rowVersion:1},
+          {code:'BG-03',bid:3,name_th:'กลุ่มบริการ',en:'Service Group',bt:'บริการ (Service)',status:'ใช้งาน',createdAt:'2026-01-05T03:00:00.000Z',createdBy:'ผู้ดูแลระบบ',updatedAt:'2026-01-05T03:00:00.000Z',updatedBy:'ผู้ดูแลระบบ',rowVersion:1}],
+        form:[['ข้อมูลกลุ่มธุรกิจ','box',[['รหัสกลุ่มธุรกิจ (Business Code)',0,'BG-04'],['ชื่อกลุ่มธุรกิจ (ไทย)',1,'เช่น กลุ่มการผลิต'],['ชื่อกลุ่มธุรกิจ (อังกฤษ)',0,'Business group name (EN)'],['ประเภทธุรกิจ (Business Type)',1,['ผลิต (Manufacturing)','ซื้อมาขายไป (Trading)','บริการ (Service)']]]]],
+        roMap:{'รหัสกลุ่มธุรกิจ (Business Code)':'code','ชื่อกลุ่มธุรกิจ (ไทย)':'name_th','ชื่อกลุ่มธุรกิจ (อังกฤษ)':'en','ประเภทธุรกิจ (Business Type)':'bt'},
+        acts:['Create','Update','Delete','Activate','Export']},
+      'company-management':{th:'ข้อมูลบริษัท',en:'Company Management',
+        screens:[['list','Company List — รายการบริษัท','list'],['detail','Company Detail — รายละเอียดบริษัท','doc'],['create','Create Company — สร้างบริษัท','plus']],
+        kpi:[['บริษัทในเครือ','4','นิติบุคคล',145],['สาขารวม','28','+2',145],['พนักงานรวม','1,842','—',35],['สกุลเงินที่ใช้','3','THB/USD/CNY',145]],
+        cols:[{h:'รหัส',k:'code',b:true},{h:'ชื่อบริษัท',render:r=>h('span',null,h('div',{style:{fontWeight:600}},r.name_th),h('div',{style:{fontSize:11,color:T.sub}},r.name_en))},{h:'เลขผู้เสียภาษี',k:'tax_id'},{h:'สถานะ',render:r=>P(this.statusDesc(r.status),this.statusHue(r.status))}],
+        rows:this.COMPANY_SEED,
+        form:[['ข้อมูลบริษัท','box',[['รหัสบริษัท',0,'CO-05'],['เลขผู้เสียภาษี',1,'0-0000-00000-00-0'],['ชื่อบริษัท (ไทย)',1,'เช่น บจก. มี ...'],['ชื่อบริษัท (อังกฤษ)',0,'Company name'],['เลขทะเบียนนิติบุคคล',0,'เลขทะเบียน 13 หลัก'],['ชื่อนิติบุคคล',0,'ชื่อนิติบุคคลเต็ม'],['ประเภทนิติบุคคล',1,['บริษัทจำกัด','บริษัทมหาชนจำกัด','ห้างหุ้นส่วนจำกัด','อื่นๆ']],['อ้างอิงกลุ่มผู้เช่า (Tenant)',1,[]]]],['ข้อมูลติดต่อ','crm',[['ที่อยู่จดทะเบียน',0,'ที่อยู่',1],['โทรศัพท์',0,'0-2xxx-xxxx'],['โทรสาร (Fax)',0,'0-2xxx-xxxx'],['อีเมล',0,'info@company.com'],['เว็บไซต์',0,'www.company.com']]],['ข้อมูลการเงิน','cash',[['ทุนจดทะเบียน',0,'฿0.00'],['สกุลเงินหลัก',1,['THB','USD','CNY']],['ปีบัญชีเริ่ม',1,['มกราคม','เมษายน','ตุลาคม']],['บริษัทแม่',1,['— ไม่มี —','บมจ. มี กรุ๊ป']],['เขตเวลา',0,'Asia/Bangkok'],['หมายเหตุ',0,'หมายเหตุ',1]]]],
+        acts:['Create','Update','Delete','Activate','Export'],
+        roMap:{'รหัสบริษัท':'code','ชื่อบริษัท (ไทย)':'name_th','ชื่อบริษัท (อังกฤษ)':'name_en','เลขผู้เสียภาษี':'tax_id','ที่อยู่จดทะเบียน':'address','ทุนจดทะเบียน':'registered_capital','สกุลเงินหลัก':'currency','ปีบัญชีเริ่ม':'fiscal_year_start','บริษัทแม่':'parent_company','โทรศัพท์':'phone','โทรสาร (Fax)':'fax','อีเมล':'email','เว็บไซต์':'website','เลขทะเบียนนิติบุคคล':'reg','ชื่อนิติบุคคล':'legal','ประเภทนิติบุคคล':'ltype','เขตเวลา':'tz','หมายเหตุ':'remark','อ้างอิงกลุ่มผู้เช่า (Tenant)':'tenant_id'}},
+      'branch-management':{th:'ข้อมูลสาขา',en:'Branch Management',
+        screens:[['list','Branch List — รายการสาขา','list'],['detail','Branch Detail — รายละเอียดสาขา','doc'],['create','Create Branch — สร้างสาขา','plus']],
+        kpi:[['สาขาทั้งหมด','28','+2 ปีนี้',145],['สำนักงานใหญ่','4','ต่อบริษัท',35],['สาขาย่อย','24','—',145],['จังหวัดครอบคลุม','12','—',145]],
+        cols:[{h:'รหัสสาขา',k:'code',b:true},{h:'ชื่อสาขา',k:'name_th',b:true},{h:'บริษัท',k:'scope_company'},{h:'จังหวัด',render:r=>h('span',null,this._geoDisp('province',r.province)||'—')},{h:'สถานะ',render:r=>P(this.statusDesc(r.status),this.statusHue(r.status))}],
+        rows:this.BRANCH_SEED,
+        form:[['ข้อมูลสาขา','box',[['รหัสสาขา',0,'BR-029'],['ประเภท',1,this.BRANCH_TYPE_OPTS],['ชื่อสาขา',1,'เช่น สาขาภูเก็ต'],['ชื่อสาขา (อังกฤษ)',0,'Branch name (EN)'],['บริษัท',1,['มี กรุ๊ป','มี เทรดดิ้ง','มี โลจิสติกส์']],['สถานะการดำเนินงาน',1,this.OPERATING_OPTS],['รหัสสาขาภาษี',0,'00000'],['เลขประจำตัวผู้เสียภาษี',0,'เลข 13 หลัก']]],['ที่ตั้ง','crm',[['ที่อยู่',0,'ที่อยู่สาขา'],['ประเทศ',1,['ประเทศไทย']],['จังหวัด',1,['กรุงเทพฯ','เชียงใหม่','ภูเก็ต','ขอนแก่น']],['อำเภอ',0,['—']],['ตำบล',0,['—']],['รหัสไปรษณีย์',0,'10000'],['โทรศัพท์',0,'0x-xxx-xxxx'],['ผู้จัดการสาขา',0,'ชื่อผู้จัดการ'],['อีเมลสาขา',0,'branch@company.com'],['หมายเหตุ',0,'หมายเหตุ',1]]]],
+        roMap:{'รหัสสาขา':'code','ชื่อสาขา':'name_th','บริษัท':'scope_company','ประเภท':'type','สถานะการดำเนินงาน':'opst','ประเทศ':'country','จังหวัด':'province','อำเภอ':'district','ตำบล':'subdist','ที่อยู่':'address','โทรศัพท์':'phone','ผู้จัดการสาขา':'manager','ชื่อสาขา (อังกฤษ)':'ben','รหัสสาขาภาษี':'taxbr','เลขประจำตัวผู้เสียภาษี':'btax','รหัสไปรษณีย์':'zip','อีเมลสาขา':'bemail','หมายเหตุ':'remark'},
+        acts:['Create','Update','Delete','Activate','Export']},
+      'department-management':{th:'ข้อมูลแผนก',en:'Department Management',
+        screens:[['list','Department List — รายการแผนก','list'],['detail','Department Detail — รายละเอียดแผนก','doc'],['create','Create Department — สร้างแผนก','plus']],
+        kpi:[['แผนกทั้งหมด','36','—',145],['ระดับสูงสุด','4','ชั้น',35],['พนักงานเฉลี่ย/แผนก','51','—',145],['แผนกเปิดรับ','6','ตำแหน่งว่าง',35]],
+        cols:[{h:'รหัส',k:'code',b:true},{h:'ชื่อแผนก',k:'name_th',b:true},{h:'บริษัท',k:'scope_company'},{h:'สาขา',k:'parent_branch'},{h:'ฝ่าย',k:'division'},{h:'หัวหน้าแผนก',k:'manager'},{h:'ศูนย์ต้นทุนเริ่มต้น',k:'cost_center',render:r=>ccCell(ccOf(r))},{h:'พนักงาน (มี/อัตรา)',k:'cnt',r:true}],
+        rows:DPROWS,
+        tree:[['สำนักงานใหญ่',0],['ฝ่ายขาย',1],['แผนกขายในประเทศ',2],['แผนกขายต่างประเทศ',2],['ฝ่ายจัดซื้อ',1],['ฝ่ายบัญชีการเงิน',1],['แผนกบัญชี',2],['แผนกการเงิน',2],['ฝ่ายไอที',1]],
+        form:[['ข้อมูลแผนก','box',[['รหัสแผนก',0,'DP-50'],['ชื่อแผนก',1,'เช่น แผนกการตลาด'],['บริษัท',1,[]],['สาขา',1,[]],['ฝ่าย',1,[]],['หัวหน้าแผนก',0,'ชื่อหัวหน้า'],['ชื่อแผนก (อังกฤษ)',0,'Department name (EN)'],['หมายเหตุ',0,'หมายเหตุ',1]]]],
+        roMap:{'รหัสแผนก':'code','ชื่อแผนก':'name_th','บริษัท':'scope_company','สาขา':'parent_branch','ฝ่าย':'division','หัวหน้าแผนก':'manager','ศูนย์ต้นทุนเริ่มต้น (ดูอย่างเดียว — คีย์ที่ ACCT-CC)':r=>ccOf(r)?ccOf(r)+' · '+(CC_NAME[ccOf(r)]||''):'ยังไม่ผูก','ศูนย์ต้นทุนที่อนุญาตเพิ่มเติม':'cost_center_alt','ชื่อแผนก (อังกฤษ)':'den','หมายเหตุ':'remark'},
+        acts:['Create','Update','Delete','Activate','Export']},
+      'division-management':{th:'ข้อมูลฝ่าย',en:'Division Management',
+        screens:[['list','Division List — รายการฝ่าย','list'],['detail','Division Detail — รายละเอียดฝ่าย','doc'],['create','Create Division — สร้างฝ่าย','plus']],
+        kpi:[['ฝ่ายทั้งหมด','9','—',145],['ระดับสูงสุด','3','ชั้น',35],['พนักงานเฉลี่ย/ฝ่าย','205','—',145],['ฝ่ายเปิดรับ','3','ตำแหน่งว่าง',35]],
+        cols:[{h:'รหัส',k:'code',b:true},{h:'ชื่อฝ่าย',k:'name_th',b:true},{h:'บริษัท',k:'scope_company'},{h:'สาขา',k:'parent_branch'},{h:'ผู้อำนวยการฝ่าย',k:'manager'},{h:'แผนกในสังกัด',k:'dcnt',r:true},{h:'พนักงาน (มี/อัตรา)',k:'cnt',r:true}],
+        rows:DVROWS,
+        tree:[['สำนักงานใหญ่',0],['ฝ่ายขาย',1],['ฝ่ายจัดซื้อ',1],['ฝ่ายบัญชีการเงิน',1],['ฝ่ายไอที',1],['ฝ่ายผลิต',1],['ฝ่ายทรัพยากรบุคคล',1]],
+        form:[['ข้อมูลฝ่าย','box',[['รหัสฝ่าย',0,'DV-50'],['ชื่อฝ่าย',1,'เช่น ฝ่ายการตลาด'],['บริษัท',1,[]],['สาขา',1,[]],['ผู้อำนวยการฝ่าย',0,'ชื่อผู้อำนวยการ'],['ชื่อฝ่าย (อังกฤษ)',0,'Division name (EN)'],['หมายเหตุ',0,'หมายเหตุ',1]]]],
+        roMap:{'รหัสฝ่าย':'code','ชื่อฝ่าย':'name_th','บริษัท':'scope_company','สาขา':'parent_branch','ผู้อำนวยการฝ่าย':'manager','ชื่อฝ่าย (อังกฤษ)':'den','หมายเหตุ':'remark'},
+        acts:['Create','Update','Delete','Activate','Export']},
+      'business-unit':{th:'หน่วยธุรกิจ',en:'Business Unit',disabled:true,
+        screens:[['list','Business Unit List','list'],['detail','Business Unit Detail — รายละเอียด','doc'],['create','Create Business Unit — สร้างหน่วยธุรกิจ','plus']],
+        kpi:[['หน่วยธุรกิจ','5','BU',145],['รายได้รวม','฿842M','+11%',145],['ศูนย์กำไร','5','Profit Center',145],['ศูนย์ต้นทุน','12','Cost Center',35]],
+        cols:[{h:'รหัส BU',k:'code',b:true},{h:'ชื่อหน่วยธุรกิจ',k:'name_th',b:true},{h:'ประเภท',render:r=>P(r.type,r.th_)},{h:'ผู้รับผิดชอบ',k:'manager'},{h:'รายได้ (ปี)',k:'rev',b:true}],
+        rows:[{code:'BU-01',name_th:'ธุรกิจค้าปลีก',type:'Profit Center',th_:130,manager:'ก. ธนกร',rev:'฿420M'},{code:'BU-02',name_th:'ธุรกิจค้าส่ง',type:'Profit Center',th_:130,manager:'ส. ปรียา',rev:'฿286M'},{code:'BU-03',name_th:'ธุรกิจบริการ',type:'Profit Center',th_:130,manager:'ว. อนุชา',rev:'฿98M'},{code:'BU-04',name_th:'ฝ่ายสนับสนุนกลาง',type:'Cost Center',th_:35,manager:'ม. กมล',rev:'—'}],
+        form:[['ข้อมูลหน่วยธุรกิจ','box',[['รหัส BU',0,'BU-06'],['ชื่อหน่วยธุรกิจ',1,'เช่น ธุรกิจส่งออก'],['ประเภท',1,['Profit Center','Cost Center','Investment Center']],['ผู้รับผิดชอบ',0,'ชื่อผู้รับผิดชอบ']]]],
+        roMap:{'รหัส BU':'code','ชื่อหน่วยธุรกิจ':'name_th','ประเภท':r=>r.type,'ผู้รับผิดชอบ':'manager'},
+        acts:['Create','Update','Delete','Activate','Export']},
+      'position-management':{th:'ข้อมูลตำแหน่ง',en:'Position Management',
+        screens:[['list','Position List — รายการตำแหน่ง','list'],['detail','Position Detail — รายละเอียดตำแหน่ง','doc'],['create','Create Position — สร้างตำแหน่ง','plus']],
+        kpi:[['ตำแหน่งทั้งหมด','128','—',145],['ระดับ (Job Grade)','9','C1–C9',35],['ตำแหน่งว่าง','14','เปิดรับ',35],['อัตรากำลัง','1,842 / 1,900','97%',145]],
+        cols:[{h:'รหัส',k:'code',b:true},{h:'ชื่อตำแหน่ง',k:'name_th',b:true},{h:'บริษัท',k:'scope_company'},{h:'สาขา',k:'parent_branch'},{h:'ฝ่าย',k:'division'},{h:'แผนก',k:'department'},{h:'ระดับ',render:r=>P(r.g,r.gh)},{h:'รายงานต่อ',k:'rep'},{h:'อัตรา (มี/ทั้งหมด)',k:'cnt'}],
+        rows:PSROWS,
+        form:[['ข้อมูลตำแหน่ง','user',[['รหัสตำแหน่ง',0,'PS-5001'],['ชื่อตำแหน่ง',1,'เช่น นักวิเคราะห์ธุรกิจ'],['บริษัท',1,[]],['สาขา',1,[]],['ฝ่าย',1,[]],['แผนก',1,[]],['ระดับ (Grade)',1,['C1','C2','C3','C4','C5','C6','C7','C8','C9']],['จำนวนอัตรา',0,'1'],['รายงานต่อ',0,'ตำแหน่งหัวหน้า'],['ชื่อตำแหน่ง (อังกฤษ)',0,'Position name (EN)'],['หมายเหตุ',0,'หมายเหตุ',1]]]],
+        roMap:{'รหัสตำแหน่ง':'code','ชื่อตำแหน่ง':'name_th','บริษัท':'scope_company','สาขา':'parent_branch','ฝ่าย':'division','แผนก':'department','ระดับ (Grade)':'g','จำนวนอัตรา':'cnt','รายงานต่อ':'rep','ชื่อตำแหน่ง (อังกฤษ)':'pen','หมายเหตุ':'remark'},
+        acts:['Create','Update','Delete','Activate','Export']},
+      'organization-chart':{th:'ผังองค์กร',en:'Organization Chart',
+        screens:[['chart','Organization Chart — ผังองค์กร','box'],['list','Element List — องค์ประกอบ','list'],['tree','Element Hierarchy — ลำดับชั้น','box']],
+        kpi:[['ระดับองค์ประกอบ','5','Company→Position',35],['องค์ประกอบทั้งหมด','203','ทุกระดับ',145],['เปิดใช้งาน','197','97%',145],['ระงับ','6','—',35]],
+        cols:[{h:'ระดับ',render:r=>P(r.lv,r.lvh)},{h:'องค์ประกอบ (ไทย)',k:'name_th',b:true},{h:'องค์ประกอบ (อังกฤษ)',k:'en'},{h:'จำนวน',k:'cnt'},{h:'สังกัด',k:'parent_branch'}],
+        rows:[{lv:'L1',lvh:265,name_th:'บริษัท',en:'Company',cnt:'4',parent_branch:'กลุ่มบริษัท'},{lv:'L2',lvh:200,name_th:'สาขา',en:'Branch',cnt:'28',parent_branch:'บริษัท'},{lv:'L3',lvh:158,name_th:'ฝ่าย',en:'Division',cnt:'9',parent_branch:'สาขา'},{lv:'L4',lvh:35,name_th:'แผนก',en:'Department',cnt:'36',parent_branch:'ฝ่าย'},{lv:'L5',lvh:85,name_th:'ตำแหน่ง',en:'Position',cnt:'128',parent_branch:'แผนก'}],
+        tree:[['บริษัท (Company)',0],['สาขา (Branch)',1],['ฝ่าย (Division)',2],['แผนก (Department)',3],['ตำแหน่ง (Position)',4]],
+        acts:['View','Add Element','Reorder','Export','Print']},
+      'geographic-information':{th:'ข้อมูลทางภูมิศาสตร์',en:'Geographic Information',geo:true,
+        screens:[['country','ประเทศ (Country)','box'],['province','จังหวัด (Province)','box'],['district','อำเภอ (District)','box'],['subdistrict','ตำบล (Subdistrict)','box']],
+        acts:['Create','Update','Delete','Activate','Export']}
+    };
+    Object.keys(CFG).forEach(k => { const f = CFG[k]; if (!f.screens) return; const ci = f.screens.findIndex(s => s[0] === 'create'); if (ci > -1 && !f.screens.some(s => s[0] === 'edit')) { const cs = f.screens[ci]; const el = cs[1].replace('Create', 'Edit').replace('สร้าง', 'แก้ไข'); f.screens.splice(ci + 1, 0, ['edit', el, 'doc']); } });
+    return CFG;
+  }
+
+  dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
+  curNav() { return this.props.nav || this.state.nav; }
+  curScr() { const n = this.curNav(); return this.props.scr || this.state.scr[n] || this.CFG()[n].screens[0][0]; }
+  curMode() { return this.state.mode[this.curNav()] || 'view'; }
+  isDirty() { const m = this.curMode(); return m === 'create' || m === 'edit'; }
+  enterCreate() { const n = this.curNav(); this.setState(s => ({ mode: Object.assign({}, s.mode, { [n]: 'create' }), edit: Object.assign({}, s.edit, { [n]: null }), draft: {} })); this._goScr('create'); }
+  enterEdit(r) { const n = this.curNav(); this.setState(s => ({ mode: Object.assign({}, s.mode, { [n]: 'edit' }), edit: Object.assign({}, s.edit, { [n]: r }), sel: Object.assign({}, s.sel, { [n]: r }), draft: {} })); this._goScr('edit'); }
+  askConfirm(run) { this.setState({ confirm: run }); }
+  _setNav(id) { if (this.props.onNav) this.props.onNav(id); else this.setState({ nav: id }); }
+  setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
+  _goScr(v) { if (this.props.onScr) this.props.onScr(v); else this.setState(s => ({ scr: Object.assign({}, s.scr, { [this.props.nav || s.nav]: v }) })); }
+  goScr(v) { if (this.isDirty() && v !== 'detail' && v !== 'create' && v !== 'edit') { this.askConfirm(() => this._goScr(v)); return; } this._goScr(v); }
+  setScr(v) { if (this.GEO_META[v] && v === this.curScr()) { this.setGeoView(v, 'list'); return; } this.goScr(v); }
+  doSave() {
+    const cfgAll = this.CFG(), nav = this.curNav(), cfg = cfgAll[nav], key = nav;
+    const er = this.state.edit[nav];
+    const mode = er ? ('edit:' + (er.code || er.name_th || '')) : 'new';
+    const dr = this.state.draft || {}, pre = key + '|' + mode + '|';
+    const proto = (cfg.rows || [])[0] || {};
+    const blank = {}; Object.keys(proto).forEach(kk => { blank[kk] = typeof proto[kk] === 'number' ? 0 : ''; }); blank.status = 'ใช้งาน';
+    const base = er ? Object.assign({}, er) : blank;
+    if (cfg.roMap && cfg.form) cfg.form.forEach(sc => sc[2].forEach(fld => { const lb = fld[0], mm = cfg.roMap[lb], v = dr[pre + lb]; if (v !== undefined && v !== '') { if (typeof mm === 'string') base[mm] = v; base['_f:' + lb] = v; } }));
+    const stV = dr[pre + 'สถานะ']; if (stV !== undefined && stV !== '') base.status = stV;
+    const curRows = this.state.db[key] !== undefined ? this.state.db[key] : (cfg.rows || []);
+    if (!er) {
+      if (!base.code) { const pre2 = String(proto.code || 'X').replace(/[0-9]+$/, ''); let n2 = 1; const used = new Set(curRows.map(r => r.code)); while (used.has(pre2 + String(n2).padStart(3, '0'))) n2 += 1; base.code = pre2 + String(n2).padStart(3, '0'); }
+      if (curRows.some(r => r.code === base.code)) { this.toast('รหัส ' + base.code + ' มีอยู่แล้ว — กรุณาใช้รหัสอื่น'); return; }
+    }
+    if (key === 'business-group') {
+      const nowIso = new Date().toISOString();
+      const who = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      if (!er) { const ids = curRows.map(r => parseInt(r.bid, 10) || 0); base.bid = (ids.length ? Math.max.apply(null, ids) : 0) + 1; base.createdAt = nowIso; base.createdBy = who; base.rowVersion = 1; }
+      else { base.bid = er.bid; base.createdAt = er.createdAt || nowIso; base.createdBy = er.createdBy || who; base.rowVersion = (parseInt(er.rowVersion, 10) || 1) + 1; }
+      base.updatedAt = nowIso; base.updatedBy = who;
+    } else {
+      const nowIso2 = new Date().toISOString(); const who2 = (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ';
+      if (!er) { if (!base.createdAt) base.createdAt = nowIso2; if (!base.createdBy) base.createdBy = who2; }
+      base.updatedAt = nowIso2; base.updatedBy = who2;
+    }
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = er ? cur.map(x => (x === er || (x.code != null && x.code === er.code)) ? base : x) : cur.concat([base]); return { db, draft: {}, mode: Object.assign({}, s.mode, { [nav]: 'view' }), sel: Object.assign({}, s.sel, { [nav]: base }), edit: Object.assign({}, s.edit, { [nav]: null }) }; });
+    // ---- rename cascade: keep already-edited child rows pointing at the renamed parent ----
+    if (er) {
+      const cfgA = this.CFG();
+      const renames = [];
+      if (key === 'branch-management' && er.name_th && base.name_th && er.name_th !== base.name_th) renames.push(['parent_branch', er.name_th, base.name_th]);
+      if (key === 'company-management' && er.name_th && base.name_th && er.name_th !== base.name_th) renames.push(['scope_company', er.name_th, base.name_th]);
+      if (key === 'division-management' && er.name_th && base.name_th && er.name_th !== base.name_th) renames.push(['division', er.name_th, base.name_th]);
+      if (key === 'department-management' && er.name_th && base.name_th && er.name_th !== base.name_th) renames.push(['department', er.name_th, base.name_th]);
+      if (renames.length) {
+        const kids = ['branch-management', 'division-management', 'department-management', 'position-management'];
+        this.setState(st => {
+          const db = Object.assign({}, st.db);
+          kids.forEach(kk => {
+            if (kk === key || db[kk] === undefined) return;
+            db[kk] = db[kk].map(r => { let out = r; renames.forEach(([fld, from, to]) => { if (out[fld] === from) out = Object.assign({}, out, { [fld]: to }); }); return out; });
+          });
+          return { db };
+        });
+      }
+    }
+    this.toast(er ? 'บันทึกการแก้ไขแล้ว' : 'บันทึกเรียบร้อย');
+    if (key === 'department-management') {
+      const b = this.bus();
+      const mapped = b ? ((b.get('cc.assign', {}) || {})[base.code] || base.cost_center) : base.cost_center;
+      if (!er && !mapped) this.notifyUp('แผนกใหม่ ' + (base.name_th || base.code) + ' ยังไม่ผูกศูนย์ต้นทุน — รอ Controller ที่ ACCT-CC › การผูกศูนย์ต้นทุน');
+    }
+  }
+  confirmSave() { const r = this.state.confirm, n = this.curNav(); this.doSave(); this.setState(s => ({ confirm: null, scr: Object.assign({}, s.scr, { [n]: 'detail' }) }), () => r && r()); }
+  confirmDiscard() { const r = this.state.confirm, n = this.curNav(); this.setState(s => ({ confirm: null, draft: {}, mode: Object.assign({}, s.mode, { [n]: 'view' }), edit: Object.assign({}, s.edit, { [n]: null }), scr: Object.assign({}, s.scr, { [n]: 'list' }) }), () => r && r()); this.toast('ยกเลิกการเปลี่ยนแปลง'); }
+  STATUS_MAP = { ACTIVE: 'ใช้งาน', INACTIVE: 'ปิดการใช้งาน', DELETED: 'ลบ' };
+  STATUS_OPTS = ['ใช้งาน', 'ปิดการใช้งาน', 'ลบ'];
+  _normStatus(v) { if (v == null || v === '') return 'ACTIVE'; const s = String(v); if (this.STATUS_MAP[s]) return s; const u = s.toUpperCase(); if (this.STATUS_MAP[u]) return u; return ({ 'ใช้งาน': 'ACTIVE', 'ปิดใช้งาน': 'INACTIVE', 'ปิดการใช้งาน': 'INACTIVE', 'ลบ': 'DELETED' })[s] || 'ACTIVE'; }
+  statusDesc(v) { return this.STATUS_MAP[this._normStatus(v)]; }
+  BRANCH_TYPE_MAP = { HEAD_OFFICE: 'สำนักงานใหญ่', BRANCH: 'สาขา', OFFICE: 'สำนักงาน', FACTORY: 'โรงงาน', STORE: 'ร้านค้า', SERVICE_CENTER: 'ศูนย์บริการ', OTHER: 'อื่นๆ' };
+  BRANCH_TYPE_OPTS = ['สำนักงานใหญ่', 'สาขา', 'สำนักงาน', 'โรงงาน', 'ร้านค้า', 'ศูนย์บริการ', 'อื่นๆ'];
+  _normBranchType(v) { if (!v) return ''; if (this.BRANCH_TYPE_MAP[v]) return v; const rev = {}; Object.keys(this.BRANCH_TYPE_MAP).forEach(k => rev[this.BRANCH_TYPE_MAP[k]] = k); return rev[v] || 'OTHER'; }
+  OPERATING_MAP = { OPEN: 'เปิดดำเนินการ', TEMP_CLOSED: 'ปิดชั่วคราว', CLOSED: 'ปิดถาวร' };
+  OPERATING_OPTS = ['เปิดดำเนินการ', 'ปิดชั่วคราว', 'ปิดถาวร'];
+  _normOperating(v) { if (!v) return ''; if (this.OPERATING_MAP[v]) return v; const rev = {}; Object.keys(this.OPERATING_MAP).forEach(k => rev[this.OPERATING_MAP[k]] = k); return rev[v] || ''; }
+  _digits(v) { const d = String(v == null ? '' : v).replace(/\D/g, ''); return d ? Number(d) : 0; }
+  _hashId(s) { s = String(s || ''); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return (h % 1000000000) || 1; }
+  _isUuid(v) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v == null ? '' : v)); }
+  _uuidFrom(seed) { seed = String(seed || ''); let hex = '', h = 0x811c9dc5 >>> 0; for (let p = 0; hex.length < 32; p++) { for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } h = (h ^ Math.imul(p + 1, 0x9e3779b1)) >>> 0; hex += ('00000000' + (h >>> 0).toString(16)).slice(-8); } hex = hex.slice(0, 32); const y = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16); return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-' + y + hex.slice(17, 20) + '-' + hex.slice(20, 32); }
+  _currentTenant() { try { const a = this.props.api || {}; if (a.tenantId) return String(a.tenantId); const b = this.bus && this.bus(); if (b) { const t = b.get('app.tenant_id', null); if (t) return String(t); } } catch (e) {} return null; }
+  _tenantScope(key, rows) {
+    // App-layer RLS analog: filter tenant-owned tables to the current tenant. NULL/'' tenant = global (visible to all); geo-* master and no-current-tenant pass through.
+    const t = this._currentTenant();
+    if (!t || !Array.isArray(rows) || String(key).indexOf('geo-') === 0) return rows;
+    const M = this._orgMaps();
+    return rows.filter(r => { if (!r) return false; const tid = (key === 'company-management') ? (r.tenant_id || '') : (M.coTenantByName[r.scope_company] || r.tenant_id || ''); return tid === '' || String(tid) === t; });
+  }
+  _geoResolve(entity, baseRows, scopeCompany) {
+    const t = this._currentTenant();
+    const ov = (this.dbRows('tenant-geo-override', []) || []).filter(r => r && r.kind === entity && this._normStatus(r.status) === 'ACTIVE' && (!t || String(r.tenant_id) === String(t)));
+    if (!ov.length) return baseRows;
+    const co = scopeCompany && scopeCompany !== 'ทั้งหมด' ? scopeCompany : null;
+    const pick = {};
+    ov.forEach(o => { const bc = o.base_code || ''; if (!bc) return; const oScoped = !!o.scope_company; if (co) { if (o.scope_company === co) pick[bc] = o; else if (!oScoped && !pick[bc]) pick[bc] = o; } else if (!oScoped) pick[bc] = o; });
+    const merged = (baseRows || []).map(g => { const o = pick[g.code]; return o ? Object.assign({}, g, { name_th: o.name_th || g.name_th, en: o.en || g.en, zip: o.zip || g.zip, remark: o.remark || g.remark, scope_company: o.scope_company || '', tenant_id: o.tenant_id || '', base_code: o.base_code || g.code, _ovr: true, _ovrId: o.code, _ovrScope: o.scope_company || '(เฉพาะผู้เช่า)' }) : g; });
+    const news = ov.filter(o => !o.base_code && (co ? (o.scope_company === co || !o.scope_company) : !o.scope_company)).map(o => Object.assign({}, o, { _ovr: true, _ovrId: o.code, _ovrScope: o.scope_company || '(เฉพาะผู้เช่า)', _ovrNew: true }));
+    return merged.concat(news);
+  }
+  _geoDisp(entity, v) {
+    if (v == null || v === '') return '';
+    const M = this._orgMaps();
+    const rev = { country: M.ctById, province: M.pvById, district: M.dtById, subdistrict: M.sdById }[entity] || {};
+    if (rev[v] != null) return rev[v];
+    if (/^[0-9]+$/.test(String(v))) { const dbk = this.GEO_META[entity].db; const hit = (this.dbRows(dbk, this.GEO_SEED[dbk]) || []).find(r => r && String(this._hashId(r.code || r.name_th)) === String(v)); if (hit) return hit.name_th; }
+    return v;
+  }
+  _geoBranchOpts(entity, parentName, scopeCompany) {
+    const meta = this.GEO_META[entity], dbk = meta.db;
+    const rows = this._geoResolve(entity, this.dbRows(dbk, this.GEO_SEED[dbk]) || [], scopeCompany || 'ทั้งหมด');
+    let filt = rows.filter(r => r && this._normStatus(r.status) === 'ACTIVE');
+    if (meta.parentField && parentName) filt = filt.filter(r => !r[meta.parentField] || r[meta.parentField] === parentName);
+    return Array.from(new Set(filt.map(r => r.name_th).filter(Boolean)));
+  }
+  _geoZipFor(subdistName, scopeCompany) {
+    if (!subdistName) return '';
+    const rows = this._geoResolve('subdistrict', this.dbRows('geo-subdistrict', this.GEO_SEED['geo-subdistrict']) || [], scopeCompany || 'ทั้งหมด');
+    const r = rows.find(x => x && x.name_th === subdistName);
+    return r ? (r.zip || '') : '';
+  }
+  ORG_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+  _monthNum(n) { if (n == null || n === '') return ''; const i = this.ORG_MONTHS.indexOf(String(n)); if (i >= 0) return i + 1; const d = this._digits(n); return d || ''; }
+  _monthName(n) { const i = Number(n) - 1; return this.ORG_MONTHS[i] || ''; }
+  CCY_MAP = { THB: 1, USD: 2, CNY: 3, EUR: 4, JPY: 5 };
+  _ccyId(c) { return this.CCY_MAP[c] || 1; }
+  _ccyCode(id) { if (id == null || id === '') return 'THB'; const k = Object.keys(this.CCY_MAP).find(x => String(this.CCY_MAP[x]) === String(id)); return k || String(id) || 'THB'; }
+  _capNum(v) { const n = Number(String(v == null ? '' : v).replace(/[^0-9.]/g, '')); return (isFinite(n) && n) ? n : ''; }
+  _capFmt(v, ccy) { const n = Number(String(v == null ? '' : v).replace(/[^0-9.-]/g, '')); if (!isFinite(n) || !n) return ''; const sym = ccy === 'USD' ? 'US$' : ccy === 'CNY' ? '¥' : '฿'; return sym + n.toLocaleString('en-US'); }
+  _gradeHue(g) { return ({ C9: 300, C8: 275, C7: 265, C6: 200, C5: 35, C4: 200, C3: 158, C2: 145, C1: 130 })[g] || 145; }
+  _orgMaps() {
+    if (this._mapsRef === this.state.db && this._mapsCache) return this._mapsCache;
+    const g = (k) => { const d = this.state.db[k]; return d !== undefined ? d : ((this.CFG()[k] || {}).rows || []); };
+    const coByName = {}; const coTenantByName = {}; g('company-management').forEach(r => { if (r && r.name_th != null) { coByName[r.name_th] = this._hashId(r.code || r.name_th); coTenantByName[r.name_th] = r.tenant_id || ''; } });
+    const brByKey = {}; g('branch-management').forEach(r => { if (r && r.name_th != null) brByKey[(r.scope_company || '') + '|' + r.name_th] = this._hashId(r.code || r.name_th); });
+    const dvByKey = {}; g('division-management').forEach(r => { if (r && r.name_th != null) dvByKey[(r.scope_company || '') + '|' + (r.parent_branch || '') + '|' + r.name_th] = this._hashId(r.code || r.name_th); });
+    const dpByKey = {}; g('department-management').forEach(r => { if (r && r.name_th != null) dpByKey[(r.scope_company || '') + '|' + (r.parent_branch || '') + '|' + (r.division || '') + '|' + r.name_th] = this._hashId(r.code || r.name_th); });
+    const gg = (k) => { const d = this.state.db[k]; return d !== undefined ? d : (this.GEO_SEED[k] || []); };
+    const ctByName = {}, ctById = {}; gg('geo-country').forEach(r => { if (r && r.name_th != null) { const id = this._hashId(r.code || r.name_th); ctByName[r.name_th] = id; ctById[id] = r.name_th; } });
+    const pvByName = {}, pvById = {}; gg('geo-province').forEach(r => { if (r && r.name_th != null) { const id = this._hashId(r.code || r.name_th); pvByName[r.name_th] = id; pvById[id] = r.name_th; } });
+    const dtByName = {}, dtById = {}; gg('geo-district').forEach(r => { if (r && r.name_th != null) { const id = this._hashId(r.code || r.name_th); dtByName[r.name_th] = id; dtById[id] = r.name_th; } });
+    const sdByName = {}, sdById = {}; gg('geo-subdistrict').forEach(r => { if (r && r.name_th != null) { const id = this._hashId(r.code || r.name_th); sdByName[r.name_th] = id; sdById[id] = r.name_th; } });
+    this._mapsRef = this.state.db; this._mapsCache = { coByName, coTenantByName, brByKey, dvByKey, dpByKey, ctByName, pvByName, dtByName, sdByName, ctById, pvById, dtById, sdById };
+    return this._mapsCache;
+  }
+  _orgProject(key, r) {
+    const A = { created_at: r.created_at || r.createdAt || '', created_by: r.created_by || r.createdBy || '', updated_at: r.updated_at || r.updatedAt || '', updated_by: r.updated_by || r.updatedBy || '' };
+    const M = this._orgMaps(); const id = this._hashId(r.code || r.name_th); const co = M.coByName[r.scope_company] || ''; const br = M.brByKey[(r.scope_company || '') + '|' + (r.parent_branch || '')] || '';
+    if (key === 'company-management') return Object.assign({ company_id: this._hashId(r.code || r.name_th), company_code: r.code || '', company_name: r.name_th || '', company_name_en: r.name_en || '', tenant_id: r.tenant_id || '', registration_no: r.reg || '', legal_entity_name: r.legal || '', legal_type: r.ltype || '', registered_capital: this._capNum(r.registered_capital), tax_id: r.tax_id || '', country_id: r.country || '', currency_id: this._ccyId(r.currency), timezone: r.tz || 'Asia/Bangkok', fiscal_year_start_month: this._monthNum(r.fiscal_year_start), email: r.email || '', phone: r.phone || '', fax: r.fax || '', website: r.website || '', logo_url: r.logo || '', registered_address: r.address || '', parent_company: r.parent_company || '', status: this._normStatus(r.status), remark: r.remark || '' }, A);
+    if (key === 'branch-management') return Object.assign({ branch_id: id, tenant_id: M.coTenantByName[r.scope_company] || '', branch_code: r.code || '', branch_name: r.name_th || '', branch_name_en: r.ben || '', branch_type: this._normBranchType(r.type), company_id: co, tax_branch_code: r.taxbr || '', tax_id: r.btax || '', address: r.address || '', country_id: M.ctByName[r.country] || r.country || '', province_id: M.pvByName[r.province] || r.province || '', district_id: M.dtByName[r.district] || r.district || '', subdistrict_id: M.sdByName[r.subdist] || r.subdist || '', postal_code: r.zip || '', latitude: r.lat || '', longitude: r.lng || '', phone: r.phone || '', fax: r.bfax || '', email: r.bemail || '', manager_id: r.manager || '', operating_status: this._normOperating(r.opst), opened_date: r.opened || '', closed_date: r.closed || '', status: this._normStatus(r.status), remark: r.remark || '' }, A);
+    if (key === 'division-management') return Object.assign({ division_id: id, tenant_id: M.coTenantByName[r.scope_company] || '', division_code: r.code || '', division_name: r.name_th || '', division_name_en: r.den || '', company_id: co, branch_id: br, parent_division_id: r.pdiv || '', head_position_id: r.manager || '', default_cost_center_id: r.cost_center || '', status: this._normStatus(r.status), remark: r.remark || '' }, A);
+    if (key === 'department-management') return Object.assign({ department_id: id, tenant_id: M.coTenantByName[r.scope_company] || '', department_code: r.code || '', department_name: r.name_th || '', department_name_en: r.den || '', company_id: co, branch_id: br, division_id: M.dvByKey[(r.scope_company || '') + '|' + (r.parent_branch || '') + '|' + (r.division || '')] || '', parent_department_id: r.pdept || '', head_position_id: r.manager || '', cost_center_id: r.cost_center || '', status: this._normStatus(r.status), remark: r.remark || '' }, A);
+    if (key === 'position-management') return Object.assign({ position_id: id, tenant_id: M.coTenantByName[r.scope_company] || '', position_code: r.code || '', position_name_th: r.name_th || '', position_name_en: r.pen || '', company_id: co, branch_id: br, division_id: M.dvByKey[(r.scope_company || '') + '|' + (r.parent_branch || '') + '|' + (r.division || '')] || '', department_id: M.dpByKey[(r.scope_company || '') + '|' + (r.parent_branch || '') + '|' + (r.division || '') + '|' + (r.department || '')] || '', reports_to_position_id: r.rep || '', is_head_position: /หัวหน้า|ผู้อำนวยการ|ผู้จัดการ|กรรมการ/.test(String(r.name_th || '')) ? 1 : 0, max_headcount: (String(r.cnt || '').split('/')[1] || '').trim() || '', position_grade: r.g || '', status: this._normStatus(r.status), remark: r.remark || '' }, A);
+    if (key === 'geo-country') return Object.assign({ country_id: id, country_code: r.code || '', country_name: r.name_th || '', country_name_en: r.en || '', company_id: co, branch_id: this._geoBrId(M, r), remark: r.remark || '', status: this._normStatus(r.status) }, A);
+    if (key === 'geo-province') return Object.assign({ province_id: id, province_code: r.code || '', province_name: r.name_th || '', province_name_en: r.en || '', company_id: co, branch_id: this._geoBrId(M, r), country_id: r.country_id || M.ctByName[r.country] || '', remark: r.remark || '', status: this._normStatus(r.status) }, A);
+    if (key === 'geo-district') return Object.assign({ district_id: id, district_code: r.code || '', district_name: r.name_th || '', district_name_en: r.en || '', company_id: co, branch_id: this._geoBrId(M, r), province_id: r.province_id || M.pvByName[r.province] || '', remark: r.remark || '', status: this._normStatus(r.status) }, A);
+    if (key === 'geo-subdistrict') return Object.assign({ subdistrict_id: id, subdistrict_code: r.code || '', subdistrict_name: r.name_th || '', subdistrict_name_en: r.en || '', company_id: co, branch_id: this._geoBrId(M, r), district_id: r.district_id || M.dtByName[r.district] || '', zip_code: r.zip || '', remark: r.remark || '', status: this._normStatus(r.status) }, A);
+    if (key === 'tenant-geo-override') return Object.assign({ override_id: r.code || this._uuidFrom((r.tenant_id||'')+'|'+(r.kind||'')+'|'+(r.scope_company||'')+'|'+(r.base_code||r.name_th||'')), tenant_id: r.tenant_id || '', scope_company: r.scope_company || '', geo_kind: r.kind || '', base_code: r.base_code || '', name_th: r.name_th || '', name_en: r.en || '', postal_code: r.zip || '', status: this._normStatus(r.status), remark: r.remark || '' }, A);
+    if (key === 'tenant-currency-override') return Object.assign({ override_id: r.code || this._uuidFrom((r.tenant_id||'')+'|CUR|'+(r.scope_company||'')+'|'+(r.base_code||r.name_th||'')), tenant_id: r.tenant_id || '', scope_company: r.scope_company || '', base_currency: r.base_code || '', currency_name: r.name_th || '', currency_symbol: r.symbol || '', exchange_rate: r.rate || '', status: this._normStatus(r.status), remark: r.remark || '' }, A);
+    const o = Object.assign({}, r); o.status = this._normStatus(r.status); return o;
+  }
+  _geoBrId(M, r) { return M.brByKey[(r.scope_company || '') + '|' + (r.scope_branch || '')] || ''; }
+  _orgNative(key, r, M) {
+    M = M || { coById: {}, brById: {}, dvById: {}, dpById: {} };
+    r = Object.assign({}, r);
+    // erp-kit's legacy SHEET_HDR renames some sheet columns on pull (tax_id→tax, status→s, …); restore the canonical names ITSA-ORG reads.
+    if (r.tax_id === undefined && r.tax_id !== undefined) r.tax_id = r.tax_id;
+    if (r.status === undefined && r.status !== undefined) r.status = r.status;
+    if (r.company_code === undefined && r.code !== undefined) r.company_code = r.code;
+    if (r.registered_capital === undefined && r.registered_capital !== undefined) r.registered_capital = r.registered_capital;
+    if (r.website === undefined && r.website !== undefined) r.website = r.website;
+    if (r.registered_address === undefined && r.address !== undefined) r.registered_address = r.address;
+    if (r.address === undefined && r.address !== undefined) r.address = r.address;
+    if (r.parent_company === undefined && r.parent_company !== undefined) r.parent_company = r.parent_company;
+    const A = { createdAt: r.created_at || '', createdBy: r.created_by || '', updatedAt: r.updated_at || '', updatedBy: r.updated_by || '' };
+    const st = this.statusDesc(r.status);
+    if (key === 'company-management') return Object.assign({ code: r.company_code || '', name_th: r.company_name || '', name_en: r.company_name_en || '', tenant_id: r.tenant_id || '', reg: r.registration_no || '', legal: r.legal_entity_name || '', ltype: r.legal_type || '', tax_id: r.tax_id || '', currency: this._ccyCode(r.currency_id), registered_capital: this._capFmt(r.registered_capital, this._ccyCode(r.currency_id)), country: r.country_id || '', tz: r.timezone || '', fiscal_year_start: this._monthName(r.fiscal_year_start_month), email: r.email || '', phone: r.phone || '', fax: r.fax || '', website: r.website || '', logo: r.logo_url || '', address: r.registered_address || '', status: st, remark: r.remark || '', branch_count: '', headcount: 130, parent_company: r.parent_company || r.parent_company || '' }, A);
+    if (key === 'branch-management') { const b = M.brById[this._hashId(r.branch_code || '')]; const Mm = this._orgMaps(); return Object.assign({ code: r.branch_code || '', name_th: r.branch_name || '', tenant_id: r.tenant_id || '', ben: r.branch_name_en || '', type: this.BRANCH_TYPE_MAP[r.branch_type] || r.branch_type || '', scope_company: M.coById[r.company_id] || (b && b.scope_company) || r.company_id || '', taxbr: r.tax_branch_code || '', btax: r.tax_id || '', address: r.address || '', country: (Mm.ctById && Mm.ctById[r.country_id]) || r.country_id || '', province: (Mm.pvById && Mm.pvById[r.province_id]) || r.province_id || '', district: (Mm.dtById && Mm.dtById[r.district_id]) || r.district_id || '', subdist: (Mm.sdById && Mm.sdById[r.subdistrict_id]) || r.subdistrict_id || '', zip: r.postal_code || '', lat: r.latitude || '', lng: r.longitude || '', phone: r.phone || '', bfax: r.fax || '', bemail: r.email || '', manager: r.manager_id || '', opst: this.OPERATING_MAP[r.operating_status] || r.operating_status || '', opened: r.opened_date || '', closed: r.closed_date || '', status: st, remark: r.remark || '', headcount: 130 }, A); }
+    if (key === 'division-management') { const b = M.brById[r.branch_id]; return Object.assign({ code: r.division_code || '', name_th: r.division_name || '', tenant_id: r.tenant_id || '', den: r.division_name_en || '', scope_company: M.coById[r.company_id] || (b && b.scope_company) || r.company_id || '', parent_branch: (b && b.name_th) || r.branch_id || '', pdiv: r.parent_division_id || '', manager: r.head_position_id || '', cost_center: r.default_cost_center_id || '', status: st, remark: r.remark || '', dcnt: '0', cnt: '0 / 0' }, A); }
+    if (key === 'department-management') { const b = M.brById[r.branch_id]; const dv = M.dvById[r.division_id]; return Object.assign({ code: r.department_code || '', name_th: r.department_name || '', tenant_id: r.tenant_id || '', den: r.department_name_en || '', scope_company: M.coById[r.company_id] || (b && b.scope_company) || r.company_id || '', parent_branch: (b && b.name_th) || r.branch_id || '', division: (dv && dv.name_th) || r.division_id || '', pdept: r.parent_department_id || '', manager: r.head_position_id || '', cost_center: r.cost_center_id || '', cost_center_alt: '', status: st, remark: r.remark || '', cnt: '0 / 0' }, A); }
+    if (key === 'position-management') { const b = M.brById[r.branch_id]; const dv = M.dvById[r.division_id]; const dp = M.dpById[r.department_id]; return Object.assign({ code: r.position_code || '', name_th: r.position_name_th || '', tenant_id: r.tenant_id || '', pen: r.position_name_en || '', scope_company: M.coById[r.company_id] || (b && b.scope_company) || r.company_id || '', parent_branch: (b && b.name_th) || r.branch_id || '', division: (dv && dv.name_th) || r.division_id || '', department: (dp && dp.name_th) || r.department_id || '', rep: r.reports_to_position_id || '', g: r.position_grade || '', gh: this._gradeHue(r.position_grade), cnt: '0 / ' + (r.max_headcount || '0'), status: st, remark: r.remark || '' }, A); }
+    if (key === 'geo-country') return Object.assign({ code: r.country_code || '', name_th: r.country_name || '', en: r.country_name_en || '', scope_company: M.coById[r.company_id] || '', scope_branch: (M.brById[r.branch_id] && M.brById[r.branch_id].name_th) || '', remark: r.remark || '', status: st }, A);
+    if (key === 'geo-province') return Object.assign({ code: r.province_code || '', name_th: r.province_name || '', en: r.province_name_en || '', country: (M.ctById && M.ctById[r.country_id]) || '', country_id: r.country_id || '', scope_company: M.coById[r.company_id] || '', scope_branch: (M.brById[r.branch_id] && M.brById[r.branch_id].name_th) || '', remark: r.remark || '', status: st }, A);
+    if (key === 'geo-district') return Object.assign({ code: r.district_code || '', name_th: r.district_name || '', en: r.district_name_en || '', province: (M.pvById && M.pvById[r.province_id]) || '', province_id: r.province_id || '', scope_company: M.coById[r.company_id] || '', scope_branch: (M.brById[r.branch_id] && M.brById[r.branch_id].name_th) || '', remark: r.remark || '', status: st }, A);
+    if (key === 'geo-subdistrict') return Object.assign({ code: r.subdistrict_code || '', name_th: r.subdistrict_name || '', en: r.subdistrict_name_en || '', district: (M.dtById && M.dtById[r.district_id]) || '', district_id: r.district_id || '', zip: r.zip_code || '', scope_company: M.coById[r.company_id] || '', scope_branch: (M.brById[r.branch_id] && M.brById[r.branch_id].name_th) || '', remark: r.remark || '', status: st }, A);
+    if (key === 'tenant-geo-override') return Object.assign({ code: r.override_id || '', tenant_id: r.tenant_id || '', scope_company: r.scope_company || '', kind: r.geo_kind || '', base_code: r.base_code || '', name_th: r.name_th || '', en: r.name_en || '', zip: r.postal_code || '', remark: r.remark || '', status: st }, A);
+    if (key === 'tenant-currency-override') return Object.assign({ code: r.override_id || '', tenant_id: r.tenant_id || '', scope_company: r.scope_company || '', base_code: r.base_currency || '', name_th: r.currency_name || '', symbol: r.currency_symbol || '', rate: r.exchange_rate || '', remark: r.remark || '', status: st }, A);
+    return r;
+  }
+  _reconcileOrg() {
+    const order = ['company-management', 'branch-management', 'division-management', 'department-management', 'position-management', 'geo-country', 'geo-province', 'geo-district', 'geo-subdistrict', 'tenant-geo-override', 'tenant-currency-override'];
+    const probe = { 'company-management': 'company_code', 'branch-management': 'branch_code', 'division-management': 'division_code', 'department-management': 'department_code', 'position-management': 'position_code', 'geo-country': 'country_code', 'geo-province': 'province_code', 'geo-district': 'district_code', 'geo-subdistrict': 'subdistrict_code', 'tenant-geo-override': 'override_id', 'tenant-currency-override': 'override_id' };
+    const db = Object.assign({}, this.state.db); let changed = false;
+    const coById = {}, brById = {}, dvById = {}, dpById = {}, ctById = {}, pvById = {}, dtById = {};
+    order.forEach(key => {
+      const rows = db[key];
+      if (Array.isArray(rows)) {
+        const isOvr = key === 'tenant-geo-override' || key === 'tenant-currency-override';
+        const needs = r => r && (isOvr ? (r.code === undefined && r.override_id !== undefined) : (r.name_th === undefined && r[probe[key]] !== undefined));
+        if (rows.some(needs)) { db[key] = rows.map(r => needs(r) ? this._orgNative(key, r, { coById, brById, dvById, dpById, ctById, pvById, dtById }) : r); changed = true; }
+      }
+      const cur = db[key];
+      if (Array.isArray(cur)) cur.forEach(r => { if (!r || r.name_th === undefined) return; const id = this._hashId(r.code || r.name_th);
+        if (key === 'company-management') coById[id] = r.name_th;
+        else if (key === 'branch-management') brById[id] = { name_th: r.name_th, scope_company: r.scope_company };
+        else if (key === 'division-management') dvById[id] = { name_th: r.name_th, scope_company: r.scope_company, parent_branch: r.parent_branch };
+        else if (key === 'department-management') dpById[id] = { name_th: r.name_th, scope_company: r.scope_company, parent_branch: r.parent_branch, division: r.division };
+        else if (key === 'geo-country') ctById[id] = r.name_th;
+        else if (key === 'geo-province') pvById[id] = r.name_th;
+        else if (key === 'geo-district') dtById[id] = r.name_th;
+      });
+    });
+    this.setState({ db }, () => { this._orgReconciled = true; });
+  }
+  _wrapOrgPush() { if (this._pushWrapped || typeof this._sheetsPush !== 'function') return; this._pushWrapped = true; const orig = this._sheetsPush; this._sheetsPush = (key, rows) => { if (!this._orgReconciled) return; orig(key, (rows || []).map(r => this._orgProject(key, r))); }; }
+  btHue(bt) { const s = String(bt || ''); if (/ผลิต|Manufactur/i.test(s)) return 265; if (/ซื้อมาขายไป|Trading/i.test(s)) return 35; if (/บริการ|Service/i.test(s)) return 158; return 145; }
+  statusHue(s) { return ({ ACTIVE: 130, INACTIVE: 22, DELETED: 15 })[this._normStatus(s)] || 130; }
+  setRowStatus(row, status) { const nav = this.curNav(), cfg = this.CFG()[nav]; this.setState(s => { const db = Object.assign({}, s.db); const cur = db[nav] !== undefined ? db[nav] : (cfg.rows || []); const upd = Object.assign({}, row, { status: status }); db[nav] = cur.map(x => (x === row || (x.code != null && x.code === row.code)) ? upd : x); return { db, sel: Object.assign({}, s.sel, { [nav]: upd }) }; }); this.toast('ปรับสถานะเป็น ' + status); }
+
+  renderVals() {
+    if (!this.state.ready) return { fg: '#333', view: null };
+    const sl0 = this.K.sheetsLoading ? this.K.sheetsLoading(this, 'โครงสร้างองค์กร · ITSA-ORG') : null; if (sl0) return sl0;
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
+    const cfgAll = this.CFG();
+    const nav = this.props.nav || this.state.nav, cfg = cfgAll[nav];
+    const key = nav;
+    const scr = this.props.scr || this.state.scr[nav] || cfg.screens[0][0];
+    const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'ACTIONS · L5'), list.map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+
+    // ---- body per screen ----
+    let rows = this._tenantScope(key, this.dbRows(key, cfg.rows || []));
+    let tenantList = (this.bus() ? this.bus().get('org.tenants', null) : null) || [];
+    if (!tenantList.length && this.bus()) { const tdb = this.bus().get('db:itsa-tent:v2', null) || this.bus().get('db:itsa-tent:v1', null); const trows = (tdb && tdb['tenant-management']) || []; tenantList = trows.filter(r => r && r.name_th).map(r => ({ id: String(r.tent_id != null && r.tent_id !== '' ? r.tent_id : (r.code || r.name_th)), code: r.code || '', name_th: r.name_th })); }
+    const tenantOpts = tenantList.filter(t => t && t.name_th).map(t => ({ value: String(t.id), label: t.name_th + (t.code ? ' - ' + t.code : '') }));
+    const tenantName = (id) => { if (id == null || id === '') return ''; const hit = tenantList.find(t => String(t.id) === String(id)); return hit ? hit.name_th : String(id); };
+    const coCfg = cfgAll['company-management'] || {};
+    const optsFromRows = (rowsArr) => Array.from(new Set(rowsArr.filter(r => this._normStatus(r.status) === 'ACTIVE' && r.name_th).sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'th', { numeric: true })).map(r => r.name_th)));
+    const formOptsFromRows = (rowsArr) => { const seen = new Set(); return rowsArr.slice().sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'th', { numeric: true })).filter(r => r.name_th && !seen.has(r.name_th) && seen.add(r.name_th)).map(r => ({ value: r.name_th, label: r.name_th + ((this._normStatus(r.status) !== 'ACTIVE') ? ' (' + this.statusDesc(r.status) + ')' : '') })); };
+    const companyRowsAll = this.dbRows('company-management', coCfg.rows || []) || [];
+    const BLANK = '(ไม่ระบุ)';
+    const companyBase = optsFromRows(companyRowsAll);
+    const hasCoField = (rows || []).some(r => r && Object.prototype.hasOwnProperty.call(r, 'scope_company'));
+    let companyOpts;
+    if (nav === 'company-management') { companyOpts = companyBase; }
+    else {
+      let scvSrc;
+      if (hasCoField) scvSrc = (rows || []);
+      else { scvSrc = []; ['branch-management', 'division-management', 'department-management', 'position-management'].forEach(k => { (this.dbRows(k, (cfgAll[k] || {}).rows || []) || []).forEach(r => scvSrc.push(r)); }); }
+      const scv = Array.from(new Set(scvSrc.map(r => r && r.scope_company).filter(v => v != null && v !== '')));
+      const rel = companyBase.filter(o => scv.some(v => o === v || String(o).includes(v) || String(v).includes(o)));
+      companyOpts = rel;
+    }
+    const narrowToScreen = (opts, field) => { if (!(rows || []).some(r => r && Object.prototype.hasOwnProperty.call(r, field))) return opts; const vals = Array.from(new Set((rows || []).map(r => r && r[field]).filter(v => v != null && v !== ''))); return opts.filter(o => o === BLANK || vals.some(v => o === v || String(o).includes(v) || String(v).includes(o))); };
+    const branchRows = this.dbRows('branch-management', (cfgAll['branch-management']||{}).rows || []) || [];
+    const coContains = (a, b) => a != null && b != null && a !== '' && b !== '' && (a === b || String(a).includes(b) || String(b).includes(a));
+    // ---- cascading multi-select filters (built once; used by list / chart / tree) ----
+    const filtState = this.state.filt || {};
+    const selArr = (sk, opts) => { let v = filtState[sk]; if (v == null || v === '') return opts.slice(); return (Array.isArray(v) ? v : [v]).filter(x => opts.indexOf(x) > -1); };
+    const coSelNow = selArr(nav + ':co', companyOpts);
+    const coAllNow = coSelNow.length === companyOpts.length;
+    const coMatchF = (v) => v == null || v === '' || coSelNow.some(o => o === v || String(o).includes(v) || String(v).includes(o));
+    const branchSrc = (coAllNow ? branchRows : branchRows.filter(b => coMatchF(b.scope_company))).filter(b => !b.scope_company || companyOpts.some(o => coContains(o, b.scope_company)));
+    const branchOpts = narrowToScreen(optsFromRows(branchSrc), 'parent_branch');
+    const brSelNow = selArr(nav + ':br', branchOpts);
+    const brAllNow = brSelNow.length === branchOpts.length;
+    const divisionRows = this.dbRows('division-management', (cfgAll['division-management']||{}).rows || []) || [];
+    const divisionSrc = (brAllNow ? divisionRows : divisionRows.filter(d => !d.parent_branch || brSelNow.some(o => coContains(d.parent_branch, o)))).filter(d => (!d.parent_branch || branchOpts.some(o => coContains(o, d.parent_branch))) && (!d.scope_company || (coAllNow ? companyOpts.some(o => coContains(o, d.scope_company)) : coSelNow.some(o => coContains(d.scope_company, o)))));
+    const divisionOpts = narrowToScreen(optsFromRows(divisionSrc), 'division');
+    const dvSelNow = selArr(nav + ':dv', divisionOpts);
+    const dvAllNow = dvSelNow.length === divisionOpts.length;
+    const departmentRows = this.dbRows('department-management', (cfgAll['department-management']||{}).rows || []) || [];
+    const departmentSrc = (dvAllNow ? departmentRows : departmentRows.filter(d => !d.division || dvSelNow.some(o => coContains(d.division, o)))).filter(d => (!d.division || divisionOpts.some(o => coContains(o, d.division))) && (!d.parent_branch || brAllNow || brSelNow.some(o => coContains(d.parent_branch, o))) && (!d.scope_company || (coAllNow ? companyOpts.some(o => coContains(o, d.scope_company)) : coSelNow.some(o => coContains(d.scope_company, o)))));
+    const departmentOpts = narrowToScreen(optsFromRows(departmentSrc), 'department');
+    // ---- live KPI recomputation from real data (whole-org reality, independent of current filter selection) ----
+    const kpiCoAll = companyOpts;
+    const kpiBranchAll = branchRows.filter(b => this._normStatus(b.status) === 'ACTIVE' && kpiCoAll.some(o => coContains(o, b.scope_company)));
+    const kpiDivAll = divisionRows.filter(d => this._normStatus(d.status) === 'ACTIVE' && kpiCoAll.some(o => coContains(o, d.scope_company)) && kpiBranchAll.some(b => coContains(b.name_th, d.parent_branch)));
+    const kpiDeptAll = departmentRows.filter(d => this._normStatus(d.status) === 'ACTIVE' && kpiCoAll.some(o => coContains(o, d.scope_company)) && kpiDivAll.some(dv => coContains(dv.name_th, d.division)));
+    const kpiPosAllRows = this.dbRows('position-management', (cfgAll['position-management']||{}).rows || []) || [];
+    const kpiPosJoined = kpiPosAllRows.filter(p => kpiCoAll.some(o => coContains(o, p.scope_company)) && kpiDeptAll.some(dp => coContains(dp.name_th, p.department)));
+    const kpiPosActive = kpiPosJoined.filter(p => this._normStatus(p.status) === 'ACTIVE');
+    const parseCnt = (s) => { const m = String(s || '').split('/'); const filled = parseInt(m[0], 10), total = parseInt(m[1], 10); return { filled: isNaN(filled) ? 0 : filled, total: isNaN(total) ? 0 : total }; };
+    const posVac = kpiPosActive.reduce((s, p) => { const v = parseCnt(p.cnt); return s + Math.max(0, v.total - v.filled); }, 0);
+    const posFilledSum = kpiPosActive.reduce((s, p) => s + parseCnt(p.cnt).filled, 0);
+    const posTotalSum = kpiPosActive.reduce((s, p) => s + parseCnt(p.cnt).total, 0);
+    const currSet = Array.from(new Set(companyRowsAll.filter(r => this._normStatus(r.status) === 'ACTIVE').map(r => r.currency || 'THB')));
+    const provSet = Array.from(new Set(kpiBranchAll.map(b => b.province).filter(Boolean)));
+    const hqCnt = kpiBranchAll.filter(b => b.type === 'สำนักงานใหญ่').length;
+    const gradeSet = Array.from(new Set(kpiPosActive.map(p => p.g).filter(Boolean)));
+    const deptVacantSet = new Set(kpiPosActive.filter(p => { const v = parseCnt(p.cnt); return v.total > v.filled; }).map(p => p.department));
+    const divVacantSet = new Set(kpiDeptAll.filter(d => deptVacantSet.has(d.name_th)).map(d => d.division));
+    const allRawCounts = [companyRowsAll, branchRows, divisionRows, departmentRows, kpiPosAllRows];
+    const inactiveCnt = allRawCounts.reduce((s, arr) => s + arr.filter(r => this._normStatus(r.status) === 'INACTIVE').length, 0);
+    const activeElCnt = kpiCoAll.length + kpiBranchAll.length + kpiDivAll.length + kpiDeptAll.length + kpiPosActive.length;
+    let kpiOverride = cfg.kpi;
+    if (nav === 'company-management') kpiOverride = [['บริษัทในเครือ', String(kpiCoAll.length), 'นิติบุคคล', 145], ['สาขารวม', String(kpiBranchAll.length), '—', 145], ['พนักงานรวม', String(kpiPosActive.length), 'ตำแหน่ง', 35], ['สกุลเงินที่ใช้', String(currSet.length), currSet.join('/'), 145]];
+    else if (nav === 'branch-management') kpiOverride = [['สาขาทั้งหมด', String(kpiBranchAll.length), '—', 145], ['สำนักงานใหญ่', String(hqCnt), 'ต่อบริษัท', 35], ['สาขาย่อย', String(kpiBranchAll.length - hqCnt), '—', 145], ['จังหวัดครอบคลุม', String(provSet.length), '—', 145]];
+    else if (nav === 'division-management') kpiOverride = [['ฝ่ายทั้งหมด', String(kpiDivAll.length), '—', 145], ['ระดับสูงสุด', '3', 'ชั้น', 35], ['พนักงานเฉลี่ย/ฝ่าย', kpiDivAll.length ? String(Math.round(posFilledSum / kpiDivAll.length)) : '0', '—', 145], ['ฝ่ายเปิดรับ', String(divVacantSet.size), 'ตำแหน่งว่าง', 35]];
+    else if (nav === 'department-management') kpiOverride = [['แผนกทั้งหมด', String(kpiDeptAll.length), '—', 145], ['ระดับสูงสุด', '4', 'ชั้น', 35], ['พนักงานเฉลี่ย/แผนก', kpiDeptAll.length ? String(Math.round(posFilledSum / kpiDeptAll.length)) : '0', '—', 145], ['แผนกเปิดรับ', String(deptVacantSet.size), 'ตำแหน่งว่าง', 35]];
+    else if (nav === 'position-management') kpiOverride = [['ตำแหน่งทั้งหมด', String(kpiPosJoined.length), '—', 145], ['ระดับ (Job Grade)', String(gradeSet.length), gradeSet.join(','), 35], ['ตำแหน่งว่าง', String(posVac), 'เปิดรับ', 35], ['อัตรากำลัง', posFilledSum + ' / ' + posTotalSum, posTotalSum ? Math.round(posFilledSum / posTotalSum * 100) + '%' : '—', 145]];
+    else if (nav === 'organization-chart') kpiOverride = [['ระดับองค์ประกอบ', '5', 'Company→Position', 35], ['องค์ประกอบทั้งหมด', String(activeElCnt + inactiveCnt), 'ทุกระดับ', 145], ['เปิดใช้งาน', String(activeElCnt), '—', 145], ['ระงับ', String(inactiveCnt), '—', 35]];
+    if (nav === 'organization-chart') {
+      const coCntFn = (v) => (coAllNow ? companyOpts.some(o => coContains(o, v)) : coSelNow.some(o => coContains(v, o)));
+      const branchCntSrc = branchRows.filter(b => this._normStatus(b.status) === 'ACTIVE' && coCntFn(b.scope_company));
+      const branchNamesCnt = Array.from(new Set(branchCntSrc.map(b => b.name_th)));
+      const divisionCntSrc = divisionRows.filter(d => this._normStatus(d.status) === 'ACTIVE' && coCntFn(d.scope_company) && branchNamesCnt.some(o => coContains(o, d.parent_branch)));
+      const divisionNamesCnt = Array.from(new Set(divisionCntSrc.map(d => d.name_th)));
+      const departmentCntSrc = departmentRows.filter(d => this._normStatus(d.status) === 'ACTIVE' && coCntFn(d.scope_company) && divisionNamesCnt.some(o => coContains(o, d.division)));
+      const departmentNamesCnt = Array.from(new Set(departmentCntSrc.map(d => d.name_th)));
+      const positionRowsAll = this.dbRows('position-management', (cfgAll['position-management']||{}).rows || []) || [];
+      const posCnt = positionRowsAll.filter(p => this._normStatus(p.status) === 'ACTIVE' && coCntFn(p.scope_company) && departmentNamesCnt.some(o => coContains(o, p.department))).length;
+      const cntByEn = { Company: coSelNow.length, Branch: branchCntSrc.length, Division: divisionCntSrc.length, Department: departmentCntSrc.length, Position: posCnt };
+      rows = rows.map(r => cntByEn[r.en] !== undefined ? Object.assign({}, r, { cnt: String(cntByEn[r.en]) }) : r);
+    }
+    const filtDefs = [];
+    if (nav !== 'company-management' && companyOpts.length) filtDefs.push({ id: 'co', sk: nav + ':co', label: 'บริษัท', icon: 'box', opts: companyOpts, field: 'scope_company' });
+    if (['division-management','department-management','position-management'].indexOf(nav) > -1 && branchOpts.length) filtDefs.push({ id: 'br', sk: nav + ':br', label: 'สาขา', icon: 'box', opts: branchOpts, field: 'parent_branch' });
+    if (['department-management','position-management'].indexOf(nav) > -1 && divisionOpts.length) filtDefs.push({ id: 'dv', sk: nav + ':dv', label: 'ฝ่าย', icon: 'box', opts: divisionOpts, field: 'division' });
+    if (nav === 'position-management' && departmentOpts.length) filtDefs.push({ id: 'dp', sk: nav + ':dp', label: 'แผนก', icon: 'box', opts: departmentOpts, field: 'department' });
+    const selOf = (d) => selArr(d.sk, d.opts);
+    const setFilt = (sk, next) => this.setState(s => ({ filt: Object.assign({}, s.filt, { [sk]: next }) }));
+    const ddOpenId = this.state.openDd || null;
+    const ddToggle = (id) => this.setState(s => ({ openDd: s.openDd === id ? null : id }));
+    const ddWrap = (id, icon, label, active, content, opt) => { opt = opt || {}; const full = !!opt.fullWidth;
+      return h('div', { key: 'dd-' + id, style: { position: 'relative', display: full ? 'block' : 'inline-flex', alignItems: 'center', width: full ? '100%' : 'auto' } },
+        h('button', { type: 'button', onClick: () => ddToggle(id), style: { display: 'flex', alignItems: 'center', gap: 6, height: 34, width: full ? '100%' : 'auto', boxSizing: 'border-box', fontSize: 12.5, fontWeight: 600, padding: '0 10px', borderRadius: 9, border: `1px solid ${c.border}`, background: active ? c.accSoft : c.win, color: active ? aTxt : c.text, cursor: 'pointer', fontFamily: c.font, whiteSpace: 'nowrap', justifyContent: full ? 'space-between' : 'flex-start' } },
+          h('span', { style: { display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' } }, h('span', { style: { display: 'flex', color: active ? acc : sub, flexShrink: 0 } }, K.Icon(icon, 15)), h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: full ? 'none' : 180 } }, label)),
+          h('span', { style: { display: 'flex', color: sub, flexShrink: 0 } }, K.Icon('arrowdown', 13))),
+        ddOpenId === id ? h('div', { key: 'bd', onClick: () => this.setState({ openDd: null }), style: { position: 'fixed', inset: 0, zIndex: 199 } }) : null,
+        ddOpenId === id ? h('div', { key: 'pop', onClick: e => e.stopPropagation(), style: { position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: opt.minWidth || (full ? '100%' : 200), width: full ? '100%' : 'auto', maxHeight: 280, overflowY: 'auto', background: c.win, border: `1px solid ${c.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,20,35,.18)', padding: 6 } }, content) : null); };
+    const singleContent = (opts, cur, onSelect) => [h('div', { key: '_none', onClick: () => { onSelect(''); this.setState({ openDd: null }); }, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font, color: sub } }, '— เลือก —')].concat(opts.map(o => h('div', { key: o, onClick: () => { onSelect(o); this.setState({ openDd: null }); }, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font, background: cur === o ? c.accSoft : 'transparent' } }, h('span', { style: { display: 'flex', width: 16, height: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 4, border: `1.5px solid ${cur === o ? acc : c.border}`, background: cur === o ? acc : 'transparent', color: '#fff', flexShrink: 0 } }, cur === o ? K.Icon('check', 11) : null), h('span', null, o))));
+    const mkFilter = (d) => { const sel = selOf(d); const allSel = sel.length === d.opts.length; const active = !allSel;
+      const label = allSel ? (d.label + ' : ทั้งหมด') : (sel.length === 1 ? sel[0] : d.label + ' (' + sel.length + ')');
+      const toggleOpt = (o) => { let arr = sel.slice(); if (arr.indexOf(o) > -1) arr = arr.filter(x => x !== o); else arr.push(o); setFilt(d.sk, arr.length === d.opts.length ? undefined : arr); };
+      const someSel = sel.length > 0 && !allSel;
+      const content = [h('label', { key: 'hd', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font, borderBottom: `1px solid ${c.line}`, marginBottom: 4 } },
+        h('input', { type: 'checkbox', checked: allSel, ref: el => { if (el) el.indeterminate = someSel; }, onChange: () => setFilt(d.sk, allSel ? [] : undefined), style: { cursor: 'pointer' } }), h('span', null, 'เลือกทั้งหมด'))]
+        .concat(d.opts.map(o => h('label', { key: o, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontFamily: c.font } },
+          h('input', { type: 'checkbox', checked: sel.indexOf(o) > -1, onChange: () => toggleOpt(o), style: { cursor: 'pointer' } }), h('span', null, o))));
+      return ddWrap('filt:' + d.sk, d.icon, label, active, content); };
+    const filtRow = filtDefs.length ? h('div', { key: 'filrow', style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 } }, filtDefs.map(mkFilter)) : null;
+    let fRows = rows;
+    filtDefs.forEach(d => { const sel = selOf(d); if (rows.some(r => r[d.field] !== undefined)) fRows = fRows.filter(r => { const v = r[d.field]; return v == null || v === '' || sel.some(o => o === v || String(o).includes(v) || String(v).includes(o)); }); });
+    const selRow = this.state.sel[nav] || rows[0] || null;
+    let body;
+
+    if (nav === 'geographic-information') { body = this._renderGeo(K, T, c, h, actLegend); } else if (scr === 'chart') {
+      const positionRowsAll2 = this.dbRows('position-management', (cfgAll['position-management']||{}).rows || []) || [];
+      const LV = { scope_company: 340, scope_branch: 265, division: 220, dp: 170, ps: 35 };
+      const parEq = (x, y) => ((x == null || x === '') && (y == null || y === '')) || coContains(x, y);
+      const initials = (s2) => String(s2 || '').replace(/[()]/g, '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '·';
+      const node = (hue, title, sub2, meta, opt) => { opt = opt || {};
+        return h('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' } },
+          opt.stem !== false ? h('div', { style: { width: 2, height: 16, background: c.border } }) : null,
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, border: `1px solid oklch(0.82 0.06 ${hue})`, borderLeft: `4px solid oklch(0.62 0.13 ${hue})`, background: c.win, borderRadius: 12, padding: '9px 14px', minWidth: opt.w || 168, maxWidth: opt.maxW || 240, boxShadow: '0 1px 3px rgba(15,20,35,.06)' } },
+            h('div', { style: { width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: `oklch(0.93 0.045 ${hue})`, color: `oklch(0.4 0.13 ${hue})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 800 } }, initials(title)),
+            h('div', { style: { minWidth: 0 } }, h('div', { style: { fontSize: 12.5, fontWeight: 700, color: c.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, title), sub2 && h('div', { style: { fontSize: 10.5, color: sub, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, sub2))),
+          meta ? h('div', { style: { fontSize: 9.5, fontWeight: 700, color: `oklch(0.5 0.13 ${hue})`, background: `oklch(0.95 0.04 ${hue})`, borderRadius: 999, padding: '2px 9px', marginTop: -8, border: `1px solid oklch(0.85 0.06 ${hue})`, zIndex: 1 } }, meta) : null);
+      };
+      const deptChip = (dp, hue, brName) => { const cnt = positionRowsAll2.filter(p => this._normStatus(p.status)==='ACTIVE' && parEq(p.parent_branch, brName) && coContains(p.department, dp.name_th) && coContains(p.division, dp.division)).length;
+        return h('div', { key: dp.code, title: dp.name_th + (dp.manager ? ' · หัวหน้า ' + dp.manager : ''), style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: c.text, background: c.winHead, border: `1px solid ${c.border}`, borderRadius: 999, padding: '4px 10px 4px 8px' } },
+          h('span', { style: { display: 'flex', color: `oklch(0.55 0.12 ${hue})` } }, K.Icon('box', 12)), h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130 } }, dp.name_th), h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub } }, cnt + ' ตน.')); };
+      const divCol = (dv, i, isFirst, isLast) => { const hue = [200,158,35,85,130,300][i % 6];
+        const depts = departmentRows.filter(d => this._normStatus(d.status)==='ACTIVE' && coContains(d.scope_company, dv.scope_company) && parEq(d.parent_branch, dv.parent_branch) && coContains(d.division, dv.name_th)).sort((a,b)=>String(a.code||'').localeCompare(String(b.code||''),'th',{numeric:true}));
+        const posCnt = positionRowsAll2.filter(p => this._normStatus(p.status)==='ACTIVE' && coContains(p.scope_company, dv.scope_company) && parEq(p.parent_branch, dv.parent_branch) && coContains(p.division, dv.name_th)).length;
+        return h('div', { key: dv.code, ref: el => { if (isFirst) this._chartFirstCol = el; if (isLast) this._chartLastCol = el; }, style: { display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 190 } },
+          node(hue, dv.name_th, dv.manager ? 'หัวหน้า: ' + dv.manager : null, depts.length ? depts.length + ' แผนก · ' + posCnt + ' ตน.' : posCnt + ' ตน.'),
+          depts.length ? h('div', { style: { width: 2, height: 16, background: c.border } }) : null,
+          depts.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'stretch', width: '100%', marginTop: 2 } }, depts.map(dp => deptChip(dp, hue, dv.parent_branch))) : null);
+      };
+      const chartBranches = branchSrc.slice().sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'th', { numeric: true }));
+      Array.from(new Set(divisionRows.filter(d => this._normStatus(d.status) === 'ACTIVE' && (d.parent_branch == null || d.parent_branch === '') && d.scope_company && (coAllNow ? companyOpts.some(o => coContains(o, d.scope_company)) : coSelNow.some(o => coContains(d.scope_company, o)))).map(d => d.scope_company))).forEach(co => { chartBranches.push({ code: '__co__' + co, name_th: 'ไม่ระบุสาขา', scope_company: co, type: '', _co: true }); });
+      const chartBranchNo = this.state.chartBranch && chartBranches.some(b => b.code === this.state.chartBranch) ? this.state.chartBranch : (chartBranches[0] && chartBranches[0].code);
+      const chartBranch = chartBranches.find(b => b.code === chartBranchNo);
+      const chartTabsByCo = [];
+      chartBranches.forEach(b => { let g = chartTabsByCo.find(x => x.scope_company === b.scope_company); if (!g) { g = { scope_company: b.scope_company, brs: [] }; chartTabsByCo.push(g); } g.brs.push(b); });
+      const chartTabsRow = K.card(T, [
+        h('div', { key: 'grps', style: { display: 'flex', flexDirection: 'column', gap: 10 } }, chartTabsByCo.map((g, gi) => h('div', { key: g.scope_company, style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: gi ? 10 : 0, borderTop: gi ? `1px solid ${c.line}` : 'none' } },
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, minWidth: 150, flexShrink: 0 } }, h('span', { style: { display: 'flex', width: 22, height: 22, borderRadius: 7, background: c.accSoft, color: acc, alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, K.Icon('doc', 12)), h('span', { style: { fontSize: 12, fontWeight: 700, color: c.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, g.scope_company)),
+          h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 } }, g.brs.map(b => h('button', { key: b.code, onClick: () => this.setState({ chartBranch: b.code }), style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '6px 13px', borderRadius: 999, border: `1px solid ${b.code === chartBranchNo ? acc : c.border}`, background: b.code === chartBranchNo ? acc : c.win, color: b.code === chartBranchNo ? '#fff' : c.text, cursor: 'pointer', fontFamily: c.font, transition: 'background .12s,border-color .12s' } },
+            (b.type === 'สำนักงานใหญ่') && h('span', { style: { display: 'flex', color: b.code === chartBranchNo ? '#fff' : sub } }, K.Icon('box', 12)), b.name_th)))))) ], { marginBottom: 14, padding: '14px 16px' });
+      const chartDivs = chartBranch ? divisionRows.filter(d => this._normStatus(d.status) === 'ACTIVE' && coContains(d.scope_company, chartBranch.scope_company) && (chartBranch._co ? (d.parent_branch == null || d.parent_branch === '') : coContains(d.parent_branch, chartBranch.name_th))).sort((a,b)=>String(a.code||'').localeCompare(String(b.code||''),'th',{numeric:true})) : [];
+      const coRow = chartBranch ? companyRowsAll.find(x => coContains(x.name_th, chartBranch.scope_company)) : null;
+      const brHead = coRow ? String(coRow.headcount || '') + ' คน' : null;
+      body = [filtRow, chartTabsRow, chartBranch ? K.card(T, [
+        h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 8 } }, h('div', null, h('div', { style: { fontSize: 14, fontWeight: 700 } }, 'ผังโครงสร้างองค์กร'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'บริษัท → สาขา → ฝ่าย → แผนก (จำนวนตำแหน่งต่อแผนก)')),
+          h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, [['ฝ่าย', chartDivs.length, 200], ['แผนก', departmentRows.filter(d=>this._normStatus(d.status)==='ACTIVE'&&coContains(d.scope_company,chartBranch.scope_company)&&(chartBranch._co?(d.parent_branch==null||d.parent_branch===''):coContains(d.parent_branch,chartBranch.name_th))).length, 130], ['ตำแหน่ง', positionRowsAll2.filter(p=>this._normStatus(p.status)==='ACTIVE'&&coContains(p.scope_company,chartBranch.scope_company)&&(chartBranch._co?(p.parent_branch==null||p.parent_branch===''):coContains(p.parent_branch,chartBranch.name_th))).length, 35]].map(([lb,n2,hue])=>h('div',{key:lb,style:{fontSize:10.5,fontWeight:700,color:`oklch(0.5 0.13 ${hue})`,background:`oklch(0.95 0.04 ${hue})`,border:`1px solid oklch(0.85 0.06 ${hue})`,borderRadius:999,padding:'3px 10px'}},n2+' '+lb)))),
+        h('div', { key: 'c', style: { padding: '14px 4px', overflowX: 'auto' } }, h('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 'max-content', margin: '0 auto' } },
+          node(LV.scope_company, chartBranch.scope_company, 'บริษัท', null, { stem: false }),
+          chartBranch._co ? null : node(LV.scope_branch, chartBranch.name_th, brHead, null),
+          chartDivs.length ? h('div', { style: { width: 2, height: 16, background: c.border } }) : null,
+          chartDivs.length ? h('div', { ref: el => { this._chartWrap = el; }, style: { position: 'relative', width: '100%' } },
+            h('div', { style: { position: 'absolute', top: 0, height: 2, background: c.border, left: (this.state.chartLineL != null ? this.state.chartLineL : 95), right: (this.state.chartLineR != null ? this.state.chartLineR : 95) } }),
+            h('div', { style: { display: 'flex', gap: 22, justifyContent: 'center', flexWrap: 'wrap', paddingTop: 2 } }, chartDivs.map((dv, i) => divCol(dv, i, i === 0, i === chartDivs.length - 1)))
+          ) : h('div', { style: { fontSize: 12, color: sub, marginTop: 10 } }, 'ยังไม่มีฝ่ายในสาขานี้')))
+      ]) : K.card(T, [h('div', { style: { fontSize: 12.5, color: sub, padding: '8px 10px' } }, 'ไม่มีสาขาที่แสดงผล')]), actLegend(cfg.acts)];
+    } else if (scr === 'create' || scr === 'edit') {
+      const er = scr === 'edit' ? this.state.edit[nav] : null;
+      const mode = er ? ('edit:' + (er.code || er.name_th || '')) : 'new';
+      const dr = this.state.draft || {};
+      if (nav === 'branch-management' && !this._geoPulled && !this._geoPulling && this.GEO_TABS) { Promise.resolve().then(() => this._geoPull && this._geoPull()); }
+      const pre = key + '|' + mode + '|';
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, er ? (er.name_th || er.code) : 'สร้างรายการใหม่'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, er ? 'โหมดแก้ไข (Edit)' : 'โหมดสร้างใหม่ (New)')), K.btn(T, 'กลับ', false, 'doc', () => { this.setState(s => ({ draft: {}, mode: Object.assign({}, s.mode, { [nav]: 'view' }), edit: Object.assign({}, s.edit, { [nav]: null }) })); this.goScr('detail'); }))], { marginBottom: 14, padding: '12px 16px' });
+      const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb, ty, opt, fw]) => {
+        const m = cfg.roMap && cfg.roMap[lb];
+        const ev = er ? (er['_f:' + lb] !== undefined ? er['_f:' + lb] : (m ? (typeof m === 'function' ? m(er) : er[m]) : null)) : null;
+        const dk = pre + lb;
+        const isBranch = nav === 'branch-management';
+        const useCt = isBranch && lb === 'ประเทศ';
+        const usePv = isBranch && lb === 'จังหวัด';
+        const useDt = isBranch && lb === 'อำเภอ';
+        const useSd = isBranch && lb === 'ตำบล';
+        const useGeo = useCt || usePv || useDt || useSd;
+        const geoEntity = useCt ? 'country' : usePv ? 'province' : useDt ? 'district' : useSd ? 'subdistrict' : null;
+        const cur = useGeo ? this._geoDisp(geoEntity, dr[dk] !== undefined ? dr[dk] : (ev != null ? ev : '')) : (dr[dk] !== undefined ? dr[dk] : (ev != null ? ev : ''));
+        const onCh = e => { const v = e.target.value; this.setState(s => { const nd = Object.assign({}, s.draft, { [dk]: v }); if (useCo) { delete nd[pre + 'สาขา']; delete nd[pre + 'ฝ่าย']; delete nd[pre + 'แผนก']; } else if (useBr) { delete nd[pre + 'ฝ่าย']; delete nd[pre + 'แผนก']; } else if (useDv) { delete nd[pre + 'แผนก']; } return { draft: nd }; }); };
+        const useCo = /บริษัท/.test(lb) && (Array.isArray(opt) || nav !== 'company-management');
+        const useBr = /สาขา/.test(lb) && nav !== 'branch-management';
+        const useDv = /ฝ่าย/.test(lb) && nav !== 'division-management';
+        const useDp = /แผนก/.test(lb) && nav !== 'department-management';
+        const useTn = /อ้างอิงกลุ่มผู้เช่า/.test(lb);
+
+        const draftOrRo = (label) => dr[pre + label] !== undefined ? dr[pre + label] : (er && cfg.roMap && cfg.roMap[label] && typeof cfg.roMap[label] === 'string' ? er[cfg.roMap[label]] : '');
+        let optList = opt;
+        if (useCo) optList = formOptsFromRows(companyRowsAll);
+        else if (useBr) {
+          const selCo = draftOrRo('บริษัท');
+          const bsrc = (!selCo ? branchRows : branchRows.filter(b => !b.scope_company || coContains(b.scope_company, selCo)));
+          optList = formOptsFromRows(bsrc);
+        }
+        else if (useDv) {
+          const selCo = draftOrRo('บริษัท'); const selBr = draftOrRo('สาขา');
+          const dsrc = divisionRows.filter(d => (!selCo || !d.scope_company || coContains(d.scope_company, selCo)) && (!selBr || !d.parent_branch || coContains(d.parent_branch, selBr)));
+          optList = formOptsFromRows(dsrc);
+        }
+        else if (useDp) {
+          const selCo = draftOrRo('บริษัท'); const selBr = draftOrRo('สาขา'); const selDv = draftOrRo('ฝ่าย');
+          const dsrc = departmentRows.filter(d => (!selCo || !d.scope_company || coContains(d.scope_company, selCo)) && (!selBr || !d.parent_branch || coContains(d.parent_branch, selBr)) && (!selDv || !d.division || coContains(d.division, selDv)));
+          optList = formOptsFromRows(dsrc);
+        }
+        else if (useTn) optList = tenantOpts;
+        else if (useCt) optList = this._geoBranchOpts('country', '', draftOrRo('บริษัท'));
+        else if (usePv) optList = this._geoBranchOpts('province', draftOrRo('ประเทศ'), draftOrRo('บริษัท'));
+        else if (useDt) optList = this._geoBranchOpts('district', draftOrRo('จังหวัด'), draftOrRo('บริษัท'));
+        else if (useSd) optList = this._geoBranchOpts('subdistrict', draftOrRo('อำเภอ'), draftOrRo('บริษัท'));
+        const isPick = Array.isArray(optList) || useCo || useBr || useDv || useDp || useTn || useGeo;
+        const curInList = cur === '' || cur == null || !Array.isArray(optList) || optList.some(o => String(typeof o === 'string' ? o : o.value) === String(cur));
+        const extraOpt = (!curInList && cur) ? [h('option', { key: '__cur', value: cur }, useTn ? (tenantName(cur) || String(cur)) : String(cur))] : [];
+        const onChGeo = e => { const v = e.target.value; this.setState(s => { const nd = Object.assign({}, s.draft, { [dk]: v });
+          if (useCt) { delete nd[pre + 'จังหวัด']; delete nd[pre + 'อำเภอ']; delete nd[pre + 'ตำบล']; delete nd[pre + 'รหัสไปรษณีย์']; }
+          else if (usePv) { delete nd[pre + 'อำเภอ']; delete nd[pre + 'ตำบล']; delete nd[pre + 'รหัสไปรษณีย์']; }
+          else if (useDt) { delete nd[pre + 'ตำบล']; delete nd[pre + 'รหัสไปรษณีย์']; }
+          else if (useSd) { const z = this._geoZipFor(v, nd[pre + 'บริษัท'] !== undefined ? nd[pre + 'บริษัท'] : draftOrRo('บริษัท')); if (z) nd[pre + 'รหัสไปรษณีย์'] = z; }
+          return { draft: nd }; }); };
+        const node = isPick
+          ? h('select', { value: cur || '', onChange: useGeo ? onChGeo : onCh, style: Object.assign({}, K.inp(T), { cursor: 'pointer' }) }, [h('option', { key: '_', value: '' }, '— เลือก —'), ...extraOpt, ...(optList || []).map(o => typeof o === 'string' ? h('option', { key: o, value: o }, o) : h('option', { key: o.value, value: o.value }, o.label))])
+          : h('input', { placeholder: typeof opt === 'string' ? opt : '', value: cur, onChange: onCh, style: K.inp(T) });
+        return K.field(T, lb, node, ty === 1, fw);
+      })));
+      const save = K.btn(T, 'บันทึก', true, 'check', () => { this.doSave(); this.goScr('detail'); });
+      const stDk = pre + 'สถานะ';
+      const stCur = dr[stDk] !== undefined ? dr[stDk] : (er ? this.statusDesc(er.status) : 'ใช้งาน');
+      const statusFormEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, this.statusDesc(stCur), this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPTS.map(o => h('option', { key: o, value: o }, o)))))], { marginBottom: 14, padding: '12px 16px' });
+      body = [hdr, ...secs, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState(s => ({ draft: {}, mode: Object.assign({}, s.mode, { [nav]: 'view' }), edit: Object.assign({}, s.edit, { [nav]: null }) })); this.goScr('detail'); }), save), actLegend(cfg.acts)];
+    } else if (scr === 'detail' && cfg.roMap) {
+      const r = selRow;
+      if (!r) { this.setScr('list'); body = []; }
+      else {
+        const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.name_th || r.code), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only)')), h('div', { style: { display: 'flex', gap: 7, flexWrap: 'wrap' } }, K.btn(T, 'พิมพ์', false, 'doc', () => this.toast('พิมพ์')), K.btn(T, 'แก้ไข', true, 'doc', () => this.enterEdit(r)), K.btn(T, 'สร้างใหม่', false, 'plus', () => this.enterCreate())))], { marginBottom: 14, padding: '12px 16px' });
+        const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb, , , fw]) => { const m = cfg.roMap[lb]; const ov = r['_f:' + lb]; let val = ov !== undefined ? ov : (typeof m === 'function' ? m(r) : (m ? r[m] : '')); if (m === 'tenant_id') val = tenantName(r.tenant_id); else if (nav === 'branch-management' && (m === 'country' || m === 'province' || m === 'district' || m === 'subdist')) val = this._geoDisp(m === 'subdist' ? 'subdistrict' : m, val); return K.field(T, lb, K.roField(T, val), false, fw); })));
+        const curSt = r.status || 'ใช้งาน';
+        const fmtDt = v => { if (!v) return '—'; try { return new Date(v).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return String(v); } };
+        const auditSec = K.formSec(T, 'ข้อมูลระบบ (System Info)', 'gauge', [K.field(T, 'สร้างเมื่อ (CreatedAt)', K.roField(T, fmtDt(r.createdAt))), K.field(T, 'สร้างโดย (CreatedBy)', K.roField(T, r.createdBy || '—')), K.field(T, 'แก้ไขล่าสุด (UpdatedAt)', K.roField(T, fmtDt(r.updatedAt))), K.field(T, 'แก้ไขโดย (UpdatedBy)', K.roField(T, r.updatedBy || '—'))]);
+        const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือโหมดสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, this.statusDesc(curSt), this.statusHue(curSt))))], { marginBottom: 14, padding: '12px 16px' });
+        body = [hdr, ...secs, auditSec, statusEditor];
+      }
+    } else if (scr === 'tree') {
+      const dh = [265, 200, 158, 35, 85];
+      const treeBranches = branchSrc.slice().sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'th', { numeric: true }));
+      const activeBranchNo = this.state.treeBranch && treeBranches.some(b => b.code === this.state.treeBranch) ? this.state.treeBranch : (treeBranches[0] && treeBranches[0].code);
+      const activeBranch = treeBranches.find(b => b.code === activeBranchNo);
+      let treeRows = [];
+      if (activeBranch) {
+        treeRows.push({ id: 'co', pid: null, label: activeBranch.scope_company + ' (Company)', lv: 0 });
+        treeRows.push({ id: 'br', pid: 'co', label: activeBranch.name_th + ' (Branch)', lv: 1 });
+        const divs = divisionRows.filter(d => this._normStatus(d.status) === 'ACTIVE' && coContains(d.scope_company, activeBranch.scope_company) && coContains(d.parent_branch, activeBranch.name_th));
+        divs.forEach(dv => {
+          const dvId = 'dv:' + dv.code;
+          treeRows.push({ id: dvId, pid: 'br', label: dv.name_th + ' (Division)', lv: 2 });
+          const deps = departmentRows.filter(d => this._normStatus(d.status) === 'ACTIVE' && coContains(d.scope_company, activeBranch.scope_company) && coContains(d.parent_branch, activeBranch.name_th) && coContains(d.division, dv.name_th));
+          deps.forEach(dp => {
+            const dpId = 'dp:' + dp.code;
+            treeRows.push({ id: dpId, pid: dvId, label: dp.name_th + ' (Department)', lv: 3 });
+            const posRows = (this.dbRows('position-management', (cfgAll['position-management']||{}).rows || []) || []).filter(p => this._normStatus(p.status) === 'ACTIVE' && coContains(p.scope_company, activeBranch.scope_company) && coContains(p.parent_branch, activeBranch.name_th) && coContains(p.department, dp.name_th) && coContains(p.division, dv.name_th));
+            posRows.forEach(ps => treeRows.push({ id: 'ps:' + ps.code, pid: dpId, label: ps.name_th + ' (Position)', lv: 4 }));
+          });
+        });
+      }
+      const childCount = {}; treeRows.forEach(r => { if (r.pid) childCount[r.pid] = (childCount[r.pid] || 0) + 1; });
+      const collapsedSet = this.state.treeCollapsed || {};
+      const isHidden = (r) => { let p = r.pid; while (p) { if (collapsedSet[p]) return true; const pr = treeRows.find(x => x.id === p); p = pr ? pr.pid : null; } return false; };
+      const toggleCollapse = (id) => this.setState(s => { const cur = Object.assign({}, s.treeCollapsed); if (cur[id]) delete cur[id]; else cur[id] = true; return { treeCollapsed: cur }; });
+      const tabsByCo = [];
+      treeBranches.forEach(b => { let g = tabsByCo.find(x => x.scope_company === b.scope_company); if (!g) { g = { scope_company: b.scope_company, brs: [] }; tabsByCo.push(g); } g.brs.push(b); });
+      const tabsRow = h('div', { key: 'tabs', style: { display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 } }, tabsByCo.map(g => h('div', { key: g.scope_company, style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } }, h('span', { style: { fontSize: 11, fontWeight: 700, color: sub, marginRight: 2 } }, g.scope_company + ' :'), g.brs.map(b => h('button', { key: b.code, onClick: () => this.setState({ treeBranch: b.code }), style: { fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 999, border: `1px solid ${b.code === activeBranchNo ? acc : c.border}`, background: b.code === activeBranchNo ? acc : c.win, color: b.code === activeBranchNo ? '#fff' : c.text, cursor: 'pointer', fontFamily: c.font } }, b.name_th)))));
+      body = [filtRow, tabsRow, K.card(T, [h('div', { key: 0, style: { fontSize: 14, fontWeight: 700, marginBottom: 12 } }, 'ลำดับชั้น (Hierarchy)'), h('div', { key: 1, style: { display: 'flex', flexDirection: 'column', gap: 6 } }, treeRows.length ? treeRows.filter(r => !isHidden(r)).map((r, i) => h('div', { key: r.id, style: { display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', paddingLeft: 12 + r.lv * 22, borderRadius: 8, background: 'transparent', fontWeight: 700, fontSize: 12.5 } }, childCount[r.id] ? h('button', { onClick: () => toggleCollapse(r.id), style: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, border: 'none', background: 'transparent', color: sub, cursor: 'pointer', padding: 0, flexShrink: 0, transform: collapsedSet[r.id] ? 'rotate(-90deg)' : 'none' } }, K.Icon('arrowdown', 11)) : h('span', { style: { width: 16, flexShrink: 0 } }), h('span', { style: { width: 8, height: 8, borderRadius: r.lv === 0 ? 2 : '50%', background: 'oklch(0.6 0.14 ' + (dh[r.lv] || 190) + ')', flexShrink: 0 } }), r.label)) : h('div', { style: { fontSize: 12.5, color: sub, padding: '8px 10px' } }, 'ไม่มีสาขาที่แสดงผล'))]), actLegend(cfg.acts)];
+    } else {
+      // list
+      const canEdit = !!(cfg.form && cfg.roMap);
+      const openDetail = (r) => { if (!canEdit) return; this.setState(s => ({ sel: Object.assign({}, s.sel, { [nav]: r }) })); this.goScr('detail'); };
+      const statusCol = { h: 'สถานะ', render: r => K.pill(T, this.statusDesc(r.status), this.statusHue(r.status)) };
+      const baseCols = (nav === 'organization-chart' || cfg.cols.some(cc => cc.h === 'สถานะ')) ? cfg.cols : cfg.cols.concat([statusCol]);
+      const cols = canEdit ? baseCols.concat([{ h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู'), h('button', { onClick: e => { e.stopPropagation(); this.enterEdit(r); this.toast('แก้ไข ' + (r.code || r.name_th || '')); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'แก้ไข')) }]) : baseCols;
+      const sortSt = (this.state.sort || {})[nav] || { key: 'code', dir: 'asc' };
+      const setSort = (key) => this.setState(s => { const cur = (s.sort || {})[nav] || { key: 'code', dir: 'asc' }; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: Object.assign({}, s.sort, { [nav]: { key, dir } }) }; });
+      const sortedRows = sortSt.key ? fRows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); }) : fRows;
+      body = [cfg.kpi ? K.kpi(T, kpiOverride) : null, filtRow, K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.code || selRow.name_th) : null, (cfg.th || nav), canEdit && K.btn(T, 'สร้างใหม่', true, 'plus', () => this.enterCreate())), actLegend(cfg.acts)];
+    }
+
+    // ---- assemble: host-controlled (Shell) => body-only; else self-chrome (standalone / ITSA.dc.html) ----
+    const controlled = typeof this.props.onScr === 'function';
+    const modal = this.state.confirm ? h('div', { key: 'cf', style: controlled ? { position: 'fixed', top: 38, left: 0, right: 0, bottom: 0, zIndex: 100000, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } : { position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+      h('div', { style: { background: c.dark ? 'oklch(0.23 0.014 265)' : '#fff', borderRadius: 14, border: `1px solid ${c.border}`, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: 400, maxWidth: '100%', padding: '22px 24px', fontFamily: c.font, color: c.text } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } }, h('span', { style: { width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('doc', 18)), h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'บันทึกการเปลี่ยนแปลง?')),
+        h('div', { style: { fontSize: 12.5, color: sub, lineHeight: 1.6, marginBottom: 18 } }, 'คุณกำลัง' + (this.state.edit[nav] ? 'แก้ไข' : 'สร้าง') + 'รายการและยังไม่ได้บันทึก ต้องการบันทึกก่อนออกจากหน้านี้หรือไม่?'),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' } },
+          K.btn(T, 'ยกเลิก', false, null, () => this.setState({ confirm: null })),
+          K.btn(T, 'ไม่บันทึก', false, null, () => this.confirmDiscard()),
+          K.btn(T, 'บันทึก', true, 'check', () => this.confirmSave())))) : null;
+    if (controlled) return { fg: c.text, view: h('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column' } }, h('div', { style: { display: 'flex', flexDirection: 'column' } }, body), modal) };
+
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const NAVIC = { 'organizational-elements': 'box', 'business-group': 'cash', 'company-management': 'doc', 'branch-management': 'box', 'division-management': 'box', 'department-management': 'box', 'business-unit': 'cash', 'position-management': 'user', 'organization-chart': 'crm', 'geographic-information': 'crm' };
+    const ORDER = ['company-management', 'branch-management', 'division-management', 'department-management', 'position-management', 'organization-chart', 'geographic-information'];
+    const hidden = !!this.props.showHidden;
+    const NAVKEYS = hidden ? ORDER.concat(Object.keys(cfgAll).filter(k => ORDER.indexOf(k) < 0)) : ORDER;
+    const NAVS = NAVKEYS.filter(k => cfgAll[k]).map(k => [k, cfgAll[k].th, NAVIC[k] || 'box', ORDER.indexOf(k) < 0, !!cfgAll[k].disabled]);
+    const collapsed = !!this.state.sideCollapsed;
+    const menuBtns = NAVS.map(([id, th, ic, hid, dis]) => { const on = id === nav;
+      return h('button', { key: id, title: dis ? th + ' (ปิดใช้งาน)' : th, onClick: () => dis ? this.toast(th + ' · ปิดใช้งานอยู่') : this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: dis ? 'not-allowed' : 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text, opacity: dis ? 0.45 : (hid ? 0.62 : 1) } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th), !collapsed && dis && h('span', { style: { fontSize: 8, fontWeight: 700, letterSpacing: .4, padding: '2px 5px', borderRadius: 5, background: '#e5484d', color: '#fff' } }, 'ปิด'), !collapsed && hid && !dis && h('span', { style: { fontSize: 8, fontWeight: 700, letterSpacing: .4, padding: '2px 5px', borderRadius: 5, background: c.line, color: sub } }, 'HIDDEN')); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const tabsEl = h('div', { style: { display: 'flex', gap: 6, rowGap: 0, flexWrap: 'wrap', borderBottom: `1px solid ${border}` } }, cfg.screens.filter(([id]) => id === 'create' ? this.curMode() === 'create' : id === 'edit' ? this.curMode() === 'edit' : true).map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb;
+      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, hidden ? h('span', { style: { fontSize: 8.5, fontWeight: 700, letterSpacing: .4, padding: '2px 6px', borderRadius: 5, background: on ? acc : c.line, color: on ? '#fff' : sub } }, 'L4') : null, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const crumbMini = 'L1 · ระบบผู้ดูแลระบบไอที (ITSA)  ›  L2 · โครงสร้างองค์กร (ORG)  ›  L3 · ' + cfg.th;
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('box', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('box', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'โครงสร้างองค์กร')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns)),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
+          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px' } }, h('div', { style: { minWidth: 0 } }, h('div', { style: { fontSize: 13.5, fontWeight: 700, lineHeight: 1.45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, cfg.th), crumbMini && h('div', { style: { fontSize: 10.5, color: sub, lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 } }, crumbMini)),
+            (() => { const st = this.state.sheetsStatus; return K.sheetsBadge(T, st); })()),
+          h('div', { style: { padding: '0 14px' } }, tabsEl)),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20, background: 'transparent' } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view, modal) };
+  }
+}
+</script>
+</body>
+</html>

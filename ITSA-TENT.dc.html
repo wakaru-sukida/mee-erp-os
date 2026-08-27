@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>*{box-sizing:border-box;}</style></helmet>
+<div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+class Component extends DCLogic {
+  K = (typeof window !== 'undefined' && window.__erpKit) || null;
+  DBKEY = 'db:itsa-tent:v2';
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  SHEETS_TABS = {'tenant-management':'itsa-tent-management','tenant-provisioning':'itsa-tent-provisioning','tenant-subscription-plan':'itsa-tent-subscription-plan','tenant-configuration':'itsa-tent-configuration','tenant-isolation':'itsa-tent-isolation','tenant-billing':'itsa-tent-billing','tenant-monitoring':'itsa-tent-monitoring'};
+  MODULE_SHEET_URLS = { PROC:'https://script.google.com/macros/s/AKfycbwBVfkM1SKbU9GBGqKl7HFSyYwQk68Pbgw4sLIuVDYauQNcjoexIKGq95jQo6t9G15kbw/exec', SALE:'https://script.google.com/macros/s/AKfycbw-BYtdiY1KFRb5QbBQNtLZopkf2Kg-UjB1fsXA25hFkP2w6W1ZI-sc0Tufa5IM97JOpw/exec', INVT:'https://script.google.com/macros/s/AKfycbx1rJ24AXRBkIQ-YsooCtXdFbQsdmwC8_3LuXl13OT77FTmFfM2kEq03Xh7arygTVBxwg/exec', PROD:'https://script.google.com/macros/s/AKfycbytgS1C1K02d0-Q361GwIe8XjnWeXw-aS4Lip7_sGRbwWjjmy_uK2l0PoE4s82F0ym3bg/exec', SRVC:'https://script.google.com/macros/s/AKfycbw2nadNMpHvVdS5cEAnBjg0x6UiVp50tXl6RWN6SFozYckpRPSGwtc0mcRomaudVkVMfQ/exec', ACCT:'https://script.google.com/macros/s/AKfycbwcpSTWgmIzVXbN9lylrhQXFdvpZQvZ9c34ycFTWC2bsmzciZKXOeK2LFY0mxi--r-eWg/exec', HRMS:'https://script.google.com/macros/s/AKfycbyy4h_L0185o7kEwPF04wuB4DIIIAJ8vazLfmWJ3RHQ8nRG93lS-8kBQOULDo7IdyW6ZQ/exec', ADMS:'https://script.google.com/macros/s/AKfycbxO618Pm-feBXIqujLqKrwWsOu1mV9VeA7OcDucbgFf3pfkO3YpbnVRvaGL82NCzdDCcQ/exec', ITSA:'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec' };
+  _publishSheetUrls() { if (!this.K || !this.K.bus) return; const b = this.K.bus(); if (!b) return; const map = Object.assign({}, this.MODULE_SHEET_URLS); const rows = (this.state.db && this.state.db['tenant-isolation']) || []; const row = rows[0]; if (row) { Object.keys(map).forEach(mod => { const v = row['_f:ลิงก์ App Script (Google Sheet) — ' + mod] || row['link_' + mod.toLowerCase()]; if (v && /^https?:/.test(v)) map[mod] = v; }); } const prev = b.get('tenant.sheetUrls', null); if (JSON.stringify(prev) !== JSON.stringify(map)) b.set('tenant.sheetUrls', map); }
+  _publishTenants() { if (!this.K || !this.K.bus) return; const b = this.K.bus(); if (!b) return; const rows = this.dbRows('tenant-management', (this.CFG()['tenant-management'].rows) || []) || []; const list = rows.filter(r => r && r.name_th).map(r => ({ id: String(this._tentId(r)), code: r.code || '', name_th: r.name_th })); const sig = JSON.stringify(list); if (this._tenantSig !== sig) { this._tenantSig = sig; b.set('org.tenants', list); } }
+  _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); if (K.sheetsBind && this.SHEETS_URL) { K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS); this._wrapPush(); } } K.dbPersist(this, this.DBKEY); }
+  _wrapPush() { if (this._pushWrapped || typeof this._sheetsPush !== 'function') return; this._pushWrapped = true; const orig = this._sheetsPush; const PROJ = { 'tenant-management': 1, 'tenant-provisioning': 1, 'tenant-subscription-plan': 1, 'tenant-configuration': 1, 'tenant-isolation': 1, 'tenant-billing': 1 }; this._sheetsPush = (key, rowsIn) => { if (!this._tentReconciled) return; orig(key, PROJ[key] ? (rowsIn || []).map(r => this._tentProject(key, r)) : rowsIn); }; }
+  _who() { return (this.props.api && this.props.api.user) || 'ผู้ดูแลระบบ'; }
+  _digits(v) { const d = String(v == null ? '' : v).replace(/\D/g, ''); return d ? Number(d) : 0; }
+  _hashId(s) { s = String(s || ''); let h = 0; for (let i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) >>> 0; } return (h % 1000000000) || 1; }
+  _isUuid(v) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v == null ? '' : v)); }
+  _uuidFrom(seed) { seed = String(seed || ''); let hex = '', h = 0x811c9dc5 >>> 0; for (let p = 0; hex.length < 32; p++) { for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } h = (h ^ Math.imul(p + 1, 0x9e3779b1)) >>> 0; hex += ('00000000' + (h >>> 0).toString(16)).slice(-8); } hex = hex.slice(0, 32); const y = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16); return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-' + y + hex.slice(17, 20) + '-' + hex.slice(20, 32); }
+  _tentId(r) { if (r && this._isUuid(r.tent_id)) return String(r.tent_id); return this._uuidFrom((r && (r.code || r.name_th)) || ''); }
+  _planId(r) { return r.plan_id != null ? Number(r.plan_id) : (this._digits(r.plan_code) || this._hashId(r.name_th)); }
+  _tentMaps() { const rows = this.state.db['tenant-management'] || (this.CFG()['tenant-management'].rows) || []; const byName = {}, byId = {}; rows.forEach(r => { if (!r || r.name_th === undefined) return; const id = this._tentId(r); byName[r.name_th] = id; byId[id] = r.name_th; }); return { byName, byId }; }
+  _planMaps() { const rows = this.state.db['tenant-subscription-plan'] || (this.CFG()['tenant-subscription-plan'].rows) || []; const byName = {}, byId = {}; rows.forEach(r => { if (!r || r.name_th === undefined) return; const id = this._planId(r); byName[r.name_th] = id; byId[id] = r.name_th; }); return { byName, byId }; }
+  _tentProject(key, r) {
+    const pm = this._planMaps(), tm = this._tentMaps();
+    const A = { created_at: r.created_at || '', created_by: r.created_by || '', updated_at: r.updated_at || '', updated_by: r.updated_by || '' };
+    if (key === 'tenant-management') return Object.assign({ tent_id: this._tentId(r), tent_code: r.code || '', tent_name: r.name_th || '', tent_name_en: r.name_en || '', plan_id: (r.plan_id != null && r.plan_id !== '') ? r.plan_id : (pm.byName[r.plan] || ''), tent_seats: r.seats || '', tent_domain: r.domain || '', status: this._normStatus(r.status) }, A);
+    if (key === 'tenant-provisioning') return Object.assign({ tent_request_id: this._isUuid(r.tent_request_id) ? String(r.tent_request_id) : this._uuidFrom(r.code || r.name_th), tent_request_code: r.code || '', tent_req_name: r.name_th || '', tent_id: tm.byName[r.name_th] || '', plan_id: (r.plan_id != null && r.plan_id !== '') ? r.plan_id : (pm.byName[r.plan] || ''), tent_request_status: r.pstat || '', status: this._normStatus(r.status) }, A);
+    if (key === 'tenant-subscription-plan') { const id = this._planId(r); return Object.assign({ plan_id: id, plan_code: r.plan_code || ('PLAN-' + id), plan_name: r.name_th || '', plan_name_en: r.name_en || '', plan_seats: r.seats || '', plan_price: r.price || '', plan_using_cnt: r.cnt || '', status: this._normStatus(r.status) }, A); }
+    if (key === 'tenant-configuration') return Object.assign({ tent_id: tm.byName[r.name_th] || this._uuidFrom(r.name_th), tent_time_zone: r.tz || '', tent_currency: r.cur || '', tent_lang: r.lang || '', status: this._normStatus(r.status) }, A);
+    if (key === 'tenant-isolation') return Object.assign({ tent_id: tm.byName[r.name_th] || this._uuidFrom(r.name_th), isolation_mode: r.mode || '', isolation_db: r.db || '', isolation_module_type: r.partition_type || '', link_all: r.link_all || '', link_proc: r.link_proc || '', link_sale: r.link_sale || '', link_invt: r.link_invt || '', link_prod: r.link_prod || '', link_srvc: r.link_srvc || '', link_acct: r.link_acct || '', link_hrms: r.link_hrms || '', link_adms: r.link_adms || '', link_itsa: r.link_itsa || '', db_host: r.db_host || '', db_port: r.db_port || '', db_name: r.db_name || '', db_schema: r.db_schema || '', db_user: r.db_user || '', db_ssl: r.db_ssl || '', status: this._normStatus(r.status) }, A);
+    if (key === 'tenant-billing') return Object.assign({ billing_id: this._isUuid(r.billing_id) ? String(r.billing_id) : this._uuidFrom(r.code || r.name_th), billing_code: r.code || '', tent_id: tm.byName[r.name_th] || '', billing_period: r.period || '', billing_amt: r.amt || '', billing_status: this._normBilling(r.bstat), status: this._normStatus(r.status) }, A);
+    return r;
+  }
+  _tentNative(key, r, tById, pById) {
+    const A = { created_at: r.created_at || '', created_by: r.created_by || '', updated_at: r.updated_at || '', updated_by: r.updated_by || '' };
+    if (key === 'tenant-management') return Object.assign({ tent_id: this._tentId(r), code: r.tent_code || '', name_th: r.tent_name || '', name_en: r.tent_name_en || '', plan_id: r.plan_id, plan: pById[r.plan_id] || '', seats: r.tent_seats || '', domain: r.tent_domain || '', status: this._normStatus(r.status !== undefined ? r.status : r.tent_status) }, A);
+    if (key === 'tenant-provisioning') return Object.assign({ tent_request_id: this._isUuid(r.tent_request_id) ? String(r.tent_request_id) : this._uuidFrom(r.tent_request_code || ''), code: r.tent_request_code || '', name_th: tById[r.tent_id] || r.tent_req_name || '', tent_id: r.tent_id || '', plan_id: r.plan_id, plan: pById[r.plan_id] || '', pstat: r.tent_request_status || '', status: this._normStatus(r.status) }, A);
+    if (key === 'tenant-subscription-plan') return Object.assign({ plan_id: r.plan_id, plan_code: r.plan_code || '', name_th: r.plan_name || '', name_en: r.plan_name_en || '', seats: r.plan_seats || '', price: r.plan_price || '', cnt: r.plan_using_cnt || '', status: this._normStatus(r.status) }, A);
+    if (key === 'tenant-configuration') return Object.assign({ tent_id: r.tent_id, name_th: tById[r.tent_id] || '', tz: r.tent_time_zone || '', cur: r.tent_currency || '', lang: r.tent_lang || '', status: this._normStatus(r.status) }, A);
+    if (key === 'tenant-isolation') { const o = Object.assign({ tent_id: r.tent_id, name_th: tById[r.tent_id] || '', mode: r.isolation_mode || '', db: r.isolation_db || '', partition_type: r.isolation_module_type || '', link_all: r.link_all || '', link_proc: r.link_proc || '', link_sale: r.link_sale || '', link_invt: r.link_invt || '', link_prod: r.link_prod || '', link_srvc: r.link_srvc || '', link_acct: r.link_acct || '', link_hrms: r.link_hrms || '', link_adms: r.link_adms || '', link_itsa: r.link_itsa || '', db_host: r.db_host || '', db_port: r.db_port || '', db_name: r.db_name || '', db_schema: r.db_schema || '', db_user: r.db_user || '', db_ssl: r.db_ssl || '', status: this._normStatus(r.status) }, A); ['ALL','PROC','SALE','INVT','PROD','SRVC','ACCT','HRMS','ADMS','ITSA'].forEach(m => { o['_f:ลิงก์ App Script (Google Sheet) — ' + m] = r['link_' + m.toLowerCase()] || ''; }); return o; }
+    if (key === 'tenant-billing') return Object.assign({ billing_id: this._isUuid(r.billing_id) ? String(r.billing_id) : this._uuidFrom(r.billing_code || ''), code: r.billing_code || '', name_th: tById[r.tent_id] || '', period: r.billing_period || '', amt: r.billing_amt || '', bstat: this._normBilling(r.billing_status), status: this._normStatus(r.status) }, A);
+    return r;
+  }
+  _tentHasData(arr) { return Array.isArray(arr) && arr.some(r => r && ((r.name_th != null && r.name_th !== '') || (r.code != null && r.code !== ''))); }
+  _reconcileTent() {
+    const order = ['tenant-subscription-plan', 'tenant-management', 'tenant-provisioning', 'tenant-configuration', 'tenant-isolation', 'tenant-billing'];
+    const probe = { 'tenant-subscription-plan': 'plan_code', 'tenant-management': 'tent_code', 'tenant-provisioning': 'tent_request_code', 'tenant-configuration': 'tent_time_zone', 'tenant-isolation': 'isolation_mode', 'tenant-billing': 'billing_code' };
+    const db = Object.assign({}, this.state.db); let changed = false; const tById = {}, pById = {};
+    if (db['subscription-plan'] !== undefined) { delete db['subscription-plan']; changed = true; }
+    order.forEach(key => {
+      const rows = db[key]; if (!Array.isArray(rows)) return;
+      const needs = r => r && r.name_th === undefined && r[probe[key]] !== undefined;
+      if (rows.some(needs)) { db[key] = rows.map(r => needs(r) ? this._tentNative(key, r, tById, pById) : r).filter(r => r && ((r.name_th != null && r.name_th !== '') || (r.code != null && r.code !== ''))); changed = true; }
+      if (key === 'tenant-subscription-plan') (db[key] || []).forEach(r => { if (r && r.name_th !== undefined) pById[this._planId(r)] = r.name_th; });
+      if (key === 'tenant-management') (db[key] || []).forEach(r => { if (r && r.name_th !== undefined) tById[this._tentId(r)] = r.name_th; });
+    });
+    const cfg = this.CFG();
+    order.forEach(key => { if (!this._tentHasData(db[key])) { db[key] = (cfg[key].rows || []).map(r => { const b = Object.assign({}, r); this._stampIds(key, b); this._stampAudit(b, true); return b; }); changed = true; } });
+    if (changed) this.setState({ db });
+  }
+  PLAN_FALLBACK = [{ plan_code: 'PLAN-001', name_th: 'Starter' }, { plan_code: 'PLAN-002', name_th: 'Professional' }, { plan_code: 'PLAN-003', name_th: 'Enterprise' }];
+  _planRows() { const d = this.state.db['tenant-subscription-plan']; return (Array.isArray(d) && d.length) ? d : this.PLAN_FALLBACK; }
+  _planCode(r) { return r.plan_code || ('PLAN-' + this._planId(r)); }
+  _planOpts() { return this._planRows().filter(r => r && r.name_th).map(r => ({ v: this._planId(r), l: (r.name_th || '') + ' - ' + this._planCode(r) })); }
+  _planLabel(id) { if (id == null || id === '') return ''; const hit = this._planRows().find(r => String(this._planId(r)) === String(id)); return hit ? ((hit.name_th || '') + ' - ' + this._planCode(hit)) : String(id); }
+  _planName(id) { if (id == null || id === '') return ''; const hit = this._planRows().find(r => String(this._planId(r)) === String(id)); return hit ? (hit.name_th || '') : ''; }
+  _syncPlan(b) { if ((b.plan_id == null || b.plan_id === '') && b.plan) b.plan_id = this._planMaps().byName[b.plan] || this._hashId(b.plan); if (b.plan_id != null && b.plan_id !== '') { const nm = this._planName(b.plan_id); if (nm) b.plan = nm; } }
+  _stampIds(key, b) {
+    if (b.status == null || b.status === '') b.status = 'Active';
+    if (key === 'tenant-management') { if (b.tent_id == null) b.tent_id = this._tentId(b); this._syncPlan(b); }
+    else if (key === 'tenant-provisioning') { if (!this._isUuid(b.tent_request_id)) b.tent_request_id = this._uuidFrom(b.code || b.name_th); if (!b.pstat) b.pstat = 'รออนุมัติ'; this._syncPlan(b); }
+    else if (key === 'tenant-subscription-plan') { if (b.plan_id == null) b.plan_id = this._planId(b); if (!b.plan_code) b.plan_code = 'PLAN-' + b.plan_id; }
+    else if (key === 'tenant-configuration' || key === 'tenant-isolation') { if (b.tent_id == null) b.tent_id = this._tentMaps().byName[b.name_th] || this._uuidFrom(b.name_th); }
+    else if (key === 'tenant-billing') { if (!this._isUuid(b.billing_id)) b.billing_id = this._uuidFrom(b.code || b.name_th); if (!b.bstat) b.bstat = 'Pending'; }
+  }
+  _stampAudit(b, isNew) { const now = new Date().toISOString(), who = this._who(); if (isNew) { if (!b.created_at) b.created_at = now; if (!b.created_by) b.created_by = who; } b.updated_at = now; b.updated_by = who; }
+  state = { nav: 'tenant-overview', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {} };
+  componentDidMount() { if (this.K) { this._publishSheetUrls(); this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this._publishSheetUrls(); this.setState({ ready: true }); this._reportCatalog(); }); }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._reportSheetsStatus(); this._handleReq(); this._publishSheetUrls(); this._publishTenants(); if (!this._tentReconciled && this.state.sheetsStatus === 'connected') { this._tentReconciled = true; this._reconcileTent(); } }
+  _reportSheetsStatus() { if (typeof this.props.onSheetsStatus !== 'function') return; const s2 = this.state.sheetsStatus; if (s2 !== this._lastSheetsStatus) { this._lastSheetsStatus = s2; this.props.onSheetsStatus(s2); } }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'cloud', hidden: false, screens: cfg[k].screens.map(([id, lb, ic]) => [id, lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb, ic]) }))); }
+  _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); else if (r.kind === 'scr') this.setScr(r.id); }
+  _reportMode() { if (typeof this.props.onMode !== 'function') return; const m = this.curMode(); if (m !== this._lastMode) { this._lastMode = m; this.props.onMode(m); } }
+  T() { return this.props.theme || {}; }
+  toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+
+  CFG() {
+    return {
+      'tenant-overview': {
+        th: 'ภาพรวมผู้เช่าระบบ', ic: 'gauge',
+        screens: [['list', 'Tenant Overview — ภาพรวมผู้เช่าระบบ', 'list']],
+        cols: [{ h: 'รหัส', k:'code', b: true }, { h: 'ชื่อผู้เช่า', k:'name_th', b: true }, { h: 'แผนสมาชิก', k: 'plan' }, { h: 'สถานะ', render: r => this.K.pill(this.T(), this.statusDesc(r.status), this.statusHue(this._normStatus(r.status))) }],
+        rows: [
+          { code: 'TEN-01', name_th: 'บมจ. มี กรุ๊ป', plan: 'Enterprise', status: 'Active' },
+          { code: 'TEN-02', name_th: 'บจก. มี เทรดดิ้ง', plan: 'Professional', status: 'Active' },
+          { code: 'TEN-03', name_th: 'บจก. มี โลจิสติกส์', plan: 'Professional', status: 'Active' },
+          { code: 'TEN-04', name_th: 'บจก. มี ฟู้ดส์', plan: 'Starter', status: 'Active' }
+        ]
+      },
+      'tenant-management': {
+        th: 'จัดการผู้เช่า', ic: 'cloud',
+        screens: [['list', 'Tenant List — รายการผู้เช่า', 'list'], ['detail', 'Tenant Detail — รายละเอียดผู้เช่า', 'doc'], ['create', 'Create Tenant — เพิ่มผู้เช่า', 'plus'], ['edit', 'Edit Tenant — แก้ไขผู้เช่า', 'doc']],
+        kpi: [['ผู้เช่าทั้งหมด', '4', 'องค์กร', 145], ['แผน Enterprise', '1', '—', 35], ['ที่นั่งรวม', '750', 'seats', 145]],
+        cols: [{ h: 'รหัส', k:'code', b: true }, { h: 'ชื่อผู้เช่า', k:'name_th', b: true }, { h: 'ชื่อผู้เช่า (อังกฤษ)', k:'name_en' }, { h: 'แผนบริการ', render: r => this.K.pill(this.T(), r.plan, this.planHue(r.plan)) }, { h: 'ที่นั่ง', k: 'seats' }, { h: 'โดเมน', k: 'domain' }, { h: 'สถานะ', render: r => this.K.pill(this.T(), this.statusDesc(r.status), this.statusHue(this._normStatus(r.status))) }],
+        rows: [],
+        form: [['ข้อมูลผู้เช่า', 'cloud', [['รหัสผู้เช่า', 0, 'TEN-05'], ['ชื่อผู้เช่า', 1, 'ชื่อองค์กร'], ['ชื่อผู้เช่า (อังกฤษ)', 0, 'Organization Name'], ['แผนสมาชิก', 1, this._planOpts()], ['จำนวนที่นั่ง', 0, '50'], ['โดเมน', 0, 'name.meeerp.scope_company.th']]]],
+        roMap: { 'รหัสผู้เช่า': 'code', 'ชื่อผู้เช่า': 'name_th', 'ชื่อผู้เช่า (อังกฤษ)': 'name_en', 'แผนสมาชิก': 'plan_id', 'จำนวนที่นั่ง': 'seats', 'โดเมน': 'domain' },
+        acts: ['Create', 'Update', 'Delete', 'Suspend', 'Export']
+      },
+      'tenant-provisioning': {
+        th: 'จัดเตรียมผู้เช่า', ic: 'plus',
+        screens: [['list', 'Provisioning Queue — คิวจัดเตรียมผู้เช่า', 'list'], ['detail', 'Provisioning Detail — รายละเอียดคำขอ', 'doc'], ['create', 'Create Request — สร้างคำขอ', 'plus'], ['edit', 'Edit Request — แก้ไขคำขอ', 'doc']],
+        cols: [{ h: 'เลขที่คำขอ', k:'code', b: true }, { h: 'ผู้เช่า', k:'name_th', b: true }, { h: 'แผนสมาชิก', k: 'plan' }, { h: 'สถานะคำขอ', render: r => this.K.pill(this.T(), r.pstat || '-', this.statusHue(r.pstat)) }],
+        rows: [],
+        form: [['ข้อมูลคำขอ', 'plus', [['เลขที่คำขอ', 0, 'PRV-102'], ['ผู้เช่า', 1, 'ชื่อองค์กร'], ['แผนสมาชิก', 1, this._planOpts()], ['สถานะคำขอ', 0, 'เช่น รออนุมัติ'], ['Tenant ID (FK · nullable)', 0, 'ว่างได้ — ออกให้อัตโนมัติเมื่ออนุมัติ']]]],
+        roMap: { 'เลขที่คำขอ': 'code', 'ผู้เช่า': 'name_th', 'แผนสมาชิก': 'plan_id', 'สถานะคำขอ': 'pstat', 'Tenant ID (FK · nullable)': 'tent_id' },
+        acts: ['Create', 'Update', 'Delete', 'Approve', 'Export']
+      },
+      'tenant-subscription-plan': {
+        th: 'แผนสมัครสมาชิกผู้เช่า', ic: 'cash',
+        screens: [['list', 'Subscription Plan List — รายการแพ็กเกจ', 'list'], ['detail', 'Plan Detail — รายละเอียดแพ็กเกจ', 'doc'], ['create', 'Create Plan — สร้างแพ็กเกจ', 'plus'], ['edit', 'Edit Plan — แก้ไขแพ็กเกจ', 'doc']],
+        cols: [{ h: 'เลขที่แผนสมาชิก', k: 'plan_code', b: true }, { h: 'ชื่อแผนสมาชิก', k:'name_th', b: true }, { h: 'ที่นั่งสูงสุด', k: 'seats' }, { h: 'ราคา/เดือน', k: 'price' }, { h: 'ผู้เช่าที่ใช้', k: 'cnt' }],
+        rows: [
+          { plan_code: 'PLAN-001', name_th: 'Starter', name_en: 'Starter', seats: 100, price: '฿9,900', cnt: 1, status: 'Active' },
+          { plan_code: 'PLAN-002', name_th: 'Professional', name_en: 'Professional', seats: 300, price: '฿19,900', cnt: 2, status: 'Active' },
+          { plan_code: 'PLAN-003', name_th: 'Enterprise', name_en: 'Enterprise', seats: 1000, price: '฿49,900', cnt: 1, status: 'Active' }
+        ],
+        form: [['แผนสมัครสมาชิกผู้เช่า', 'cash', [['เลขที่แผนสมาชิก', 0, 'PLAN-001'], ['แผนสมาชิก', 1, 'ชื่อแผนสมาชิก'], ['แผนสมาชิก (อังกฤษ)', 0, 'เช่น Starter'], ['ที่นั่งสูงสุด', 0, 'เช่น 100'], ['ราคา/เดือน', 0, 'เช่น ฿9,900'], ['ผู้เช่าที่ใช้', 0, '0']]]],
+        roMap: { 'เลขที่แผนสมาชิก': 'plan_code', 'แผนสมาชิก': 'name_th', 'แผนสมาชิก (อังกฤษ)': 'name_en', 'ที่นั่งสูงสุด': 'seats', 'ราคา/เดือน': 'price', 'ผู้เช่าที่ใช้': 'cnt' },
+        acts: ['Create', 'Update', 'Delete', 'Export']
+      },
+      'tenant-configuration': {
+        th: 'ตั้งค่าผู้เช่า', ic: 'settings',
+        screens: [['list', 'Tenant Configuration — ตั้งค่าผู้เช่า', 'list'], ['detail', 'Configuration Detail — รายละเอียดการตั้งค่า', 'doc'], ['create', 'Create Configuration — สร้างการตั้งค่า', 'plus'], ['edit', 'Edit Configuration — แก้ไขการตั้งค่า', 'doc']],
+        cols: [{ h: 'ผู้เช่า', k:'name_th', b: true }, { h: 'โซนเวลา', k: 'tz' }, { h: 'สกุลเงินหลัก', k: 'cur' }, { h: 'ภาษาหลัก', k: 'lang' }],
+        rows: [],
+        form: [['ข้อมูลการตั้งค่า', 'settings', [['ผู้เช่า', 1, 'ชื่อองค์กร'], ['โซนเวลา', 0, 'เช่น Asia/Bangkok'], ['สกุลเงินหลัก', 1, ['THB', 'USD']], ['ภาษาหลัก', 1, ['ไทย', 'English']]]]],
+        roMap: { 'ผู้เช่า': 'name_th', 'โซนเวลา': 'tz', 'สกุลเงินหลัก': 'cur', 'ภาษาหลัก': 'lang' },
+        acts: ['Create', 'Update', 'Delete', 'Export']
+      },
+      'tenant-isolation': {
+        th: 'การแยกข้อมูลผู้เช่า', ic: 'box',
+        screens: [['list', 'Tenant Isolation — การแยกข้อมูลผู้เช่า', 'list'], ['detail', 'Isolation Detail — รายละเอียดการแยกข้อมูล', 'doc'], ['create', 'Create Isolation Rule — สร้างกฎการแยกข้อมูล', 'plus'], ['edit', 'Edit Isolation Rule — แก้ไขกฎการแยกข้อมูล', 'doc']],
+        cols: [{ h: 'ผู้เช่า', k:'name_th', b: true }, { h: 'รูปแบบแยกข้อมูล', k: 'mode' }, { h: 'ฐานข้อมูล', k: 'db' }],
+        rows: [],
+        form: [['ข้อมูลการแยกข้อมูล', 'box', [['ผู้เช่า', 1, 'ชื่อองค์กร'], ['รูปแบบแยกข้อมูล', 1, ['Dedicated DB', 'Shared Schema']], ['ฐานข้อมูล', 1, ['Microsoft SQL Server', 'PostgreSQL', 'MySQL', 'Google Sheet']], ['ประเภทพาร์ทไฟล์', 1, ['พาร์ทฐานข้อมูลรวม', 'พาร์ทฐานข้อมูลแยกตามโมดูล'], ['ฐานข้อมูล', 'Google Sheet']],
+          ['ลิงก์ App Script (Google Sheet) — ALL', 0, 'https://docs.google.com/spreadsheets/...', [['ฐานข้อมูล', 'Google Sheet'], ['ประเภทพาร์ทไฟล์', 'พาร์ทฐานข้อมูลรวม']]],
+          ['ลิงก์ App Script (Google Sheet) — PROC', 0, 'https://script.google.com/macros/s/AKfycbwBVfkM1SKbU9GBGqKl7HFSyYwQk68Pbgw4sLIuVDYauQNcjoexIKGq95jQo6t9G15kbw/exec', [['ฐานข้อมูล', 'Google Sheet'], ['ประเภทพาร์ทไฟล์', 'พาร์ทฐานข้อมูลแยกตามโมดูล']]],
+          ['ลิงก์ App Script (Google Sheet) — SALE', 0, 'https://script.google.com/macros/s/AKfycbw-BYtdiY1KFRb5QbBQNtLZopkf2Kg-UjB1fsXA25hFkP2w6W1ZI-sc0Tufa5IM97JOpw/exec', [['ฐานข้อมูล', 'Google Sheet'], ['ประเภทพาร์ทไฟล์', 'พาร์ทฐานข้อมูลแยกตามโมดูล']]],
+          ['ลิงก์ App Script (Google Sheet) — INVT', 0, 'https://script.google.com/macros/s/AKfycbx1rJ24AXRBkIQ-YsooCtXdFbQsdmwC8_3LuXl13OT77FTmFfM2kEq03Xh7arygTVBxwg/exec', [['ฐานข้อมูล', 'Google Sheet'], ['ประเภทพาร์ทไฟล์', 'พาร์ทฐานข้อมูลแยกตามโมดูล']]],
+          ['ลิงก์ App Script (Google Sheet) — PROD', 0, 'https://script.google.com/macros/s/AKfycbytgS1C1K02d0-Q361GwIe8XjnWeXw-aS4Lip7_sGRbwWjjmy_uK2l0PoE4s82F0ym3bg/exec', [['ฐานข้อมูล', 'Google Sheet'], ['ประเภทพาร์ทไฟล์', 'พาร์ทฐานข้อมูลแยกตามโมดูล']]],
+          ['ลิงก์ App Script (Google Sheet) — SRVC', 0, 'https://script.google.com/macros/s/AKfycbw2nadNMpHvVdS5cEAnBjg0x6UiVp50tXl6RWN6SFozYckpRPSGwtc0mcRomaudVkVMfQ/exec', [['ฐานข้อมูล', 'Google Sheet'], ['ประเภทพาร์ทไฟล์', 'พาร์ทฐานข้อมูลแยกตามโมดูล']]],
+          ['ลิงก์ App Script (Google Sheet) — ACCT', 0, 'https://script.google.com/macros/s/AKfycbwcpSTWgmIzVXbN9lylrhQXFdvpZQvZ9c34ycFTWC2bsmzciZKXOeK2LFY0mxi--r-eWg/exec', [['ฐานข้อมูล', 'Google Sheet'], ['ประเภทพาร์ทไฟล์', 'พาร์ทฐานข้อมูลแยกตามโมดูล']]],
+          ['ลิงก์ App Script (Google Sheet) — HRMS', 0, 'https://script.google.com/macros/s/AKfycbyy4h_L0185o7kEwPF04wuB4DIIIAJ8vazLfmWJ3RHQ8nRG93lS-8kBQOULDo7IdyW6ZQ/exec', [['ฐานข้อมูล', 'Google Sheet'], ['ประเภทพาร์ทไฟล์', 'พาร์ทฐานข้อมูลแยกตามโมดูล']]],
+          ['ลิงก์ App Script (Google Sheet) — ADMS', 0, 'https://script.google.com/macros/s/AKfycbxO618Pm-feBXIqujLqKrwWsOu1mV9VeA7OcDucbgFf3pfkO3YpbnVRvaGL82NCzdDCcQ/exec', [['ฐานข้อมูล', 'Google Sheet'], ['ประเภทพาร์ทไฟล์', 'พาร์ทฐานข้อมูลแยกตามโมดูล']]],
+          ['ลิงก์ App Script (Google Sheet) — ITSA', 0, 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec', [['ฐานข้อมูล', 'Google Sheet'], ['ประเภทพาร์ทไฟล์', 'พาร์ทฐานข้อมูลแยกตามโมดูล']]],
+          ['โฮสต์ / เซิร์ฟเวอร์ (Host)', 0, 'เช่น db.example.com หรือ 10.0.0.5', ['ฐานข้อมูล', ['Microsoft SQL Server', 'PostgreSQL', 'MySQL']]],
+          ['พอร์ต (Port)', 0, 'เช่น 1433 / 5432 / 3306', ['ฐานข้อมูล', ['Microsoft SQL Server', 'PostgreSQL', 'MySQL']]],
+          ['ชื่อฐานข้อมูล (Database)', 0, 'เช่น meeerp_tenant01', ['ฐานข้อมูล', ['Microsoft SQL Server', 'PostgreSQL', 'MySQL']]],
+          ['สคีมา (Schema)', 0, 'เช่น public / dbo', ['ฐานข้อมูล', ['PostgreSQL', 'Microsoft SQL Server']]],
+          ['ชื่อผู้ใช้ (Username)', 0, 'เช่น erp_app', ['ฐานข้อมูล', ['Microsoft SQL Server', 'PostgreSQL', 'MySQL']]],
+          ['การเชื่อมต่อปลอดภัย (SSL)', 1, ['เปิด (require)', 'ปิด (disable)'], ['ฐานข้อมูล', ['Microsoft SQL Server', 'PostgreSQL', 'MySQL']]]]]],
+        roMap: { 'ผู้เช่า': 'name_th', 'รูปแบบแยกข้อมูล': 'mode', 'ฐานข้อมูล': 'db', 'ประเภทพาร์ทไฟล์': 'partition_type', 'ลิงก์ App Script (Google Sheet) — PROC': 'link_proc', 'ลิงก์ App Script (Google Sheet) — SALE': 'link_sale', 'ลิงก์ App Script (Google Sheet) — INVT': 'link_invt', 'ลิงก์ App Script (Google Sheet) — PROD': 'link_prod', 'ลิงก์ App Script (Google Sheet) — SRVC': 'link_srvc', 'ลิงก์ App Script (Google Sheet) — ACCT': 'link_acct', 'ลิงก์ App Script (Google Sheet) — HRMS': 'link_hrms', 'ลิงก์ App Script (Google Sheet) — ADMS': 'link_adms', 'ลิงก์ App Script (Google Sheet) — ITSA': 'link_itsa', 'ลิงก์ App Script (Google Sheet) — ALL': 'link_all', 'โฮสต์ / เซิร์ฟเวอร์ (Host)': 'db_host', 'พอร์ต (Port)': 'db_port', 'ชื่อฐานข้อมูล (Database)': 'db_name', 'สคีมา (Schema)': 'db_schema', 'ชื่อผู้ใช้ (Username)': 'db_user', 'การเชื่อมต่อปลอดภัย (SSL)': 'db_ssl' },
+        acts: ['Create', 'Update', 'Delete', 'Export']
+      },
+      'tenant-billing': {
+        th: 'การเรียกเก็บผู้เช่า', ic: 'cash',
+        screens: [['list', 'Tenant Billing — การเรียกเก็บผู้เช่า', 'list'], ['detail', 'Billing Detail — รายละเอียดใบแจ้งหนี้', 'doc'], ['create', 'Create Invoice — สร้างใบแจ้งหนี้', 'plus'], ['edit', 'Edit Invoice — แก้ไขใบแจ้งหนี้', 'doc']],
+        cols: [{ h: 'เลขที่ใบแจ้งหนี้', k:'code', b: true }, { h: 'ผู้เช่า', k:'name_th' }, { h: 'งวด', k: 'period' }, { h: 'ยอดเรียกเก็บ', k: 'amt' }, { h: 'สถานะบิล', render: r => this.K.pill(this.T(), this.billingDesc(r.bstat), this.statusHue(this._normBilling(r.bstat))) }],
+        rows: [],
+        form: [['ข้อมูลใบแจ้งหนี้', 'cash', [['เลขที่ใบแจ้งหนี้', 0, 'BILL-2608'], ['ผู้เช่า', 1, 'ชื่อองค์กร'], ['งวด', 0, 'เช่น ส.ค. 2569'], ['ยอดเรียกเก็บ', 0, 'เช่น ฿19,900'], ['สถานะบิล', 1, this.BILLING_OPT_OBJS]]]],
+        roMap: { 'เลขที่ใบแจ้งหนี้': 'code', 'ผู้เช่า': 'name_th', 'งวด': 'period', 'ยอดเรียกเก็บ': 'amt', 'สถานะบิล': 'bstat' },
+        acts: ['Create', 'Update', 'Delete', 'Send Invoice', 'Export']
+      },
+      'tenant-monitoring': {
+        th: 'เฝ้าติดตามผู้เช่า', ic: 'gauge',
+        screens: [['list', 'Tenant Monitoring — เฝ้าติดตามผู้เช่า', 'list']],
+        cols: [{ h: 'ผู้เช่า', k:'name_th', b: true }, { h: 'Backend', k: 'backend' }, { h: 'CPU', k: 'cpu' }, { h: 'พื้นที่ใช้ไป', k: 'stor' }, { h: 'สถานะ', render: r => this.K.pill(this.T(), r.status || 'ปกติ', this.statusHue(r.status || 'ปกติ')) }],
+        rows: [
+          { name_th: 'บมจ. มี กรุ๊ป', cpu: '42%', stor: '128 GB', status: 'ปกติ' },
+          { name_th: 'บจก. มี เทรดดิ้ง', cpu: '28%', stor: '64 GB', status: 'ปกติ' },
+          { name_th: 'บจก. มี โลจิสติกส์', cpu: '71%', stor: '96 GB', status: 'เฝ้าระวัง' },
+          { name_th: 'บจก. มี ฟู้ดส์', cpu: '19%', stor: '32 GB', status: 'ปกติ' }
+        ]
+      }
+    };
+  }
+  planHue(p) { return ({ 'Enterprise': 265, 'Professional': 200, 'Starter': 145 })[p] || 145; }
+
+  curNav() { return this.props.nav || this.state.nav; }
+  _setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: 'list', mode: 'view', edit: null, sel: null }); }
+  setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
+  dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
+  curScr() { return this.props.scr || this.state.scr; }
+  curMode() { return this.state.mode; }
+  isDirty() { const m = this.curMode(); return m === 'create' || m === 'edit'; }
+  enterCreate() { this.setState({ mode: 'create', edit: null, draft: {} }); this._goScr('create'); }
+  enterEdit(r) { this.setState({ mode: 'edit', edit: r, sel: r, draft: {} }); this._goScr('edit'); }
+  _condMatch(cur, want) { return Array.isArray(want) ? want.indexOf(cur) >= 0 : cur === want; }
+  _fieldVisible(cond, getVal) { if (!cond) return true; const pairs = Array.isArray(cond[0]) ? cond : [cond]; return pairs.every(p => this._condMatch(getVal(p[0]), p[1])); }
+  _provIsApproved(r) { return !!(r && (this._isUuid(r.tent_id) || /อนุมัติแล้ว|จัดเตรียมเสร็จ|เสร็จสิ้น/.test(String(r.pstat || '')))); }
+  approveProvisioning(r) {
+    if (!r) return; const name = r.name_th || r.req_name || '';
+    if (!name) { this.toast('คำขอนี้ยังไม่ได้ระบุผู้เช่า'); return; }
+    if (this._provIsApproved(r)) { this.toast('คำขอนี้ถูกอนุมัติแล้ว'); return; }
+    let tid = this._tentMaps().byName[name];
+    this.setState(s => {
+      const db = Object.assign({}, s.db);
+      const mgmt = (db['tenant-management'] !== undefined ? db['tenant-management'] : (this.CFG()['tenant-management'].rows || [])).slice();
+      if (!tid) {
+        const codeNum = mgmt.reduce((mx, x) => Math.max(mx, this._digits(x.code) || 0), 0) + 1;
+        const tentCode = 'TEN-' + String(codeNum).padStart(2, '0');
+        tid = this._uuidFrom(tentCode);
+        const row = { code: tentCode, name_th: name, name_en: '', plan_id: r.plan_id, plan: r.plan || this._planName(r.plan_id), tent_id: tid, status: 'Active' };
+        this._syncPlan(row); this._stampAudit(row, true); mgmt.push(row); db['tenant-management'] = mgmt;
+      }
+      const prov = (db['tenant-provisioning'] !== undefined ? db['tenant-provisioning'] : (this.CFG()['tenant-provisioning'].rows || [])).map(x => {
+        if (x === r || (x.code != null && x.code === r.code)) { const u = Object.assign({}, x, { tent_id: tid, pstat: 'อนุมัติแล้ว', status: 'Active' }); this._stampAudit(u, false); return u; }
+        return x;
+      });
+      db['tenant-provisioning'] = prov;
+      // auto-create default config + isolation for the new tenant (skip if a row for this tenant name already exists)
+      const cfgRows = (db['tenant-configuration'] !== undefined ? db['tenant-configuration'] : (this.CFG()['tenant-configuration'].rows || [])).slice();
+      if (!cfgRows.some(x => x && x.name_th === name)) { const cr = { name_th: name, tent_id: tid, tz: 'Asia/Bangkok', cur: 'THB', lang: 'ไทย', status: 'Active' }; this._stampAudit(cr, true); cfgRows.push(cr); db['tenant-configuration'] = cfgRows; }
+      const isoRows = (db['tenant-isolation'] !== undefined ? db['tenant-isolation'] : (this.CFG()['tenant-isolation'].rows || [])).slice();
+      if (!isoRows.some(x => x && x.name_th === name)) { const ir = { name_th: name, tent_id: tid, mode: 'Shared Schema', db: 'Google Sheet', partition_type: 'พาร์ทฐานข้อมูลแยกตามโมดูล', status: 'Active' }; this._stampAudit(ir, true); isoRows.push(ir); db['tenant-isolation'] = isoRows; }
+      return { db, sel: Object.assign({}, r, { tent_id: tid, pstat: 'อนุมัติแล้ว', status: 'Active' }) };
+    }, () => this.toast('อนุมัติคำขอแล้ว — สร้างผู้เช่า + ตั้งค่า + การแยกข้อมูล (ค่าเริ่มต้น) และออก Tenant ID (UUID)'));
+  }
+  askConfirm(run) { this.setState({ confirm: run }); }
+  _goScr(v) { if (this.props.onScr) this.props.onScr(v); else this.setState({ scr: v }); }
+  goScr(v) { if (this.isDirty() && v !== 'detail' && v !== 'create' && v !== 'edit') { this.askConfirm(() => this._goScr(v)); return; } this._goScr(v); }
+  setScr(v) { this.goScr(v); }
+  doSave() {
+    const key = this.curNav();
+    const cfg = this.CFG()[key];
+    const er = this.state.edit;
+    const mode = er ? ('edit:' + (er.code || er.name_th || '')) : 'new';
+    const dr = this.state.draft || {}, pre = mode + '|';
+    const base = er ? Object.assign({}, er) : Object.assign({}, (cfg.rows || [])[0]);
+    if (!er && key === 'tenant-provisioning') { base.pstat = 'รออนุมัติ'; base.tent_id = ''; base.tent_req_name = ''; }
+    if (cfg.roMap && cfg.form) cfg.form.forEach(sc => sc[2].forEach(fld => { const lb = fld[0], mm = cfg.roMap[lb], v = dr[pre + lb]; if (v !== undefined) { if (typeof mm === 'string') base[mm] = v; base['_f:' + lb] = v; } }));
+    const stV = dr[pre + 'สถานะ']; if (stV !== undefined && stV !== '') base.status = stV;
+    this._stampIds(key, base); this._stampAudit(base, !er);
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db[key] !== undefined ? db[key] : (cfg.rows || []); db[key] = er ? cur.map(x => (x === er || (x.code != null && x.code === er.code)) ? base : x) : [base, ...cur]; return { db, draft: {}, mode: 'view', sel: base, edit: null }; });
+    this.toast(er ? 'บันทึกการแก้ไขแล้ว' : 'บันทึกเรียบร้อย');
+  }
+  confirmSave() { const r = this.state.confirm; this.doSave(); this.setState({ confirm: null, scr: 'detail' }, () => r && r()); }
+  confirmDiscard() { const r = this.state.confirm; this.setState({ confirm: null, draft: {}, mode: 'view', edit: null, scr: 'list' }, () => r && r()); this.toast('ยกเลิกการเปลี่ยนแปลง'); }
+  STATUS_MAP = { Active: 'ใช้งาน', Inactive: 'ปิดการใช้งาน', Deleted: 'ลบ' };
+  STATUS_OPTS = ['Active', 'Inactive', 'Deleted'];
+  STATUS_OPT_OBJS = [{ v: 'Active', l: 'ใช้งาน' }, { v: 'Inactive', l: 'ปิดการใช้งาน' }, { v: 'Deleted', l: 'ลบ' }];
+  BILLING_MAP = { Paid: 'ชำระแล้ว', Pending: 'รอการชำระ' };
+  BILLING_OPT_OBJS = [{ v: 'Paid', l: 'ชำระแล้ว' }, { v: 'Pending', l: 'รอการชำระ' }];
+  _normStatus(v) { if (v == null || v === '') return 'Active'; if (this.STATUS_MAP[v]) return v; const rev = { 'ใช้งาน': 'Active', 'ปิดใช้งาน': 'Inactive', 'ปิดการใช้งาน': 'Inactive', 'ลบ': 'Deleted' }; return rev[v] || 'Active'; }
+  _normBilling(v) { if (v == null || v === '') return 'Pending'; if (this.BILLING_MAP[v]) return v; const rev = { 'ชำระแล้ว': 'Paid', 'รอชำระ': 'Pending', 'รอการชำระ': 'Pending' }; return rev[v] || 'Pending'; }
+  statusDesc(v) { const id = this._normStatus(v); return this.STATUS_MAP[id] || id; }
+  billingDesc(v) { const id = this._normBilling(v); return this.BILLING_MAP[id] || id; }
+  statusHue(s) { return ({ Active: 130, Inactive: 22, Deleted: 15, Paid: 130, Pending: 60, 'ใช้งาน': 130, 'ปิดใช้งาน': 22, 'ปกติ': 130, 'เฝ้าระวัง': 60, 'เตือน': 60, 'วิกฤต': 22, 'รออนุมัติ': 60, 'อนุมัติแล้ว': 130, 'จัดเตรียมเสร็จ': 130, 'เสร็จสิ้น': 130, 'กำลังจัดเตรียม': 200, 'ปฏิเสธ': 15 })[s] || 130; }
+
+  renderVals() {
+    if (!this.K) return { fg: '#333', view: null };
+    const sl = this.K.sheetsLoading ? this.K.sheetsLoading(this, 'ผู้เช่าระบบ · ITSA-TENT') : null; if (sl) return sl;
+    const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
+    if (nav === 'tenant-overview') {
+      const tm = this.dbRows('tenant-management', cfgAll['tenant-management'].rows || []);
+      cfg.rows = tm.map(r => ({ code: r.code, name_th: r.name_th, plan: r.plan, status: r.status }));
+      const seatsTotal = tm.reduce((sum, r) => sum + (parseInt(r.seats, 10) || 0), 0);
+      cfg.kpi = [['ผู้เช่าทั้งหมด', String(tm.length), 'องค์กร', 145], ['ที่นั่งรวม', String(seatsTotal), 'seats', 200], ['แผน Enterprise', String(tm.filter(r => r.plan === 'Enterprise').length), '—', 265]];
+    }
+    if (nav === 'tenant-monitoring') {
+      const iso = this.dbRows('tenant-isolation', cfgAll['tenant-isolation'] && cfgAll['tenant-isolation'].rows || []);
+      const isoBy = {}; iso.forEach(r => { if (r && r.name_th) isoBy[r.name_th] = r; });
+      const tm = this.dbRows('tenant-management', cfgAll['tenant-management'].rows || []).filter(r => r && r.name_th && (!r.status || this._normStatus(r.status) === 'Active'));
+      const seed = (this.CFG()['tenant-monitoring'].rows) || [];
+      const seedBy = {}; seed.forEach(r => { if (r && r.name_th) seedBy[r.name_th] = r; });
+      const hashPct = (s, lo, hi) => { s = String(s || ''); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return lo + (h % (hi - lo + 1)); };
+      cfg.rows = tm.map(r => {
+        const src = seedBy[r.name_th] || {};
+        const cpuN = src.cpu != null ? parseInt(src.cpu, 10) : hashPct(r.name_th + 'c', 12, 82);
+        const storN = src.stor != null ? parseInt(src.stor, 10) : hashPct(r.name_th + 's', 16, 160);
+        const isoRow = isoBy[r.name_th] || {};
+        const backend = isoRow.db || 'Google Sheet';
+        const st = cpuN >= 85 ? 'วิกฤต' : cpuN >= 65 ? 'เฝ้าระวัง' : 'ปกติ';
+        return { name_th: r.name_th, code: r.code, cpu: cpuN + '%', stor: storN + ' GB', backend, mode: isoRow.mode || '', status: st };
+      });
+    }
+    const tenantNames = this.dbRows('tenant-management', cfgAll['tenant-management'].rows || []).filter(r => !r.status || this._normStatus(r.status) === 'Active').map(r => r.name_th).filter(Boolean);
+    ['tenant-configuration', 'tenant-isolation', 'tenant-billing'].forEach(k => {
+      const c2 = cfgAll[k]; if (c2 && c2.form) c2.form = c2.form.map(([title, ic, fields]) => [title, ic, fields.map(f => f[0] === 'ผู้เช่า' ? [f[0], 1, tenantNames] : f)]);
+    });
+    const scr = this.curScr();
+    const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const rows = (nav === 'tenant-overview' || nav === 'tenant-monitoring') ? (cfg.rows || []) : this.dbRows(nav, cfg.rows || []);
+    const selRow = this.state.sel || rows[0] || null;
+    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'ACTIONS'), list.map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+    let body;
+    if (scr === 'create' || scr === 'edit') {
+      const er = scr === 'edit' ? this.state.edit : null;
+      const mode = er ? ('edit:' + (er.code || er.name_th || '')) : 'new';
+      const dr = this.state.draft || {}, pre = mode + '|';
+      const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, er ? (er.name_th || er.code) : 'สร้างรายการใหม่'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, er ? 'โหมดแก้ไข (Edit)' : 'โหมดสร้างใหม่ (New)')), K.btn(T, 'กลับ', false, 'doc', () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }))], { marginBottom: 14, padding: '12px 16px' });
+      const fieldCur = (lb) => { const m = cfg.roMap && cfg.roMap[lb]; const ev = er ? (er['_f:' + lb] !== undefined ? er['_f:' + lb] : (m ? er[m] : null)) : null; const dk = pre + lb; return dr[dk] !== undefined ? dr[dk] : (ev != null ? ev : ''); };
+      const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.filter(f => this._fieldVisible(f[3], lb => fieldCur(lb))).map(([lb, ty, opt]) => {
+        const dk = pre + lb;
+        const cur0 = fieldCur(lb);
+        const cur = (dr[dk] === undefined && !er && typeof opt === 'string' && opt.indexOf('https://') === 0) ? opt : cur0;
+        const onCh = e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [dk]: v }) })); };
+        const node = Array.isArray(opt)
+          ? h('select', { value: cur == null ? '' : String(cur), onChange: onCh, style: Object.assign({}, K.inp(T), { cursor: 'pointer' }) }, [h('option', { key: '_', value: '' }, '— เลือก —'), ...opt.map(o => { const ov = (o && typeof o === 'object') ? o.v : o; const ol = (o && typeof o === 'object') ? o.l : o; return h('option', { key: ov, value: ov }, ol); })])
+          : h('input', { placeholder: typeof opt === 'string' ? opt : '', value: cur, onChange: onCh, style: K.inp(T) });
+        return K.field(T, lb, node, ty === 1);
+      })));
+      const save = K.btn(T, 'บันทึก', true, 'check', () => { this.doSave(); this.goScr('detail'); });
+      const stDk = pre + 'สถานะ';
+      const stCur = dr[stDk] !== undefined ? dr[stDk] : (er ? this._normStatus(er.status) : 'Active');
+      const statusFormEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, this.statusDesc(stCur), this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPT_OBJS.map(o => h('option', { key: o.v, value: o.v }, o.l)))))], { marginBottom: 14, padding: '12px 16px' });
+      body = [hdr, ...secs, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts)];
+    } else if (scr === 'detail' && cfg.roMap) {
+      const r = selRow;
+      if (!r) { this.setScr('list'); body = [null]; }
+      else {
+        const approveBtn = (nav === 'tenant-provisioning' && !this._provIsApproved(r)) ? K.btn(T, 'อนุมัติคำขอ', true, 'check', () => this.approveProvisioning(r)) : null;
+        const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.name_th || r.code), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only)')), h('div', { style: { display: 'flex', gap: 7, flexWrap: 'wrap' } }, approveBtn, K.btn(T, 'พิมพ์', false, 'doc', () => this.toast('พิมพ์')), K.btn(T, 'แก้ไข', true, 'doc', () => this.enterEdit(r)), K.btn(T, 'สร้างใหม่', false, 'plus', () => this.enterCreate())))], { marginBottom: 14, padding: '12px 16px' });
+        const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.filter(f => this._fieldVisible(f[3], lb => cfg.roMap[lb] ? r[cfg.roMap[lb]] : r[lb])).map(([lb]) => { const m = cfg.roMap[lb]; const ov = r['_f:' + lb]; let val = ov !== undefined ? ov : (m ? r[m] : ''); if (m === 'plan_id') val = this._planLabel(r.plan_id != null && r.plan_id !== '' ? r.plan_id : ov); if (m === 'bstat') val = this.billingDesc(r.bstat); return K.field(T, lb, K.roField(T, val)); })));
+        const curSt = this._normStatus(r.status);
+        const _fmtDtT = v => { if (!v) return '—'; try { return new Date(v).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return String(v); } };
+        const auditSec = K.formSec(T, 'ข้อมูลระบบ (System Info)', 'gauge', [K.field(T, 'สร้างเมื่อ (CreatedAt)', K.roField(T, _fmtDtT(r.createdAt || r.created_at))), K.field(T, 'สร้างโดย (CreatedBy)', K.roField(T, r.createdBy || r.created_by || '—')), K.field(T, 'แก้ไขล่าสุด (UpdatedAt)', K.roField(T, _fmtDtT(r.updatedAt || r.updated_at))), K.field(T, 'แก้ไขโดย (UpdatedBy)', K.roField(T, r.updatedBy || r.updated_by || '—'))]);
+        const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือโหมดสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, this.statusDesc(curSt), this.statusHue(curSt))))], { marginBottom: 14, padding: '12px 16px' });
+        body = [hdr, ...secs, auditSec, statusEditor, actLegend(cfg.acts)];
+      }
+    } else {
+      const canEdit = !!(cfg.form && cfg.roMap);
+      const openDetail = (r) => { this.setState({ sel: r }); this.goScr('detail'); };
+      const statusCol = { h: 'สถานะข้อมูล', render: r => K.pill(T, this.statusDesc(r.status), this.statusHue(this._normStatus(r.status))) };
+      const hasStatusCol = cfg.cols.some(cc => cc.h === 'สถานะ' || cc.k === 'status');
+      const baseCols = (cfg.rows && cfg.rows[0] && 'status' in cfg.rows[0] && !hasStatusCol) ? cfg.cols.concat([statusCol]) : cfg.cols;
+      const cols = canEdit ? baseCols.concat([{ h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู'), h('button', { onClick: e => { e.stopPropagation(); this.enterEdit(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'แก้ไข')) }]) : baseCols;
+      const sortSt = (this.state.sort || {})[nav] || { key: null, dir: 'asc' };
+      const setSort = (key) => this.setState(s => { const cur = (s.sort || {})[nav] || { key: null, dir: 'asc' }; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: Object.assign({}, s.sort, { [nav]: { key, dir } }) }; });
+      const sortedRows = sortSt.key ? rows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); }) : rows;
+      body = [cfg.kpi ? K.kpi(T, cfg.kpi) : null, K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.code || selRow.name_th) : null, (cfg.th || nav), canEdit && K.btn(T, 'สร้างใหม่', true, 'plus', () => this.enterCreate())), actLegend(cfg.acts || ['Export'])];
+    }
+
+    const controlled = typeof this.props.onScr === 'function';
+    const modal = this.state.confirm ? h('div', { key: 'cf', style: controlled ? { position: 'fixed', top: 38, left: 0, right: 0, bottom: 0, zIndex: 100000, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } : { position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+      h('div', { style: { background: c.dark ? 'oklch(0.23 0.014 265)' : '#fff', borderRadius: 14, border: `1px solid ${c.border}`, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: 400, maxWidth: '100%', padding: '22px 24px', fontFamily: c.font, color: c.text } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } }, h('span', { style: { width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('doc', 18)), h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'บันทึกการเปลี่ยนแปลง?')),
+        h('div', { style: { fontSize: 12.5, color: sub, lineHeight: 1.6, marginBottom: 18 } }, 'คุณกำลัง' + (this.state.edit ? 'แก้ไข' : 'สร้าง') + 'รายการและยังไม่ได้บันทึก ต้องการบันทึกก่อนออกจากหน้านี้หรือไม่?'),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' } }, K.btn(T, 'ยกเลิก', false, null, () => this.setState({ confirm: null })), K.btn(T, 'ไม่บันทึก', false, null, () => this.confirmDiscard()), K.btn(T, 'บันทึก', true, 'check', () => this.confirmSave())))) : null;
+    if (controlled) return { fg: c.text, view: h('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column' } }, h('div', { style: { display: 'flex', flexDirection: 'column' } }, body), modal) };
+
+    const border = c.border, headBg = c.winHead, line = c.line;
+    const collapsed = !!this.state.sideCollapsed;
+    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'cloud']);
+    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
+      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th)); });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const tabsEl = h('div', { style: { display: 'flex', gap: 6, rowGap: 0, flexWrap: 'wrap', borderBottom: `1px solid ${border}` } }, cfg.screens.filter(([id]) => id === 'create' ? this.curMode() === 'create' : id === 'edit' ? this.curMode() === 'edit' : true).map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb;
+      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
+      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+        collapsed
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('cloud', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('cloud', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'ผู้เช่าระบบ')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns)),
+      h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
+          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px' } }, h('div', null, h('div', { style: { fontSize: 13.5, fontWeight: 700 } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2 } }, 'L1 · ระบบผู้ดูแลระบบไอที (ITSA)  ›  L2 · ผู้เช่าระบบ (Single-Tenant) (TENT)  ›  L3 · ' + cfg.th)), (() => K.sheetsBadge(T, this.state.sheetsStatus))()),
+          h('div', { style: { padding: '0 14px' } }, tabsEl)),
+        h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view, modal) };
+  }
+}
+</script>
+</body>
+</html>
