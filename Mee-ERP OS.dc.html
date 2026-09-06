@@ -855,12 +855,44 @@ class Component extends DCLogic {
     this.setState({aiMsgs:msgs, aiInput:'', aiBusy:true, aiCurrentId:cid, aiView:'chat'});
     this.aiPersist(cid, msgs);
     try{
-      if(!(typeof window!=='undefined'&&window.claude&&window.claude.complete)) throw new Error('ตัวช่วย Claude ใช้ได้เฉพาะในสภาพแวดล้อมตัวอย่าง');
-      const reply=await window.claude.complete({ system:this.aiSystemPrompt(), messages:msgs.map(m=>({role:m.role,content:m.content})), max_tokens:1024 });
+      const AI=await this.aiEngine();
+      if(!AI.ready){ const e=new Error('NOT_CONFIGURED'); e.code='NOT_CONFIGURED'; throw e; }
+      this.aiPublishContext(AI);
+      const reply=await AI.complete({ system:this.aiSystemPrompt(), messages:msgs.map(m=>({role:m.role,content:m.content})) });
       this.setState(s=>{ const full=s.aiMsgs.concat([{role:'assistant',content:(reply||'').trim()||'(ไม่มีคำตอบ)'}]); this.aiPersist(cid, full); return {aiMsgs:full, aiBusy:false}; });
     }catch(e){
-      this.setState(s=>({aiMsgs:s.aiMsgs.concat([{role:'assistant',content:'ขออภัย เชื่อมต่อผู้ช่วยไม่สำเร็จ: '+(e&&e.message||e),err:true}]), aiBusy:false}));
+      const nc=(e&&e.code)==='NOT_CONFIGURED';
+      const msg=nc
+        ? 'ยังไม่ได้ตั้งค่าการเชื่อมต่อ Claude API\n\nเปิด ITSA › บริหารเครื่องมือ AI › การเชื่อมต่อ Claude API แล้วเลือกช่องทางหนึ่งช่องทาง:\n· Apps Script Relay — วางโค้ด mee-ai-appsscript.gs ในโปรเจกต์ Apps Script เดิม (คีย์ปลอดภัย แนะนำสำหรับ deploy)\n· API Key ในเบราว์เซอร์ — วางคีย์ sk-ant-… ได้ทันที เหมาะกับการสาธิต'
+        : 'ขออภัย เชื่อมต่อผู้ช่วยไม่สำเร็จ: '+(e&&e.message||e);
+      this.setState(s=>({aiMsgs:s.aiMsgs.concat([{role:'assistant',content:msg,err:true,setup:nc}]), aiBusy:false}));
     }
+  }
+  aiEngine(){
+    if(this._aiEngine) return Promise.resolve(this._aiEngine);
+    if(!this._aiEnginePromise){
+      this._aiEnginePromise=import('./mee-ai.js?v=1').then(m=>{ this._aiEngine=m.MeeAI; return m.MeeAI; });
+    }
+    return this._aiEnginePromise;
+  }
+  aiPublishContext(AI){
+    try{
+      const st=this.state; const wins=(st.wins||[]);
+      const cur=wins.length?wins[wins.length-1]:null;
+      const mod=(MODULES.find(m=>m.id===st.active)||{});
+      AI.setContext({
+        module: mod.code||mod.id||'', 
+        label: (mod.th||'')+(mod.code?(' ('+mod.code+')'):''),
+        screen: cur?(cur.title||cur.id||''):'',
+        data: {
+          moduleOpen: mod.th||'', 
+          windowsOpen: wins.map(w=>w.title||w.id),
+          user: (st.user&&st.user.name)||'', company: this.userOrg?this.userOrg().co:'', branch: this.userOrg?this.userOrg().br:'',
+          notices: (st.notices||[]).slice(-8).map(n=>n.msg),
+          modules: MODULES.filter(m=>m.code).map(m=>m.code+' — '+m.th),
+        },
+      });
+    }catch(e){}
   }
   aiPersist(cid, msgs){
     const first=(msgs.find(m=>m.role==='user')||{}).content||'บทสนทนาใหม่';
@@ -909,7 +941,9 @@ class Component extends DCLogic {
         h('button',{key:i,onClick:()=>this.aiSend(c),style:{textAlign:'left',fontFamily:T.font,fontSize:12,color:T.text,background:dark?'rgba(255,255,255,.05)':'#fff',border:`1px solid ${T.border}`,borderRadius:10,padding:'9px 12px',cursor:'pointer'},
           onMouseEnter:e=>{e.currentTarget.style.borderColor=acc;e.currentTarget.style.background=T.accSoft;},onMouseLeave:e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.background=dark?'rgba(255,255,255,.05)':'#fff';}},c))));
     const list=h('div',{key:'list',ref:el=>{if(el)el.scrollTop=el.scrollHeight;},style:{flex:1,minHeight:0,overflow:'auto',padding:'16px',display:'flex',flexDirection:'column',gap:10}},
-      st.aiMsgs.map((m,i)=>h('div',{key:i,style:m.role==='user'?bubbleUser:bubbleAI(m.err)},m.content)),
+      st.aiMsgs.map((m,i)=>h('div',{key:i,style:m.role==='user'?bubbleUser:bubbleAI(m.err)},m.content,
+        m.setup?h('button',{key:'setup',onClick:()=>{this.setState({aiOpen:false});this.open('itsa-aien',false,true);},
+          style:{marginTop:10,display:'flex',alignItems:'center',gap:7,fontFamily:T.font,fontSize:12,fontWeight:700,padding:'8px 13px',borderRadius:9,border:'none',cursor:'pointer',background:acc,color:'#fff'}},Icon('settings',15),'ไปตั้งค่า Claude API'):null)),
       st.aiBusy?h('div',{key:'busy',style:Object.assign({},bubbleAI(false),{display:'flex',gap:5,alignItems:'center'})},
         [0,1,2].map(d=>h('span',{key:d,style:{width:6,height:6,borderRadius:'50%',background:T.sub,animation:'erpspin 1s linear infinite',opacity:.5}}))):null);
     // ---- Recent (conversation history) view ----
@@ -1759,9 +1793,14 @@ class Component extends DCLogic {
     const catState=o.key+'Catalog', modeState=o.key+'ModeReported', reqState=o.key+'Req';
     const navKey='archNav_'+(o.l1Prefix||'itsa-')+o.key;
     const CAT=st[catState];
-    const FEATS=(CAT&&CAT.length)?CAT.map(f=>[f.id,f.th,f.ic,f.hidden]):[['main',o.title,o.ic]];
+    const FEATS=(CAT&&CAT.length)?CAT.map(f=>[f.id,f.th,f.ic,f.hidden,f.grp,f.sth]):[['main',o.title,o.ic]];
     const SCRS=(CAT&&CAT.length)?CAT.reduce((a2,f)=>{a2[f.id]=f.screens;return a2;},{}):{main:[['list',o.title,o.ic]]};
-    const items=FEATS.filter(f=>st.showHidden||!f[3]).map(f=>[f[0],String(f[1]||'').replace(/\s*\(.*?\)\s*$/,'').trim(),f[2]]);
+    const _vis=FEATS.filter(f=>st.showHidden||!f[3]);
+    const _lbl=f=>String(f[5]||f[1]||'').replace(/\s*\(.*?\)\s*$/,'').trim();
+    const _grouped=_vis.some(f=>f[4]);
+    const items=_grouped
+      ? [['core','Core Functions'],['ext','Extensions'],['rpt','Reports & Analytics']].reduce((acc2,[g,gl])=>{ const ids=_vis.filter(f=>(f[4]||'core')===g); if(!ids.length) return acc2; acc2.push(['__grp:'+g,gl.toUpperCase(),null]); ids.forEach(f=>acc2.push([f[0],_lbl(f),f[2]])); return acc2; },[])
+      : _vis.map(f=>[f[0],_lbl(f),f[2]]);
     const nav=st[navKey]||FEATS[0][0];
     const feat=FEATS.find(f=>f[0]===nav)||FEATS[0];
     const mode=o.mode==='full'?(st[modeState]||'view'):'view';
@@ -2128,7 +2167,7 @@ class Component extends DCLogic {
     const body=h('div',{key:'main',style:{flex:1,minHeight:0,position:'relative',background:'transparent'}},_panels);
     const topbar=this.winTopbar(w,T,true);
     if((st.menuStyle||'side')==='tab'){
-      const tItem=([id,label,tic])=>{ const on=nav===id;
+      const tItem=([id,label,tic])=>{ if(String(id).indexOf('__grp:')===0) return null; const on=nav===id;
         return h('button',{key:id,onClick:()=>onNav(id),style:{display:'flex',alignItems:'center',gap:6,border:'none',background:'transparent',cursor:'pointer',fontFamily:T.font,fontSize:12.5,fontWeight:on?700:500,color:on?aTxt:T.sub,padding:'11px 12px',borderBottom:on?`2px solid ${acc}`:'2px solid transparent',marginBottom:-1,whiteSpace:'nowrap'}},h('span',{style:{display:'flex',color:on?acc:T.sub}},Icon(tic,16)),label); };
       return h('div',{style:{display:'flex',flexDirection:'column',height:'100%',fontFamily:T.font,color:T.text}},
         h('div',{style:{flexShrink:0,padding:'10px 16px 0',background:sideBg,backdropFilter:sideBlur,borderBottom:`1px solid ${T.border}`}},
@@ -2143,7 +2182,7 @@ class Component extends DCLogic {
     }
     const overlay = this.winWidth(w)<560 && !collapsed;
     const collapseBtn=h('button',{key:'cbtn',title:collapsed?'ขยายเมนู':'ย่อเมนู',onClick:setCollapse,style:{position:'absolute',left:(collapsed?60:216)-11,top:16,zIndex:50,width:22,height:22,border:`1px solid ${T.border}`,background:T.win,cursor:'pointer',color:T.sub,display:'flex',alignItems:'center',justifyContent:'center',padding:0,borderRadius:8,boxShadow:'0 2px 6px rgba(15,20,35,.14)',transition:'left .15s'},onMouseEnter:e=>{e.currentTarget.style.background=T.hover;e.currentTarget.style.color=T.text;},onMouseLeave:e=>{e.currentTarget.style.background=T.win;e.currentTarget.style.color=T.sub;}},h('span',{style:{display:'flex',transform:collapsed?'none':'rotate(180deg)'}},Icon('chevron2',13)));
-    const nItem=([id,label,nic])=>{ const on=nav===id; const hov=T.name==='dark'?'rgba(255,255,255,.07)':'rgba(255,255,255,.55)';
+    const nItem=([id,label,nic])=>{ if(String(id).indexOf('__grp:')===0) return collapsed?null:h('div',{key:id,style:{fontSize:9.5,fontWeight:800,letterSpacing:.6,color:T.sub,padding:'12px 11px 5px'}},label); const on=nav===id; const hov=T.name==='dark'?'rgba(255,255,255,.07)':'rgba(255,255,255,.55)';
       return h('button',{key:id,title:label,onClick:()=>{ const auto=this.winWidth(w)<560; if(auto&&!collapsed){const ck=w?w.id:'g'; this.setState(s=>({sideCollapsedMap:{...(s.sideCollapsedMap||{}),[ck]:true}}));} onNav(id); },onMouseEnter:e=>{if(!on)e.currentTarget.style.background=hov;},onMouseLeave:e=>{if(!on)e.currentTarget.style.background='transparent';},
         style:{display:'flex',alignItems:'center',justifyContent:collapsed?'center':'flex-start',gap:10,width:'100%',textAlign:'left',border:'none',cursor:'pointer',borderRadius:9,padding:collapsed?'10px 0':'9px 11px',fontFamily:T.font,fontSize:12.5,fontWeight:on?600:500,background:on?aSoft:'transparent',color:on?aTxt:T.text}},
         h('span',{style:{display:'flex',flexShrink:0,color:on?acc:T.sub}},Icon(nic,17)),!collapsed&&h('span',{style:{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},label)); };

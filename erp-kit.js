@@ -54,6 +54,18 @@ export function createKit(React) {
     server: ['rect:3,4,18,7', 'rect:3,13,18,7', 'circle:7,7.5,0.7', 'circle:7,16.5,0.7'],
     route: ['circle:6,6,2.4', 'circle:18,18,2.4', 'path:M8.2 6H15a3 3 0 013 3v6.5'],
     shield: ['path:M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z'],
+    layers: ['path:M12 3l9 5-9 5-9-5z', 'path:M3 13l9 5 9-5'],
+    cart: ['circle:9,20,1.4', 'circle:18,20,1.4', 'path:M2 3h3l2.5 13h11l2-9H6'],
+    credit: ['rect:2,5,20,14', 'path:M2 10h20', 'path:M6 15h4'],
+    return: ['path:M9 7l-5 5 5 5', 'path:M4 12h11a5 5 0 015 5v1'],
+    mega: ['path:M3 11v2l12 5V6z', 'path:M15 8a4 4 0 010 8', 'path:M6 13v4a2 2 0 004 0'],
+    clock: ['circle:12,12,9', 'path:M12 7v5l3.5 2'],
+    grid: ['rect:3,3,7,7', 'rect:14,3,7,7', 'rect:14,14,7,7', 'rect:3,14,7,7'],
+    sitemap: ['rect:9,3,6,5', 'rect:3,16,6,5', 'rect:15,16,6,5', 'path:M12 8v3', 'path:M6 16v-5h12v5'],
+    shapes: ['circle:8,8,4.4', 'rect:13.5,13.5,7,7', 'path:M7.6 13.2l4 7.6h-8z'],
+    folder: ['path:M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z'],
+    star: ['path:M12 3.5l2.6 5.6 6 .8-4.4 4.2 1.1 6-5.3-3-5.3 3 1.1-6L3.4 9.9l6-.8z'],
+    ruler: ['path:M3 14.5L14.5 3 21 9.5 9.5 21z', 'path:M7 11l2 2', 'path:M10 8l2 2', 'path:M13 5l2 2'],
   };
   function Icon(name, size) {
     size = size || 16;

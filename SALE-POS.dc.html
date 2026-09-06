@@ -10,107 +10,281 @@
 <helmet><style>*{box-sizing:border-box;}</style></helmet>
 <div style="height:100%;min-height:0;color:{{ fg }};font-family:'IBM Plex Sans Thai','Inter',sans-serif;">{{ view }}</div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;},&quot;defaultRole&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;แคชเชียร์&quot;,&quot;หัวหน้ากะ&quot;,&quot;ผู้จัดการสาขา&quot;,&quot;สำนักงานใหญ่&quot;],&quot;default&quot;:&quot;หัวหน้ากะ&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;POS&quot;},&quot;designDirection&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;A&quot;,&quot;B&quot;],&quot;default&quot;:&quot;A&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;POS&quot;},&quot;enableAI&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;POS&quot;}}">
 class Component extends DCLogic {
   K = (typeof window !== 'undefined' && window.__erpKit) || null;
-  DBKEY = 'db:sale-pos:v1';
+  DBKEY = 'db:sale-pos:v2';
+  ME = 'ณัฐพล ศรีมงคล';
+  ROLES = ['แคชเชียร์', 'หัวหน้ากะ', 'ผู้จัดการสาขา', 'สำนักงานใหญ่'];
+  STATUS_OPTS = ['ใช้งาน', 'ปิดใช้งาน'];
+  PAYS = [['เงินสด', 'cash'], ['บัตรเครดิต/เดบิต', 'card'], ['PromptPay QR', 'qr'], ['e-Wallet', 'wallet'], ['โอนเงินธนาคาร', 'transfer'], ['ขายเชื่อ (ลูกหนี้)', 'credit'], ['บัตรกำนัล/Voucher', 'voucher']];
+
   _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); } K.dbPersist(this, this.DBKEY); }
-  state = { nav: 'pos_sales', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {} };
-  componentDidMount() { if (this.K) { this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); }); }
-  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._handleReq(); }
-  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'pos', hidden: false, screens: cfg[k].screens.map(([id, lb, ic]) => [id, lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb, ic]) }))); }
+  state = { nav: 'pos_terminal', scr: 'terminal', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {}, role: null, look: null, cat: 'ทั้งหมด', imgs: {}, imgEdit: null, cart: [], held: [], payOpen: false, pays: [], tender: '', member: null, ai: {}, aiBusy: '', q: '', gridView: null, shiftOpen: true };
+  componentDidMount() { if (this.K) { this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); }); if (!window.MeeAI) { import('./mee-ai.js').catch(() => {}); } }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._handleReq(); this._pubCtx(); }
+  _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const cfg = this.CFG(); this.props.onCatalog(Object.keys(cfg).map(k => ({ id: k, th: cfg[k].th, ic: cfg[k].ic || 'cart', hidden: false, grp: cfg[k].grp || 'core', sth: cfg[k].th.split(' (')[0], screens: cfg[k].screens.map(([id, lb, ic]) => [id, lb.split(' (')[0], ic]) }))); }
   _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); else if (r.kind === 'scr') this.setScr(r.id); }
   _reportMode() { if (typeof this.props.onMode !== 'function') return; const m = this.curMode(); if (m !== this._lastMode) { this._lastMode = m; this.props.onMode(m); } }
+  _pubCtx() { const AI = window.MeeAI; if (!AI || !AI.setContext) return; const nav = this.curNav(); const cfg = this.CFG()[nav]; if (!cfg) return; const sig = nav + '|' + this.curScr(); if (sig === this._ctxSig) return; this._ctxSig = sig; AI.setContext({ module: 'SALE-POS', screen: this.curScr(), label: cfg.th, data: (this.dbRows(nav, cfg.rows || []) || []).slice(0, 12) }); }
   T() { return this.props.theme || {}; }
   toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); }
+  role() { return this.state.role || this.props.defaultRole || 'หัวหน้ากะ'; }
+  look() { return this.state.look || this.props.designDirection || 'A'; }
+  readOnly() { return this.role() === 'สำนักงานใหญ่'; }
+  canApprove() { return ['หัวหน้ากะ', 'ผู้จัดการสาขา'].indexOf(this.role()) > -1; }
+
+  imgMap() {
+    const base = this.state.imgs || {};
+    const stock = this.state.db.store_stock;
+    if (!Array.isArray(stock)) return base;
+    const out = Object.assign({}, base);
+    stock.forEach(r => { const u = r['_f:ลิงก์รูปภาพ'] !== undefined ? r['_f:ลิงก์รูปภาพ'] : r.img; if (r.no && u) out[r.no] = u; });
+    return out;
+  }
+  imgSrc(url) {
+    const u = (url || '').trim();
+    if (!u) return '';
+    let id = '';
+    let m = u.match(/drive\.google\.com\/file\/d\/([\w-]{20,})/);
+    if (m) id = m[1];
+    if (!id) { m = u.match(/drive\.google\.com\/(?:uc|open|thumbnail)[^\s]*[?&]id=([\w-]{20,})/); if (m) id = m[1]; }
+    if (!id) { m = u.match(/drive\.google\.com\/drive\/[^\s]*\/folders\/([\w-]{20,})/); if (m) return ''; }
+    if (!id) { m = u.match(/docs\.google\.com\/[^\s]*[?&]id=([\w-]{20,})/); if (m) id = m[1]; }
+    if (id) return 'https://drive.google.com/thumbnail?id=' + id + '&sz=w600';
+    return u;
+  }
+  setImg(sku, url) { this.setState(s => ({ imgs: Object.assign({}, s.imgs, { [sku]: (url || '').trim() }), imgEdit: null })); this.toast((url || '').trim() ? 'แนบรูปสินค้าแล้ว' : 'นำรูปออกแล้ว'); }
+  thumb(it, size, radius) {
+    const K = this.K, c = K.tk(this.T()), h = K.h;
+    const url = this.imgSrc(this.imgMap()[it.sku]);
+    const box = { width: size, height: size, borderRadius: radius || 8, flexShrink: 0, overflow: 'hidden', background: c.winHead, border: '1px solid ' + c.line, display: 'flex', alignItems: 'center', justifyContent: 'center' };
+    if (url) return h('div', { style: box }, h('img', { src: url, alt: it.a, onError: e => { e.currentTarget.style.display = 'none'; }, style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } }));
+    return h('div', { style: box }, h('span', { style: { fontSize: Math.max(9, Math.round(size * 0.26)), fontWeight: 800, color: c.sub, letterSpacing: .5 } }, (it.sku || '').slice(0, 3)));
+  }
+
+  ITEMS() {
+    return [
+      { sku: 'BEV-001', a: 'อเมริกาโน่เย็น', cat: 'เครื่องดื่ม', price: 65, stock: 120, unit: 'แก้ว' },
+      { sku: 'BEV-002', a: 'ลาเต้ร้อน', cat: 'เครื่องดื่ม', price: 70, stock: 98, unit: 'แก้ว' },
+      { sku: 'BEV-003', a: 'ชาเขียวมัทฉะ', cat: 'เครื่องดื่ม', price: 85, stock: 54, unit: 'แก้ว' },
+      { sku: 'BEV-004', a: 'น้ำส้มคั้นสด 350ml', cat: 'เครื่องดื่ม', price: 55, stock: 36, unit: 'ขวด' },
+      { sku: 'FOD-001', a: 'ครัวซองต์เนยสด', cat: 'เบเกอรี่', price: 75, stock: 24, unit: 'ชิ้น' },
+      { sku: 'FOD-002', a: 'แซนด์วิชแฮมชีส', cat: 'เบเกอรี่', price: 95, stock: 18, unit: 'ชิ้น' },
+      { sku: 'FOD-003', a: 'เค้กช็อกโกแลต', cat: 'เบเกอรี่', price: 120, stock: 9, unit: 'ชิ้น' },
+      { sku: 'FOD-004', a: 'คุกกี้ธัญพืช (6 ชิ้น)', cat: 'เบเกอรี่', price: 89, stock: 42, unit: 'กล่อง' },
+      { sku: 'GRO-001', a: 'เมล็ดกาแฟคั่วกลาง 250g', cat: 'สินค้าแพ็ก', price: 320, stock: 31, unit: 'ถุง' },
+      { sku: 'GRO-002', a: 'ผงมัทฉะเกรดพิธี 100g', cat: 'สินค้าแพ็ก', price: 480, stock: 12, unit: 'กระปุก' },
+      { sku: 'GRO-003', a: 'น้ำผึ้งดอกลำไย 500g', cat: 'สินค้าแพ็ก', price: 250, stock: 27, unit: 'ขวด' },
+      { sku: 'MRC-001', a: 'แก้วเก็บความเย็น 16oz', cat: 'ของที่ระลึก', price: 390, stock: 15, unit: 'ใบ' },
+      { sku: 'MRC-002', a: 'ถุงผ้าแคนวาส', cat: 'ของที่ระลึก', price: 220, stock: 40, unit: 'ใบ' },
+      { sku: 'SRV-001', a: 'ค่าบริการห่อของขวัญ', cat: 'บริการ', price: 30, stock: 999, unit: 'ครั้ง' },
+      { sku: 'SRV-002', a: 'ค่าจัดส่งในเขต', cat: 'บริการ', price: 60, stock: 999, unit: 'ครั้ง' }
+    ];
+  }
+  MEMBERS() {
+    return [
+      { code: 'M-10241', a: 'คุณกมล พิทักษ์', tier: 'Gold', pts: 1840, tel: '081-234-5678', disc: 10 },
+      { code: 'M-10358', a: 'คุณสุนิสา ใจดี', tier: 'Silver', pts: 620, tel: '089-441-2200', disc: 5 },
+      { code: 'M-10477', a: 'คุณเอกชัย รุ่งเรือง', tier: 'Platinum', pts: 5230, tel: '086-990-1177', disc: 15 }
+    ];
+  }
+  BILLS() {
+    const CO = 'บมจ. มี กรุ๊ป', BR = 'สาขาสาทร';
+    return [
+      { no: 'POS-260901-0018', dt: '09:14', cust: 'ลูกค้าทั่วไป', qty: 3, net: 210, pay: 'เงินสด', cash: 'ณัฐพล ศรีมงคล', st: 'ชำระแล้ว', co: CO, br: BR, s: 'ใช้งาน' },
+      { no: 'POS-260901-0019', dt: '09:32', cust: 'คุณกมล พิทักษ์ (Gold)', qty: 5, net: 612, pay: 'PromptPay QR', cash: 'ณัฐพล ศรีมงคล', st: 'ชำระแล้ว', co: CO, br: BR, s: 'ใช้งาน' },
+      { no: 'POS-260901-0020', dt: '10:02', cust: 'ลูกค้าทั่วไป', qty: 2, net: 155, pay: 'บัตรเครดิต/เดบิต', cash: 'พิมพ์ชนก อารี', st: 'ชำระแล้ว', co: CO, br: BR, s: 'ใช้งาน' },
+      { no: 'POS-260901-0021', dt: '10:41', cust: 'บจก. สยามฟู้ดส์', qty: 12, net: 3840, pay: 'ขายเชื่อ (ลูกหนี้)', cash: 'พิมพ์ชนก อารี', st: 'ชำระแล้ว', co: CO, br: BR, s: 'ใช้งาน' },
+      { no: 'POS-260901-0022', dt: '11:15', cust: 'คุณสุนิสา ใจดี (Silver)', qty: 4, net: 468, pay: 'แบ่งจ่าย 2 วิธี', cash: 'ณัฐพล ศรีมงคล', st: 'ชำระแล้ว', co: CO, br: BR, s: 'ใช้งาน' },
+      { no: 'POS-260901-0023', dt: '11:48', cust: 'ลูกค้าทั่วไป', qty: 1, net: 120, pay: 'เงินสด', cash: 'ณัฐพล ศรีมงคล', st: 'ยกเลิกบิล', co: CO, br: BR, s: 'ปิดใช้งาน' },
+      { no: 'POS-260901-0024', dt: '12:20', cust: 'คุณเอกชัย รุ่งเรือง (Platinum)', qty: 7, net: 1428, pay: 'e-Wallet', cash: 'พิมพ์ชนก อารี', st: 'ชำระแล้ว', co: CO, br: BR, s: 'ใช้งาน' },
+      { no: 'POS-260901-0025', dt: '13:05', cust: 'ลูกค้าทั่วไป', qty: 2, net: 340, pay: 'เงินสด', cash: 'ณัฐพล ศรีมงคล', st: 'คืนสินค้าบางส่วน', co: CO, br: BR, s: 'ใช้งาน' },
+      { no: 'POS-260901-0026', dt: '13:52', cust: 'ลูกค้าทั่วไป', qty: 6, net: 765, pay: 'PromptPay QR', cash: 'พิมพ์ชนก อารี', st: 'ชำระแล้ว', co: CO, br: BR, s: 'ใช้งาน' },
+      { no: 'POS-260901-0027', dt: '14:30', cust: 'คุณกมล พิทักษ์ (Gold)', qty: 3, net: 522, pay: 'บัตรกำนัล/Voucher', cash: 'ณัฐพล ศรีมงคล', st: 'ชำระแล้ว', co: CO, br: BR, s: 'ใช้งาน' }
+    ];
+  }
 
   CFG() {
+    const CO = ['บมจ. มี กรุ๊ป', 'บจก. มี เทรดดิ้ง', 'บจก. มี โลจิสติกส์'];
+    const BR = ['สาขาสาทร', 'สาขาลาดพร้าว', 'สาขาบางนา'];
+    const STAFF = ['ณัฐพล ศรีมงคล', 'พิมพ์ชนก อารี', 'วรกานต์ ทองดี'];
+    const crud = (n) => [['list', 'รายการ (' + n + ' List)', 'list'], ['detail', 'รายละเอียด (' + n + ' Detail)', 'doc'], ['create', 'สร้างใหม่ (Create)', 'plus'], ['edit', 'แก้ไข (Edit)', 'doc']];
     return {
-      'pos_sales': {
-        th: 'ขายหน้าร้าน', ic: 'pos',
-        screens: [['list', 'ขายหน้าร้าน List — รายการขายหน้าร้าน', 'list'], ['detail', 'ขายหน้าร้าน Detail — รายละเอียดขายหน้าร้าน', 'doc'], ['create', 'Create — สร้างใหม่', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
-        kpi: [['รายการทั้งหมด', '12', '—', 145], ['ใช้งานปกติ', '10', '—', 130], ['ต้องตรวจสอบ', '1', '—', 22]],
-        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อรายการ', k: 'a', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'สาขา', k: 'br' }, { h: 'สาขา', k: 'wh' }, { h: 'วิธีชำระเงิน', k: 'uom' }],
-        rows: [
-          { no: 'POS-1-0001', a: 'ขายหน้าร้าน #1', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่ (สาทร)', wh: 'สาขาสาทร', uom: 'เงินสด', s: 'ใช้งาน' },
-          { no: 'POS-1-0002', a: 'ขายหน้าร้าน #2', co: 'บจก. มี เทรดดิ้ง', br: 'สำนักงานใหญ่ (ลาดพร้าว)', wh: 'สาขาเชียงใหม่', uom: 'บัตรเครดิต', s: 'ใช้งาน' }
-        ],
-        form: [['ข้อมูลขายหน้าร้าน', 'pos', [['รหัส', 0, 'POS-1-NEW'], ['ชื่อรายการ', 0, 'ชื่อรายการ'], ['บริษัท', 1, ['บมจ. มี กรุ๊ป','บจก. มี เทรดดิ้ง','บจก. มี โลจิสติกส์']], ['สาขา', 1, ['สำนักงานใหญ่ (สาทร)','สำนักงานใหญ่ (ลาดพร้าว)','สำนักงานใหญ่ (บางนา)']], ['สาขา', 1, ["สาขาสาทร","สาขาเชียงใหม่"]], ['วิธีชำระเงิน', 1, ["เงินสด","บัตรเครดิต"]]]]],
-        roMap: { 'รหัส': 'no', 'ชื่อรายการ': 'a', 'บริษัท': 'co', 'สาขา': 'br', 'สาขา': 'wh', 'วิธีชำระเงิน': 'uom' },
-        acts: ['Create', 'Update', 'Delete', 'Export']
+      pos_terminal: {
+        th: 'หน้าจอขาย (POS Terminal)', ic: 'cart', grp: 'core', custom: 'terminal',
+        screens: [['terminal', 'หน้าจอขายหลัก (Sales Terminal)', 'cart'], ['held', 'บิลพักไว้ (Held Bills)', 'doc'], ['list', 'รายการบิลวันนี้ (Bill List)', 'list']],
+        cols: [{ h: 'เลขที่บิล', k: 'no', b: true }, { h: 'เวลา', k: 'dt' }, { h: 'ลูกค้า', k: 'cust' }, { h: 'จำนวน', k: 'qty', num: true }, { h: 'ยอดสุทธิ', k: 'net', num: true }, { h: 'ชำระโดย', k: 'pay' }, { h: 'แคชเชียร์', k: 'cash' }, { h: 'สถานะบิล', k: 'st' }],
+        rows: this.BILLS(), acts: ['New Sale', 'Hold', 'Recall', 'Void', 'Print', 'Reprint']
       },
-      'cashier': {
-        th: 'พนักงานเก็บเงิน', ic: 'cash',
-        screens: [['list', 'พนักงานเก็บเงิน List — รายการพนักงานเก็บเงิน', 'list'], ['detail', 'พนักงานเก็บเงิน Detail — รายละเอียดพนักงานเก็บเงิน', 'doc'], ['create', 'Create — สร้างใหม่', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
-        kpi: [['รายการทั้งหมด', '15', '—', 145], ['ใช้งานปกติ', '12', '—', 130], ['ต้องตรวจสอบ', '1', '—', 22]],
-        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อรายการ', k: 'a', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'สาขา', k: 'br' }, { h: 'สาขา', k: 'wh' }, { h: 'วิธีชำระเงิน', k: 'uom' }],
+      payment: {
+        th: 'การชำระเงิน (Payment)', ic: 'credit', grp: 'core', screens: crud('Payment'),
+        cols: [{ h: 'เลขที่บิล', k: 'no', b: true }, { h: 'ช่องทาง', k: 'pay' }, { h: 'ยอดรับ', k: 'amt', num: true }, { h: 'ค่าธรรมเนียม', k: 'fee', num: true }, { h: 'อ้างอิง', k: 'ref' }, { h: 'เวลา', k: 'dt' }, { h: 'สถานะ', k: 'st' }],
         rows: [
-          { no: 'POS-2-0001', a: 'พนักงานเก็บเงิน #1', co: 'บจก. มี โลจิสติกส์', br: 'สำนักงานใหญ่ (บางนา)', wh: 'สาขาสาทร', uom: 'เงินสด', s: 'ใช้งาน' },
-          { no: 'POS-2-0002', a: 'พนักงานเก็บเงิน #2', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่ (สาทร)', wh: 'สาขาเชียงใหม่', uom: 'บัตรเครดิต', s: 'ใช้งาน' }
+          { no: 'POS-260901-0019', pay: 'PromptPay QR', amt: 612, fee: 0, ref: 'QR-88214', dt: '09:32', st: 'ชำระแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'POS-260901-0020', pay: 'บัตรเครดิต/เดบิต', amt: 155, fee: 2.48, ref: 'EDC-0041', dt: '10:02', st: 'ชำระแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'POS-260901-0021', pay: 'ขายเชื่อ (ลูกหนี้)', amt: 3840, fee: 0, ref: 'AR-2609-014', dt: '10:41', st: 'รอเก็บเงิน', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'POS-260901-0022', pay: 'เงินสด + บัตร', amt: 468, fee: 3.2, ref: 'SPLIT-002', dt: '11:15', st: 'ชำระแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'POS-260901-0024', pay: 'e-Wallet', amt: 1428, fee: 21.42, ref: 'TMW-77120', dt: '12:20', st: 'ชำระแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'POS-260901-0026', pay: 'PromptPay QR', amt: 765, fee: 0, ref: 'QR-88266', dt: '13:52', st: 'ชำระแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'POS-260901-0027', pay: 'บัตรกำนัล/Voucher', amt: 522, fee: 0, ref: 'VC-5510', dt: '14:30', st: 'ชำระแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'POS-260831-0112', pay: 'โอนเงินธนาคาร', amt: 2150, fee: 0, ref: 'TRN-90211', dt: '18:40', st: 'รอตรวจสอบสลิป', co: CO[1], br: BR[1], s: 'ใช้งาน' }
         ],
-        form: [['ข้อมูลพนักงานเก็บเงิน', 'cash', [['รหัส', 0, 'POS-2-NEW'], ['ชื่อรายการ', 0, 'ชื่อรายการ'], ['บริษัท', 1, ['บมจ. มี กรุ๊ป','บจก. มี เทรดดิ้ง','บจก. มี โลจิสติกส์']], ['สาขา', 1, ['สำนักงานใหญ่ (สาทร)','สำนักงานใหญ่ (ลาดพร้าว)','สำนักงานใหญ่ (บางนา)']], ['สาขา', 1, ["สาขาสาทร","สาขาเชียงใหม่"]], ['วิธีชำระเงิน', 1, ["เงินสด","บัตรเครดิต"]]]]],
-        roMap: { 'รหัส': 'no', 'ชื่อรายการ': 'a', 'บริษัท': 'co', 'สาขา': 'br', 'สาขา': 'wh', 'วิธีชำระเงิน': 'uom' },
-        acts: ['Create', 'Update', 'Delete', 'Export']
+        form: [['ข้อมูลการรับชำระ', 'money', [['เลขที่บิล', 0, 'POS-xxxxxx-xxxx'], ['ช่องทาง', 1, this.PAYS.map(p => p[0])], ['ยอดรับ', 0, '0'], ['ค่าธรรมเนียม', 0, '0'], ['อ้างอิง', 0, 'เลขอ้างอิง/สลิป'], ['เวลา', 0, 'HH:MM'], ['สถานะ', 1, ['ชำระแล้ว', 'รอตรวจสอบสลิป', 'รอเก็บเงิน', 'คืนเงินแล้ว']], ['บริษัท', 1, CO], ['สาขา', 1, BR]]]],
+        roMap: { 'เลขที่บิล': 'no', 'ช่องทาง': 'pay', 'ยอดรับ': 'amt', 'ค่าธรรมเนียม': 'fee', 'อ้างอิง': 'ref', 'เวลา': 'dt', 'สถานะ': 'st', 'บริษัท': 'co', 'สาขา': 'br' },
+        acts: ['Receive', 'Verify Slip', 'Refund', 'Export']
       },
-      'cash_drawer': {
-        th: 'ลิ้นชักเงินสด', ic: 'cash',
-        screens: [['list', 'ลิ้นชักเงินสด List — รายการลิ้นชักเงินสด', 'list'], ['detail', 'ลิ้นชักเงินสด Detail — รายละเอียดลิ้นชักเงินสด', 'doc'], ['create', 'Create — สร้างใหม่', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
-        kpi: [['รายการทั้งหมด', '18', '—', 145], ['ใช้งานปกติ', '14', '—', 130], ['ต้องตรวจสอบ', '1', '—', 22]],
-        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อรายการ', k: 'a', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'สาขา', k: 'br' }, { h: 'สาขา', k: 'wh' }, { h: 'วิธีชำระเงิน', k: 'uom' }],
+      shift_cash: {
+        th: 'เปิด-ปิดกะ (Shift & Cash Drawer)', ic: 'cash', grp: 'core', custom: 'shift',
+        screens: [['shift', 'กะปัจจุบัน (Shift Console)', 'money'], ['list', 'ประวัติกะ (Shift History)', 'list']],
+        cols: [{ h: 'รหัสกะ', k: 'no', b: true }, { h: 'วันที่', k: 'dt' }, { h: 'ผู้เปิดกะ', k: 'cash' }, { h: 'เงินตั้งต้น', k: 'open', num: true }, { h: 'ยอดขายเงินสด', k: 'sale', num: true }, { h: 'นับจริง', k: 'count', num: true }, { h: 'ผลต่าง', k: 'diff', num: true }, { h: 'สถานะกะ', k: 'st' }],
         rows: [
-          { no: 'POS-3-0001', a: 'ลิ้นชักเงินสด #1', co: 'บจก. มี เทรดดิ้ง', br: 'สำนักงานใหญ่ (ลาดพร้าว)', wh: 'สาขาสาทร', uom: 'เงินสด', s: 'ใช้งาน' },
-          { no: 'POS-3-0002', a: 'ลิ้นชักเงินสด #2', co: 'บจก. มี โลจิสติกส์', br: 'สำนักงานใหญ่ (บางนา)', wh: 'สาขาเชียงใหม่', uom: 'บัตรเครดิต', s: 'ใช้งาน' }
-        ],
-        form: [['ข้อมูลลิ้นชักเงินสด', 'cash', [['รหัส', 0, 'POS-3-NEW'], ['ชื่อรายการ', 0, 'ชื่อรายการ'], ['บริษัท', 1, ['บมจ. มี กรุ๊ป','บจก. มี เทรดดิ้ง','บจก. มี โลจิสติกส์']], ['สาขา', 1, ['สำนักงานใหญ่ (สาทร)','สำนักงานใหญ่ (ลาดพร้าว)','สำนักงานใหญ่ (บางนา)']], ['สาขา', 1, ["สาขาสาทร","สาขาเชียงใหม่"]], ['วิธีชำระเงิน', 1, ["เงินสด","บัตรเครดิต"]]]]],
-        roMap: { 'รหัส': 'no', 'ชื่อรายการ': 'a', 'บริษัท': 'co', 'สาขา': 'br', 'สาขา': 'wh', 'วิธีชำระเงิน': 'uom' },
-        acts: ['Create', 'Update', 'Delete', 'Export']
+          { no: 'SHF-260901-A', dt: '2026-09-01', cash: 'ณัฐพล ศรีมงคล', open: 3000, sale: 8420, count: 11420, diff: 0, st: 'เปิดอยู่', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'SHF-260831-B', dt: '2026-08-31', cash: 'พิมพ์ชนก อารี', open: 3000, sale: 12680, count: 15630, diff: -50, st: 'ปิดกะแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'SHF-260831-A', dt: '2026-08-31', cash: 'ณัฐพล ศรีมงคล', open: 3000, sale: 9240, count: 12260, diff: 20, st: 'ปิดกะแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'SHF-260830-B', dt: '2026-08-30', cash: 'วรกานต์ ทองดี', open: 3000, sale: 14110, count: 17110, diff: 0, st: 'ปิดกะแล้ว', co: CO[1], br: BR[1], s: 'ใช้งาน' },
+          { no: 'SHF-260830-A', dt: '2026-08-30', cash: 'พิมพ์ชนก อารี', open: 3000, sale: 7980, count: 10855, diff: -125, st: 'ปิดกะแล้ว (มีผลต่าง)', co: CO[1], br: BR[1], s: 'ใช้งาน' },
+          { no: 'SHF-260829-A', dt: '2026-08-29', cash: 'ณัฐพล ศรีมงคล', open: 3000, sale: 10320, count: 13320, diff: 0, st: 'ปิดกะแล้ว', co: CO[2], br: BR[2], s: 'ใช้งาน' }
+        ], acts: ['Open Shift', 'Cash In', 'Cash Out', 'Count', 'Close Shift']
       },
-      'receipt': {
-        th: 'ใบเสร็จ', ic: 'pos',
-        screens: [['list', 'ใบเสร็จ List — รายการใบเสร็จ', 'list'], ['detail', 'ใบเสร็จ Detail — รายละเอียดใบเสร็จ', 'doc'], ['create', 'Create — สร้างใหม่', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
-        kpi: [['รายการทั้งหมด', '21', '—', 145], ['ใช้งานปกติ', '16', '—', 130], ['ต้องตรวจสอบ', '1', '—', 22]],
-        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อรายการ', k: 'a', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'สาขา', k: 'br' }, { h: 'สาขา', k: 'wh' }, { h: 'วิธีชำระเงิน', k: 'uom' }],
+      return_void: {
+        th: 'คืนสินค้า/ยกเลิกบิล (Return & Void)', ic: 'return', grp: 'core', screens: crud('Return'),
+        cols: [{ h: 'เลขที่เอกสาร', k: 'no', b: true }, { h: 'อ้างบิลเดิม', k: 'ref' }, { h: 'ประเภท', k: 'ty' }, { h: 'เหตุผล', k: 'rsn' }, { h: 'มูลค่า', k: 'amt', num: true }, { h: 'ผู้อนุมัติ', k: 'apv' }, { h: 'สถานะ', k: 'st' }],
         rows: [
-          { no: 'POS-4-0001', a: 'ใบเสร็จ #1', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่ (สาทร)', wh: 'สาขาสาทร', uom: 'เงินสด', s: 'ใช้งาน' },
-          { no: 'POS-4-0002', a: 'ใบเสร็จ #2', co: 'บจก. มี เทรดดิ้ง', br: 'สำนักงานใหญ่ (ลาดพร้าว)', wh: 'สาขาเชียงใหม่', uom: 'บัตรเครดิต', s: 'ใช้งาน' }
+          { no: 'RTN-2609-004', ref: 'POS-260901-0025', ty: 'คืนสินค้าบางส่วน', rsn: 'สินค้าไม่ตรงสเปค', amt: 120, apv: 'พิมพ์ชนก อารี', st: 'อนุมัติแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'VOD-2609-002', ref: 'POS-260901-0023', ty: 'ยกเลิกบิล', rsn: 'แคชเชียร์คีย์ผิด', amt: 120, apv: 'ณัฐพล ศรีมงคล', st: 'อนุมัติแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'RTN-2609-003', ref: 'POS-260831-0104', ty: 'คืนสินค้าทั้งบิล', rsn: 'ลูกค้าเปลี่ยนใจ', amt: 780, apv: 'พิมพ์ชนก อารี', st: 'อนุมัติแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'RTN-2609-005', ref: 'POS-260901-0026', ty: 'เปลี่ยนสินค้า', rsn: 'ชำรุดจากการขนส่ง', amt: 250, apv: '—', st: 'รออนุมัติ', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'VOD-2609-003', ref: 'POS-260901-0027', ty: 'ยกเลิกรายการในบิล', rsn: 'สแกนซ้ำ', amt: 89, apv: '—', st: 'รออนุมัติ', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'RTN-2608-021', ref: 'POS-260830-0077', ty: 'คืนสินค้าทั้งบิล', rsn: 'สินค้าหมดอายุ', amt: 480, apv: 'วรกานต์ ทองดี', st: 'คืนเงินแล้ว', co: CO[1], br: BR[1], s: 'ใช้งาน' }
         ],
-        form: [['ข้อมูลใบเสร็จ', 'pos', [['รหัส', 0, 'POS-4-NEW'], ['ชื่อรายการ', 0, 'ชื่อรายการ'], ['บริษัท', 1, ['บมจ. มี กรุ๊ป','บจก. มี เทรดดิ้ง','บจก. มี โลจิสติกส์']], ['สาขา', 1, ['สำนักงานใหญ่ (สาทร)','สำนักงานใหญ่ (ลาดพร้าว)','สำนักงานใหญ่ (บางนา)']], ['สาขา', 1, ["สาขาสาทร","สาขาเชียงใหม่"]], ['วิธีชำระเงิน', 1, ["เงินสด","บัตรเครดิต"]]]]],
-        roMap: { 'รหัส': 'no', 'ชื่อรายการ': 'a', 'บริษัท': 'co', 'สาขา': 'br', 'สาขา': 'wh', 'วิธีชำระเงิน': 'uom' },
-        acts: ['Create', 'Update', 'Delete', 'Export']
+        form: [['ข้อมูลการคืน/ยกเลิก', 'doc', [['เลขที่เอกสาร', 0, 'RTN-NEW'], ['อ้างบิลเดิม', 0, 'POS-xxxxxx-xxxx'], ['ประเภท', 1, ['คืนสินค้าบางส่วน', 'คืนสินค้าทั้งบิล', 'เปลี่ยนสินค้า', 'ยกเลิกบิล', 'ยกเลิกรายการในบิล']], ['เหตุผล', 0, 'ระบุเหตุผล'], ['มูลค่า', 0, '0'], ['ผู้อนุมัติ', 1, STAFF], ['สถานะ', 1, ['รออนุมัติ', 'อนุมัติแล้ว', 'คืนเงินแล้ว', 'ปฏิเสธ']], ['บริษัท', 1, CO], ['สาขา', 1, BR]]]],
+        roMap: { 'เลขที่เอกสาร': 'no', 'อ้างบิลเดิม': 'ref', 'ประเภท': 'ty', 'เหตุผล': 'rsn', 'มูลค่า': 'amt', 'ผู้อนุมัติ': 'apv', 'สถานะ': 'st', 'บริษัท': 'co', 'สาขา': 'br' },
+        acts: ['Create', 'Approve', 'Reject', 'Refund', 'Print']
       },
-      'shift_closing': {
-        th: 'ปิดกะ', ic: 'check',
-        screens: [['list', 'ปิดกะ List — รายการปิดกะ', 'list'], ['detail', 'ปิดกะ Detail — รายละเอียดปิดกะ', 'doc'], ['create', 'Create — สร้างใหม่', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
-        kpi: [['รายการทั้งหมด', '24', '—', 145], ['ใช้งานปกติ', '18', '—', 130], ['ต้องตรวจสอบ', '1', '—', 22]],
-        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อรายการ', k: 'a', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'สาขา', k: 'br' }, { h: 'สาขา', k: 'wh' }, { h: 'วิธีชำระเงิน', k: 'uom' }],
+      promotion: {
+        th: 'ส่วนลดและโปรโมชั่น (Discount & Promotion)', ic: 'mega', grp: 'ext', screens: crud('Promotion'),
+        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อโปรโมชั่น', k: 'a', b: true }, { h: 'ประเภท', k: 'ty' }, { h: 'เงื่อนไข', k: 'cond' }, { h: 'ส่วนลด', k: 'val' }, { h: 'ช่วงเวลา', k: 'per' }, { h: 'ใช้ไปแล้ว', k: 'used', num: true }],
         rows: [
-          { no: 'POS-5-0001', a: 'ปิดกะ #1', co: 'บจก. มี โลจิสติกส์', br: 'สำนักงานใหญ่ (บางนา)', wh: 'สาขาสาทร', uom: 'เงินสด', s: 'ใช้งาน' },
-          { no: 'POS-5-0002', a: 'ปิดกะ #2', co: 'บมจ. มี กรุ๊ป', br: 'สำนักงานใหญ่ (สาทร)', wh: 'สาขาเชียงใหม่', uom: 'บัตรเครดิต', s: 'ใช้งาน' }
+          { no: 'PRM-001', a: 'ซื้อ 2 แถม 1 เครื่องดื่ม', ty: 'ซื้อ X แถม Y', cond: 'เครื่องดื่มทุกชนิด', val: 'แถม 1 แก้ว', per: '1–30 ก.ย. 69', used: 214, co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'PRM-002', a: 'ลด 10% สมาชิก Gold ขึ้นไป', ty: 'ส่วนลดสมาชิก', cond: 'Tier ≥ Gold', val: '10%', per: 'ตลอดปี', used: 431, co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'PRM-003', a: 'Happy Hour 14:00–16:00', ty: 'ส่วนลดตามช่วงเวลา', cond: 'เครื่องดื่มร้อน', val: '20%', per: 'จันทร์–ศุกร์', used: 168, co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'PRM-004', a: 'ยอดครบ 500 ลด 50', ty: 'ส่วนลดตามยอด', cond: 'ยอดบิล ≥ 500 บาท', val: '50 บาท', per: '1–15 ก.ย. 69', used: 92, co: CO[1], br: BR[1], s: 'ใช้งาน' },
+          { no: 'PRM-005', a: 'เซ็ตอาหารเช้า', ty: 'ราคาชุด (Combo)', cond: 'กาแฟ + ครัวซองต์', val: 'เหลือ 119 บาท', per: '06:00–10:30', used: 305, co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'PRM-006', a: 'ล้างสต็อกเบเกอรี่ก่อนปิดร้าน', ty: 'ส่วนลดท้ายวัน', cond: 'หลัง 19:00', val: '30%', per: 'ทุกวัน', used: 77, co: CO[2], br: BR[2], s: 'ใช้งาน' },
+          { no: 'PRM-007', a: 'คูปองลูกค้าใหม่', ty: 'คูปอง', cond: 'สมาชิกใหม่เดือนแรก', val: '100 บาท', per: 'ตลอดปี', used: 58, co: CO[1], br: BR[1], s: 'ปิดใช้งาน' }
         ],
-        form: [['ข้อมูลปิดกะ', 'check', [['รหัส', 0, 'POS-5-NEW'], ['ชื่อรายการ', 0, 'ชื่อรายการ'], ['บริษัท', 1, ['บมจ. มี กรุ๊ป','บจก. มี เทรดดิ้ง','บจก. มี โลจิสติกส์']], ['สาขา', 1, ['สำนักงานใหญ่ (สาทร)','สำนักงานใหญ่ (ลาดพร้าว)','สำนักงานใหญ่ (บางนา)']], ['สาขา', 1, ["สาขาสาทร","สาขาเชียงใหม่"]], ['วิธีชำระเงิน', 1, ["เงินสด","บัตรเครดิต"]]]]],
-        roMap: { 'รหัส': 'no', 'ชื่อรายการ': 'a', 'บริษัท': 'co', 'สาขา': 'br', 'สาขา': 'wh', 'วิธีชำระเงิน': 'uom' },
-        acts: ['Create', 'Update', 'Delete', 'Export']
+        form: [['ข้อมูลโปรโมชั่น', 'mega', [['รหัส', 0, 'PRM-NEW'], ['ชื่อโปรโมชั่น', 0, 'ชื่อโปรโมชั่น'], ['ประเภท', 1, ['ส่วนลดตามยอด', 'ส่วนลดสมาชิก', 'ซื้อ X แถม Y', 'ราคาชุด (Combo)', 'ส่วนลดตามช่วงเวลา', 'ส่วนลดท้ายวัน', 'คูปอง']], ['เงื่อนไข', 0, 'ระบุเงื่อนไข'], ['ส่วนลด', 0, 'เช่น 10% หรือ 50 บาท'], ['ช่วงเวลา', 0, 'เช่น 1–30 ก.ย. 69'], ['ใช้ไปแล้ว', 0, '0'], ['บริษัท', 1, CO], ['สาขา', 1, BR]]]],
+        roMap: { 'รหัส': 'no', 'ชื่อโปรโมชั่น': 'a', 'ประเภท': 'ty', 'เงื่อนไข': 'cond', 'ส่วนลด': 'val', 'ช่วงเวลา': 'per', 'ใช้ไปแล้ว': 'used', 'บริษัท': 'co', 'สาขา': 'br' },
+        acts: ['Create', 'Activate', 'Pause', 'Duplicate', 'Export']
       },
-      'pos_settlement': {
-        th: 'กระทบยอด POS', ic: 'cash',
-        screens: [['list', 'กระทบยอด POS List — รายการกระทบยอด POS', 'list'], ['detail', 'กระทบยอด POS Detail — รายละเอียดกระทบยอด POS', 'doc'], ['create', 'Create — สร้างใหม่', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
-        kpi: [['รายการทั้งหมด', '27', '—', 145], ['ใช้งานปกติ', '20', '—', 130], ['ต้องตรวจสอบ', '1', '—', 22]],
-        cols: [{ h: 'รหัส', k: 'no', b: true }, { h: 'ชื่อรายการ', k: 'a', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'สาขา', k: 'br' }, { h: 'สาขา', k: 'wh' }, { h: 'วิธีชำระเงิน', k: 'uom' }],
+      loyalty: {
+        th: 'สมาชิกและแต้มสะสม (Loyalty)', ic: 'star', grp: 'ext', screens: crud('Member'),
+        cols: [{ h: 'รหัสสมาชิก', k: 'no', b: true }, { h: 'ชื่อสมาชิก', k: 'a', b: true }, { h: 'ระดับ', k: 'tier' }, { h: 'โทรศัพท์', k: 'tel' }, { h: 'แต้มคงเหลือ', k: 'pts', num: true }, { h: 'ยอดซื้อสะสม', k: 'rev', num: true }, { h: 'ซื้อครั้งล่าสุด', k: 'last' }],
         rows: [
-          { no: 'POS-6-0001', a: 'กระทบยอด POS #1', co: 'บจก. มี เทรดดิ้ง', br: 'สำนักงานใหญ่ (ลาดพร้าว)', wh: 'สาขาสาทร', uom: 'เงินสด', s: 'ใช้งาน' },
-          { no: 'POS-6-0002', a: 'กระทบยอด POS #2', co: 'บจก. มี โลจิสติกส์', br: 'สำนักงานใหญ่ (บางนา)', wh: 'สาขาเชียงใหม่', uom: 'บัตรเครดิต', s: 'ใช้งาน' }
+          { no: 'M-10477', a: 'คุณเอกชัย รุ่งเรือง', tier: 'Platinum', tel: '086-990-1177', pts: 5230, rev: 148600, last: '2026-09-01', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'M-10241', a: 'คุณกมล พิทักษ์', tier: 'Gold', tel: '081-234-5678', pts: 1840, rev: 62400, last: '2026-09-01', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'M-10358', a: 'คุณสุนิสา ใจดี', tier: 'Silver', tel: '089-441-2200', pts: 620, rev: 21800, last: '2026-09-01', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'M-10512', a: 'คุณธนดล เกษมสุข', tier: 'Silver', tel: '084-556-8890', pts: 410, rev: 15200, last: '2026-08-27', co: CO[1], br: BR[1], s: 'ใช้งาน' },
+          { no: 'M-10604', a: 'คุณพรทิพย์ นิลกุล', tier: 'Classic', tel: '092-330-1145', pts: 120, rev: 4300, last: '2026-08-19', co: CO[1], br: BR[1], s: 'ใช้งาน' },
+          { no: 'M-10688', a: 'คุณชัยวัฒน์ บุญมา', tier: 'Gold', tel: '087-221-9080', pts: 2310, rev: 74900, last: '2026-08-31', co: CO[2], br: BR[2], s: 'ใช้งาน' },
+          { no: 'M-10720', a: 'คุณอรวรรณ สุขสม', tier: 'Classic', tel: '090-118-2277', pts: 60, rev: 2100, last: '2026-07-30', co: CO[2], br: BR[2], s: 'ปิดใช้งาน' }
         ],
-        form: [['ข้อมูลกระทบยอด POS', 'cash', [['รหัส', 0, 'POS-6-NEW'], ['ชื่อรายการ', 0, 'ชื่อรายการ'], ['บริษัท', 1, ['บมจ. มี กรุ๊ป','บจก. มี เทรดดิ้ง','บจก. มี โลจิสติกส์']], ['สาขา', 1, ['สำนักงานใหญ่ (สาทร)','สำนักงานใหญ่ (ลาดพร้าว)','สำนักงานใหญ่ (บางนา)']], ['สาขา', 1, ["สาขาสาทร","สาขาเชียงใหม่"]], ['วิธีชำระเงิน', 1, ["เงินสด","บัตรเครดิต"]]]]],
-        roMap: { 'รหัส': 'no', 'ชื่อรายการ': 'a', 'บริษัท': 'co', 'สาขา': 'br', 'สาขา': 'wh', 'วิธีชำระเงิน': 'uom' },
-        acts: ['Create', 'Update', 'Delete', 'Export']
+        form: [['ข้อมูลสมาชิก', 'user', [['รหัสสมาชิก', 0, 'M-NEW'], ['ชื่อสมาชิก', 0, 'ชื่อ-นามสกุล'], ['ระดับ', 1, ['Classic', 'Silver', 'Gold', 'Platinum']], ['โทรศัพท์', 0, '08x-xxx-xxxx'], ['แต้มคงเหลือ', 0, '0'], ['ยอดซื้อสะสม', 0, '0'], ['ซื้อครั้งล่าสุด', 0, 'YYYY-MM-DD'], ['บริษัท', 1, CO], ['สาขา', 1, BR]]]],
+        roMap: { 'รหัสสมาชิก': 'no', 'ชื่อสมาชิก': 'a', 'ระดับ': 'tier', 'โทรศัพท์': 'tel', 'แต้มคงเหลือ': 'pts', 'ยอดซื้อสะสม': 'rev', 'ซื้อครั้งล่าสุด': 'last', 'บริษัท': 'co', 'สาขา': 'br' },
+        acts: ['Create', 'Earn Points', 'Redeem', 'Upgrade Tier', 'Export']
+      },
+      store_stock: {
+        th: 'สต็อกหน้าร้าน/โอนสาขา (Store Stock)', ic: 'box', grp: 'ext', screens: crud('Stock'),
+        cols: [{ h: 'รูป', k: 'img', img: true }, { h: 'รหัสสินค้า', k: 'no', b: true }, { h: 'ชื่อสินค้า', k: 'a', b: true }, { h: 'หมวด', k: 'cat' }, { h: 'คงเหลือหน้าร้าน', k: 'qty', num: true }, { h: 'จุดสั่งซื้อ', k: 'rop', num: true }, { h: 'ขายเฉลี่ย/วัน', k: 'avg', num: true }, { h: 'สถานะสต็อก', k: 'st' }],
+        rows: this.ITEMS().slice(0, 10).map((it, i) => ({ no: it.sku, a: it.a, cat: it.cat, qty: it.stock, rop: [20, 20, 15, 12, 10, 10, 8, 15, 10, 6][i], avg: [18, 14, 9, 6, 7, 5, 3, 4, 3, 2][i], st: it.stock <= [20, 20, 15, 12, 10, 10, 8, 15, 10, 6][i] ? 'ต่ำกว่าจุดสั่งซื้อ' : 'ปกติ', co: CO[0], br: BR[0], s: 'ใช้งาน' })),
+        form: [['ข้อมูลสต็อกหน้าร้าน', 'box', [['รหัสสินค้า', 0, 'SKU'], ['ชื่อสินค้า', 0, 'ชื่อสินค้า'], ['ลิงก์รูปภาพ', 0, 'https://… (วางลิงก์รูปสินค้า)'], ['หมวด', 1, ['เครื่องดื่ม', 'เบเกอรี่', 'สินค้าแพ็ก', 'ของที่ระลึก', 'บริการ']], ['คงเหลือหน้าร้าน', 0, '0'], ['จุดสั่งซื้อ', 0, '0'], ['ขายเฉลี่ย/วัน', 0, '0'], ['สถานะสต็อก', 1, ['ปกติ', 'ต่ำกว่าจุดสั่งซื้อ', 'ของหมด', 'รอโอนเข้า']], ['บริษัท', 1, CO], ['สาขา', 1, BR]]]],
+        roMap: { 'รหัสสินค้า': 'no', 'ชื่อสินค้า': 'a', 'ลิงก์รูปภาพ': 'img', 'หมวด': 'cat', 'คงเหลือหน้าร้าน': 'qty', 'จุดสั่งซื้อ': 'rop', 'ขายเฉลี่ย/วัน': 'avg', 'สถานะสต็อก': 'st', 'บริษัท': 'co', 'สาขา': 'br' },
+        acts: ['Count', 'Request Transfer', 'Receive Transfer', 'Adjust', 'Export']
+      },
+      table_queue: {
+        th: 'ที่นั่งและคิวออเดอร์ (Table & Queue)', ic: 'grid', grp: 'ext', screens: crud('Order'),
+        cols: [{ h: 'คิว/โต๊ะ', k: 'no', b: true }, { h: 'ประเภท', k: 'ty' }, { h: 'รายการ', k: 'a' }, { h: 'จำนวน', k: 'qty', num: true }, { h: 'เวลารับออเดอร์', k: 'dt' }, { h: 'รอ (นาที)', k: 'wait', num: true }, { h: 'สถานะออเดอร์', k: 'st' }],
+        rows: [
+          { no: 'T-01', ty: 'ทานที่ร้าน', a: 'ลาเต้ร้อน x2, ครัวซองต์', qty: 3, dt: '14:22', wait: 4, st: 'กำลังทำ', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'T-04', ty: 'ทานที่ร้าน', a: 'เซ็ตอาหารเช้า x2', qty: 4, dt: '14:18', wait: 8, st: 'พร้อมเสิร์ฟ', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'Q-118', ty: 'กลับบ้าน', a: 'อเมริกาโน่เย็น x3', qty: 3, dt: '14:25', wait: 2, st: 'รอคิว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'Q-119', ty: 'เดลิเวอรี่', a: 'ชาเขียวมัทฉะ, เค้กช็อกโกแลต', qty: 2, dt: '14:26', wait: 1, st: 'รอคิว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'T-07', ty: 'ทานที่ร้าน', a: 'แซนด์วิชแฮมชีส x2, น้ำส้ม', qty: 3, dt: '14:05', wait: 21, st: 'เสิร์ฟแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'Q-117', ty: 'กลับบ้าน', a: 'เมล็ดกาแฟคั่วกลาง', qty: 1, dt: '14:12', wait: 14, st: 'รับสินค้าแล้ว', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'T-02', ty: 'ทานที่ร้าน', a: 'คุกกี้ธัญพืช, ลาเต้ร้อน', qty: 2, dt: '13:58', wait: 28, st: 'เสิร์ฟแล้ว', co: CO[1], br: BR[1], s: 'ใช้งาน' }
+        ],
+        form: [['ข้อมูลออเดอร์', 'mega', [['คิว/โต๊ะ', 0, 'T-xx หรือ Q-xxx'], ['ประเภท', 1, ['ทานที่ร้าน', 'กลับบ้าน', 'เดลิเวอรี่']], ['รายการ', 0, 'สรุปรายการ'], ['จำนวน', 0, '0'], ['เวลารับออเดอร์', 0, 'HH:MM'], ['รอ (นาที)', 0, '0'], ['สถานะออเดอร์', 1, ['รอคิว', 'กำลังทำ', 'พร้อมเสิร์ฟ', 'เสิร์ฟแล้ว', 'รับสินค้าแล้ว', 'ยกเลิก']], ['บริษัท', 1, CO], ['สาขา', 1, BR]]]],
+        roMap: { 'คิว/โต๊ะ': 'no', 'ประเภท': 'ty', 'รายการ': 'a', 'จำนวน': 'qty', 'เวลารับออเดอร์': 'dt', 'รอ (นาที)': 'wait', 'สถานะออเดอร์': 'st', 'บริษัท': 'co', 'สาขา': 'br' },
+        acts: ['Create', 'Start', 'Ready', 'Serve', 'Cancel']
+      },
+      end_of_day: {
+        th: 'ปิดรอบสิ้นวัน (End of Day)', ic: 'clock', grp: 'core', custom: 'eod',
+        screens: [['eod', 'ปิดรอบสิ้นวัน (EOD Console)', 'gauge'], ['list', 'ประวัติการปิดรอบ (EOD History)', 'list']],
+        cols: [{ h: 'รอบวันที่', k: 'no', b: true }, { h: 'สาขา', k: 'br' }, { h: 'จำนวนบิล', k: 'bills', num: true }, { h: 'ยอดขายรวม', k: 'sale', num: true }, { h: 'ภาษีขาย', k: 'vat', num: true }, { h: 'ผลต่างเงินสด', k: 'diff', num: true }, { h: 'ผู้ปิดรอบ', k: 'by' }, { h: 'สถานะรอบ', k: 'st' }],
+        rows: [
+          { no: '2026-08-31', br: BR[0], bills: 148, sale: 62840, vat: 4111, diff: -50, by: 'พิมพ์ชนก อารี', st: 'ปิดรอบแล้ว', co: CO[0], s: 'ใช้งาน' },
+          { no: '2026-08-30', br: BR[0], bills: 162, sale: 71250, vat: 4661, diff: 0, by: 'ณัฐพล ศรีมงคล', st: 'ปิดรอบแล้ว', co: CO[0], s: 'ใช้งาน' },
+          { no: '2026-08-30', br: BR[1], bills: 121, sale: 48930, vat: 3201, diff: -125, by: 'วรกานต์ ทองดี', st: 'ปิดรอบแล้ว (มีผลต่าง)', co: CO[1], s: 'ใช้งาน' },
+          { no: '2026-08-29', br: BR[0], bills: 139, sale: 58410, vat: 3821, diff: 0, by: 'ณัฐพล ศรีมงคล', st: 'ปิดรอบแล้ว', co: CO[0], s: 'ใช้งาน' },
+          { no: '2026-08-29', br: BR[2], bills: 96, sale: 39120, vat: 2559, diff: 20, by: 'พิมพ์ชนก อารี', st: 'ปิดรอบแล้ว', co: CO[2], s: 'ใช้งาน' }
+        ], acts: ['Close Day', 'Post to ACCT', 'Send e-Tax', 'Print Z-Report']
+      },
+      pos_report: {
+        th: 'รายงานขายและ Dashboard (Sales Report)', ic: 'reports', grp: 'rpt', custom: 'dashboard',
+        screens: [['dashboard', 'ภาพรวมการขาย (POS Dashboard)', 'gauge'], ['branch', 'เทียบสาขา (Branch Compare)', 'reports']],
+        rows: this.BILLS(), acts: ['Export', 'Schedule Report']
+      },
+      offline_sync: {
+        th: 'โหมดออฟไลน์ (Offline & Sync)', ic: 'cloud', grp: 'ext', screens: crud('Sync'),
+        cols: [{ h: 'รหัสคิว', k: 'no', b: true }, { h: 'เครื่อง', k: 'dev' }, { h: 'ประเภทข้อมูล', k: 'ty' }, { h: 'จำนวนรายการ', k: 'qty', num: true }, { h: 'บันทึกเมื่อ', k: 'dt' }, { h: 'ซิงก์ล่าสุด', k: 'last' }, { h: 'สถานะซิงก์', k: 'st' }],
+        rows: [
+          { no: 'SYN-0041', dev: 'POS-01 (สาทร)', ty: 'บิลขาย', qty: 12, dt: '2026-09-01 11:02', last: '2026-09-01 11:28', st: 'ซิงก์สำเร็จ', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'SYN-0042', dev: 'POS-02 (สาทร)', ty: 'บิลขาย', qty: 5, dt: '2026-09-01 13:44', last: '—', st: 'รอซิงก์', co: CO[0], br: BR[0], s: 'ใช้งาน' },
+          { no: 'SYN-0043', dev: 'POS-01 (ลาดพร้าว)', ty: 'สมาชิกใหม่', qty: 3, dt: '2026-09-01 12:10', last: '2026-09-01 12:30', st: 'ซิงก์สำเร็จ', co: CO[1], br: BR[1], s: 'ใช้งาน' },
+          { no: 'SYN-0044', dev: 'POS-01 (บางนา)', ty: 'ปรับสต็อก', qty: 8, dt: '2026-09-01 10:15', last: '—', st: 'ซิงก์ล้มเหลว', co: CO[2], br: BR[2], s: 'ใช้งาน' },
+          { no: 'SYN-0045', dev: 'POS-02 (ลาดพร้าว)', ty: 'บิลขาย', qty: 21, dt: '2026-08-31 19:50', last: '2026-08-31 20:05', st: 'ซิงก์สำเร็จ', co: CO[1], br: BR[1], s: 'ใช้งาน' },
+          { no: 'SYN-0046', dev: 'POS-01 (สาทร)', ty: 'คืนสินค้า', qty: 1, dt: '2026-09-01 13:20', last: '—', st: 'รอซิงก์', co: CO[0], br: BR[0], s: 'ใช้งาน' }
+        ],
+        form: [['ข้อมูลคิวซิงก์', 'gauge', [['รหัสคิว', 0, 'SYN-NEW'], ['เครื่อง', 0, 'POS-xx (สาขา)'], ['ประเภทข้อมูล', 1, ['บิลขาย', 'สมาชิกใหม่', 'ปรับสต็อก', 'คืนสินค้า', 'ปิดกะ']], ['จำนวนรายการ', 0, '0'], ['บันทึกเมื่อ', 0, 'YYYY-MM-DD HH:MM'], ['ซิงก์ล่าสุด', 0, '—'], ['สถานะซิงก์', 1, ['รอซิงก์', 'ซิงก์สำเร็จ', 'ซิงก์ล้มเหลว']], ['บริษัท', 1, CO], ['สาขา', 1, BR]]]],
+        roMap: { 'รหัสคิว': 'no', 'เครื่อง': 'dev', 'ประเภทข้อมูล': 'ty', 'จำนวนรายการ': 'qty', 'บันทึกเมื่อ': 'dt', 'ซิงก์ล่าสุด': 'last', 'สถานะซิงก์': 'st', 'บริษัท': 'co', 'สาขา': 'br' },
+        acts: ['Sync Now', 'Retry', 'Export Log']
+      },
+      device_setup: {
+        th: 'ตั้งค่าเครื่องและอุปกรณ์ (Device Setup)', ic: 'settings', grp: 'ext', screens: crud('Device'),
+        cols: [{ h: 'รหัสเครื่อง', k: 'no', b: true }, { h: 'ชื่อเครื่อง', k: 'a', b: true }, { h: 'ประเภทอุปกรณ์', k: 'ty' }, { h: 'สาขา', k: 'br' }, { h: 'เชื่อมต่อ', k: 'conn' }, { h: 'ใช้งานล่าสุด', k: 'last' }, { h: 'สถานะอุปกรณ์', k: 'st' }],
+        rows: [
+          { no: 'DEV-001', a: 'เครื่องแคชเชียร์ 1', ty: 'POS Terminal', br: BR[0], conn: 'LAN', last: '2026-09-01 14:26', st: 'ออนไลน์', co: CO[0], s: 'ใช้งาน' },
+          { no: 'DEV-002', a: 'เครื่องพิมพ์สลิป 80mm', ty: 'Receipt Printer', br: BR[0], conn: 'USB', last: '2026-09-01 14:26', st: 'ออนไลน์', co: CO[0], s: 'ใช้งาน' },
+          { no: 'DEV-003', a: 'ลิ้นชักเก็บเงิน', ty: 'Cash Drawer', br: BR[0], conn: 'RJ11', last: '2026-09-01 14:20', st: 'ออนไลน์', co: CO[0], s: 'ใช้งาน' },
+          { no: 'DEV-004', a: 'เครื่องอ่านบาร์โค้ด', ty: 'Barcode Scanner', br: BR[0], conn: 'USB', last: '2026-09-01 14:25', st: 'ออนไลน์', co: CO[0], s: 'ใช้งาน' },
+          { no: 'DEV-005', a: 'เครื่องรูดบัตร EDC', ty: 'EDC Terminal', br: BR[0], conn: 'Bluetooth', last: '2026-09-01 12:20', st: 'ออฟไลน์', co: CO[0], s: 'ใช้งาน' },
+          { no: 'DEV-006', a: 'จอแสดงผลลูกค้า', ty: 'Customer Display', br: BR[1], conn: 'HDMI', last: '2026-09-01 13:40', st: 'ออนไลน์', co: CO[1], s: 'ใช้งาน' },
+          { no: 'DEV-007', a: 'เครื่องพิมพ์ครัว', ty: 'Kitchen Printer', br: BR[1], conn: 'Wi-Fi', last: '2026-09-01 14:10', st: 'กระดาษใกล้หมด', co: CO[1], s: 'ใช้งาน' }
+        ],
+        form: [['ข้อมูลอุปกรณ์', 'gauge', [['รหัสเครื่อง', 0, 'DEV-NEW'], ['ชื่อเครื่อง', 0, 'ชื่อเครื่อง'], ['ประเภทอุปกรณ์', 1, ['POS Terminal', 'Receipt Printer', 'Cash Drawer', 'Barcode Scanner', 'EDC Terminal', 'Customer Display', 'Kitchen Printer']], ['สาขา', 1, BR], ['เชื่อมต่อ', 1, ['LAN', 'Wi-Fi', 'USB', 'Bluetooth', 'RJ11', 'HDMI']], ['ใช้งานล่าสุด', 0, 'YYYY-MM-DD HH:MM'], ['สถานะอุปกรณ์', 1, ['ออนไลน์', 'ออฟไลน์', 'กระดาษใกล้หมด', 'ต้องซ่อม']], ['บริษัท', 1, CO]]]],
+        roMap: { 'รหัสเครื่อง': 'no', 'ชื่อเครื่อง': 'a', 'ประเภทอุปกรณ์': 'ty', 'สาขา': 'br', 'เชื่อมต่อ': 'conn', 'ใช้งานล่าสุด': 'last', 'สถานะอุปกรณ์': 'st', 'บริษัท': 'co' },
+        acts: ['Create', 'Test Print', 'Open Drawer', 'Pair', 'Disable']
       }
     };
   }
-  statusHue(s) { return ({ 'ใช้งาน': 130, 'ปิดใช้งาน': 22 })[s] || 130; }
-  STATUS_OPTS = ['ใช้งาน', 'ปิดใช้งาน'];
+
+  statusHue(s) {
+    const m = { 'ใช้งาน': 130, 'ปิดใช้งาน': 22, 'ชำระแล้ว': 145, 'รอเก็บเงิน': 60, 'รอตรวจสอบสลิป': 60, 'คืนเงินแล้ว': 210, 'ยกเลิกบิล': 22, 'คืนสินค้าบางส่วน': 60, 'รออนุมัติ': 60, 'อนุมัติแล้ว': 145, 'ปฏิเสธ': 22, 'เปิดอยู่': 210, 'ปิดกะแล้ว': 145, 'ปิดกะแล้ว (มีผลต่าง)': 22, 'ปิดรอบแล้ว': 145, 'ปิดรอบแล้ว (มีผลต่าง)': 22, 'ปกติ': 145, 'ต่ำกว่าจุดสั่งซื้อ': 32, 'ของหมด': 22, 'รอโอนเข้า': 210, 'รอคิว': 210, 'กำลังทำ': 60, 'พร้อมเสิร์ฟ': 145, 'เสิร์ฟแล้ว': 130, 'รับสินค้าแล้ว': 130, 'ยกเลิก': 22, 'ซิงก์สำเร็จ': 145, 'รอซิงก์': 60, 'ซิงก์ล้มเหลว': 22, 'ออนไลน์': 145, 'ออฟไลน์': 22, 'กระดาษใกล้หมด': 32, 'ต้องซ่อม': 22, 'Platinum': 265, 'Gold': 60, 'Silver': 240, 'Classic': 210 };
+    return m[s] != null ? m[s] : 130;
+  }
+  fmt(n) { return (Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 }); }
+  fmtM(n) { const v = Number(n) || 0; return v >= 1000000 ? (v / 1000000).toFixed(2) + ' ล.' : this.fmt(v); }
 
   curNav() { return this.props.nav || this.state.nav; }
-  _setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: 'list', mode: 'view', edit: null, sel: null }); }
+  navVisible(id) {
+    const r = this.role();
+    if (r === 'แคชเชียร์') return ['pos_terminal', 'payment', 'shift_cash', 'loyalty', 'table_queue'].indexOf(id) > -1;
+    if (r === 'หัวหน้ากะ') return id !== 'device_setup' || true;
+    return true;
+  }
+  navRows(nav, cfg) { return this.dbRows(nav, cfg.rows || []); }
+  _setNav(id) { const cfg = this.CFG()[id]; const first = cfg && cfg.screens ? cfg.screens[0][0] : 'list'; if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: first, mode: 'view', edit: null, sel: null }); }
   setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
   dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
   curScr() { return this.props.scr || this.state.scr; }
@@ -122,6 +296,56 @@ class Component extends DCLogic {
   _goScr(v) { if (this.props.onScr) this.props.onScr(v); else this.setState({ scr: v }); }
   goScr(v) { if (this.isDirty() && v !== 'detail' && v !== 'create' && v !== 'edit') { this.askConfirm(() => this._goScr(v)); return; } this._goScr(v); }
   setScr(v) { this.goScr(v); }
+
+  addItem(it) { this.setState(s => { const cart = s.cart.slice(); const i = cart.findIndex(x => x.sku === it.sku); if (i > -1) cart[i] = Object.assign({}, cart[i], { qty: cart[i].qty + 1 }); else cart.push({ sku: it.sku, a: it.a, price: it.price, qty: 1, unit: it.unit, disc: 0 }); return { cart }; }); }
+  setQty(sku, d) { this.setState(s => ({ cart: s.cart.map(x => x.sku === sku ? Object.assign({}, x, { qty: Math.max(0, x.qty + d) }) : x).filter(x => x.qty > 0) })); }
+  rmItem(sku) { this.setState(s => ({ cart: s.cart.filter(x => x.sku !== sku) })); }
+  cartTotals() {
+    const sub = this.state.cart.reduce((s, x) => s + x.price * x.qty, 0);
+    const m = this.state.member;
+    const memDisc = m ? Math.round(sub * m.disc) / 100 : 0;
+    const promo = sub >= 500 ? 50 : 0;
+    const afterDisc = Math.max(0, sub - memDisc - promo);
+    const vat = Math.round(afterDisc * 7 / 107 * 100) / 100;
+    return { sub, memDisc, promo, net: afterDisc, vat };
+  }
+  holdBill() {
+    if (!this.state.cart.length) { this.toast('ยังไม่มีรายการในบิล'); return; }
+    const t = this.cartTotals();
+    this.setState(s => ({ held: s.held.concat([{ id: 'HOLD-' + String(s.held.length + 1).padStart(3, '0'), at: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }), cart: s.cart, member: s.member, net: t.net }]), cart: [], member: null }));
+    this.toast('พักบิลแล้ว — เรียกคืนได้ที่หน้า “บิลพักไว้”');
+  }
+  recall(hb) { this.setState({ cart: hb.cart, member: hb.member, held: this.state.held.filter(x => x.id !== hb.id) }); this.setScr('terminal'); this.toast('เรียกคืนบิล ' + hb.id); }
+  payTotal() { return this.state.pays.reduce((s, p) => s + (Number(p.amt) || 0), 0); }
+  finishPay() {
+    const t = this.cartTotals();
+    const paid = this.payTotal();
+    if (paid + 0.001 < t.net) { this.toast('ยอดชำระยังไม่ครบ'); return; }
+    const change = Math.round((paid - t.net) * 100) / 100;
+    const bill = { no: 'POS-260901-' + String(28 + this.dbRows('pos_terminal', this.BILLS()).length - this.BILLS().length + 1).padStart(4, '0'), dt: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }), cust: this.state.member ? this.state.member.a + ' (' + this.state.member.tier + ')' : 'ลูกค้าทั่วไป', qty: this.state.cart.reduce((s, x) => s + x.qty, 0), net: t.net, pay: this.state.pays.length > 1 ? 'แบ่งจ่าย ' + this.state.pays.length + ' วิธี' : (this.state.pays[0] ? this.state.pays[0].m : 'เงินสด'), cash: this.ME, st: 'ชำระแล้ว', co: 'บมจ. มี กรุ๊ป', br: 'สาขาสาทร', s: 'ใช้งาน' };
+    this.setState(s => { const db = Object.assign({}, s.db); const cur = db.pos_terminal !== undefined ? db.pos_terminal : this.BILLS(); db.pos_terminal = [bill].concat(cur); return { db, cart: [], member: null, pays: [], payOpen: false, tender: '' }; });
+    this.toast('รับชำระสำเร็จ ' + this.fmt(t.net) + ' ฿' + (change > 0 ? ' · เงินทอน ' + this.fmt(change) + ' ฿' : ''));
+  }
+
+  aiPrompt(kind, cfg, nav) {
+    const rows = JSON.stringify((this.navRows(nav, cfg) || []).slice(0, 12));
+    const cart = JSON.stringify(this.state.cart);
+    return {
+      upsell: 'ตะกร้าปัจจุบัน: ' + cart + '\n\nรายการสินค้าในร้าน: ' + JSON.stringify(this.ITEMS()) + '\n\nแนะนำสินค้าขายพ่วง 3 รายการพร้อมประโยคชวนซื้อสั้น ๆ ที่แคชเชียร์พูดได้ทันที',
+      eodsum: 'ข้อมูลการขายวันนี้: ' + rows + '\n\nสรุปผลการขายสิ้นวันเป็นภาษาคนอ่านง่าย 6 บรรทัด: ยอดรวม ช่องทางชำระเด่น สินค้าขายดี ข้อสังเกต และสิ่งที่ควรทำพรุ่งนี้',
+      fraud: 'ธุรกรรมและการยกเลิก/คืนสินค้า: ' + rows + '\n\nตรวจหาความผิดปกติที่อาจเป็นการทุจริต เช่น ยกเลิกบิลถี่ ส่วนลดสูงผิดปกติ ผลต่างเงินสด ระบุรายการที่ควรตรวจสอบพร้อมเหตุผล'
+    }[kind];
+  }
+  async aiRun(kind, cfg, nav) {
+    const AI = window.MeeAI;
+    if (!AI || typeof AI.complete !== 'function') { this.toast('ยังไม่ได้ตั้งค่า AI — เปิด AI Center เพื่อเชื่อมต่อ'); return; }
+    this.setState({ aiBusy: kind });
+    try {
+      const out = await AI.complete(this.aiPrompt(kind, cfg, nav), { system: 'คุณคือผู้ช่วยหน้าร้านของระบบ Mee-ERP OS โมดูล SALE-POS ตอบภาษาไทย สั้น กระชับ เป็นข้อ ๆ ใช้ตัวเลขจากข้อมูลจริงเท่านั้น', maxTokens: 800 });
+      this.setState(s => ({ ai: Object.assign({}, s.ai, { [kind]: out }), aiBusy: '' }));
+    } catch (e) { this.setState({ aiBusy: '' }); this.toast('AI: ' + (e && e.message ? e.message : 'เรียกใช้ไม่สำเร็จ')); }
+  }
+
   doSave() {
     const key = this.curNav();
     const cfg = this.CFG()[key];
@@ -140,22 +364,42 @@ class Component extends DCLogic {
   renderVals() {
     if (!this.K) return { fg: '#333', view: null };
     const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
-    const cfgAll = this.CFG();
-    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : Object.keys(cfgAll)[0]; const cfg = cfgAll[nav] || {};
-    const scr = this.curScr();
     const acc = c.acc, aTxt = c.aTxt, sub = c.sub;
+    const cfgAll = this.CFG();
+    const nav0 = this.curNav(); const nav = cfgAll[nav0] ? nav0 : 'pos_terminal'; const cfg = cfgAll[nav] || {};
+    const scr = this.curScr();
+    const rows = this.navRows(nav, cfg) || [];
+    const selRow = this.state.sel || rows[0] || null;
+    const ro = this.readOnly();
+    const aiOn = this.props.enableAI !== false;
+    const look = this.look();
+    const D = look === 'A' ? { pad: 14, gap: 12, rowH: 44, radius: 12, btnH: 46, font: 13 } : { pad: 10, gap: 8, rowH: 32, radius: 8, btnH: 34, font: 12 };
+    const mono = { fontVariantNumeric: 'tabular-nums' };
+
+    const chip = (txt, hue) => h('span', { style: { display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'oklch(0.95 0.045 ' + hue + ')', color: 'oklch(0.42 0.13 ' + hue + ')' } }, txt);
+    const tbl = (cols, data, onRow) => h('div', { style: { overflowX: 'auto' } }, h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 12.5, fontFamily: c.font } },
+      h('thead', null, h('tr', null, cols.map((cc, i) => h('th', { key: i, style: { textAlign: cc.num ? 'right' : 'left', padding: '8px 10px', fontSize: 11, fontWeight: 700, color: sub, borderBottom: '1px solid ' + c.border, whiteSpace: 'nowrap' } }, cc.h)))),
+      h('tbody', null, data.map((r, ri) => h('tr', { key: ri, onClick: onRow ? () => onRow(r) : null, style: { cursor: onRow ? 'pointer' : 'default' } }, cols.map((cc, i) => h('td', { key: i, style: Object.assign({ padding: '8px 10px', borderBottom: '1px solid ' + c.line, textAlign: cc.num ? 'right' : 'left', fontWeight: cc.b ? 600 : 400, whiteSpace: cc.wrap ? 'normal' : 'nowrap' }, cc.num ? mono : null) }, cc.render ? cc.render(r) : (cc.num ? this.fmt(r[cc.k]) : r[cc.k]))))))));
+    const aiCard = (kind, label, desc) => {
+      if (!aiOn) return null;
+      const out = this.state.ai[kind], busy = this.state.aiBusy === kind;
+      return K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+        h('span', { style: { width: 28, height: 28, borderRadius: 8, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, K.Icon('gauge', 15)),
+        h('div', { style: { flex: 1, minWidth: 160 } }, h('div', { style: { fontSize: 12.5, fontWeight: 700 } }, label), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, desc)),
+        K.btn(T, busy ? 'กำลังวิเคราะห์…' : 'ให้ AI ช่วย', true, 'check', () => this.aiRun(kind, cfg, nav))),
+        out ? h('div', { style: { marginTop: 12, padding: 12, borderRadius: 9, background: c.winHead, border: '1px solid ' + c.line, fontSize: 12.5, lineHeight: 1.75, whiteSpace: 'pre-wrap' } }, out) : null], { marginBottom: 14, padding: '12px 16px' });
+    };
+    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'L5 ACTIONS'), (list || ['Export']).map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: '1px solid ' + c.border, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+
     const _cbM = (this.K && this.K.liveCoBr) ? this.K.liveCoBr() : { COS: [], BR_MAP: {} };
-    const PROC_COMPANIES = _cbM.COS;
-    const PROC_BR_MAP = _cbM.BR_MAP;
+    const PROC_COMPANIES = _cbM.COS, PROC_BR_MAP = _cbM.BR_MAP;
     const coSel = this.props.filterCo || this.state.filterCo || ((this.props.api && this.props.api.userCo && PROC_COMPANIES.indexOf(this.props.api.userCo) > -1) ? [this.props.api.userCo] : PROC_COMPANIES.slice());
     const coAll = coSel.length === PROC_COMPANIES.length;
     const brOpts = Array.from(new Set([].concat(...(coAll ? PROC_COMPANIES : coSel).map(o => PROC_BR_MAP[o] || []))));
-    const brSel = (this.props.filterBr || this.state.filterBr || ['สำนักงานใหญ่ (สาทร)']).filter(o => brOpts.indexOf(o) > -1);
+    const brSel = (this.props.filterBr || this.state.filterBr || []).filter(o => brOpts.indexOf(o) > -1);
     const brSelFinal = brSel.length ? brSel : brOpts;
     const brAll = brSelFinal.length === brOpts.length;
-    const rows = this.dbRows(nav, cfg.rows || []);
-    const selRow = this.state.sel || rows[0] || null;
-    const actLegend = (list) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 14 } }, h('span', { style: { fontSize: 9.5, fontWeight: 700, color: sub, letterSpacing: .5 } }, 'ACTIONS'), list.map(a => h('button', { key: a, onClick: () => this.toast(a), style: { fontSize: 11, fontWeight: 600, padding: '4px 9px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, a)));
+
     let body;
     if (scr === 'create' || scr === 'edit') {
       const er = scr === 'edit' ? this.state.edit : null;
@@ -172,9 +416,7 @@ class Component extends DCLogic {
         let effOpt = opt;
         if (m === 'co' && Array.isArray(opt) && _cbF.COS.length) effOpt = _cbF.COS;
         if (m === 'br' && Array.isArray(opt) && coFieldLb) {
-          const coLb = coFieldLb[0];
-          const coDk = pre + coLb;
-          const coM = cfg.roMap && cfg.roMap[coLb];
+          const coLb = coFieldLb[0], coDk = pre + coLb, coM = cfg.roMap && cfg.roMap[coLb];
           const coEv = er ? (er['_f:' + coLb] !== undefined ? er['_f:' + coLb] : (coM ? er[coM] : null)) : null;
           const coCur = dr[coDk] !== undefined ? dr[coDk] : (coEv != null ? coEv : '');
           effOpt = (coCur && BR_MAP[coCur]) ? BR_MAP[coCur] : (_cbF.COS.length ? [].concat.apply([], Object.keys(BR_MAP).map(k => BR_MAP[k] || [])) : opt);
@@ -185,57 +427,249 @@ class Component extends DCLogic {
           : h('input', { placeholder: typeof opt === 'string' ? opt : '', value: cur, onChange: onCh, style: K.inp(T) });
         return K.field(T, lb, node, ty === 1);
       })); });
-      const save = K.btn(T, 'บันทึก', true, 'check', () => { this.doSave(); this.goScr('detail'); });
       const stDk = pre + 'สถานะ';
       const stCur = dr[stDk] !== undefined ? dr[stDk] : (er ? (er.s || 'ใช้งาน') : 'ใช้งาน');
       const statusFormEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, stCur, this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPTS.map(o => h('option', { key: o, value: o }, o)))))], { marginBottom: 14, padding: '12px 16px' });
-      body = [hdr, ...secs, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts || ['Export'])];
+      body = [hdr, ...secs, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), K.btn(T, 'บันทึก', true, 'check', () => { this.doSave(); this.goScr('detail'); })), actLegend(cfg.acts)];
+    } else if (scr === 'terminal') {
+      const items = this.ITEMS();
+      const cats = ['ทั้งหมด'].concat(Array.from(new Set(items.map(i => i.cat))));
+      const q = (this.state.q || '').trim();
+      const catSel = this.state.cat || 'ทั้งหมด';
+      const shown = items.filter(i => (catSel === 'ทั้งหมด' || i.cat === catSel) && (!q || (i.a + i.sku).toLowerCase().indexOf(q.toLowerCase()) > -1));
+      const gridView = this.state.gridView == null ? (look === 'A') : this.state.gridView;
+      const t = this.cartTotals();
+      const catBar = h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 } }, cats.map(cc => h('button', { key: cc, onClick: () => this.setState({ cat: cc }), style: { fontSize: 12, fontWeight: catSel === cc ? 700 : 500, padding: look === 'A' ? '8px 14px' : '5px 11px', borderRadius: 999, cursor: 'pointer', fontFamily: c.font, border: '1px solid ' + (catSel === cc ? acc : c.border), background: catSel === cc ? c.accSoft : c.win, color: catSel === cc ? aTxt : c.text } }, cc)));
+      const searchRow = h('div', { style: { display: 'flex', gap: 8, marginBottom: 10 } },
+        h('input', { value: this.state.q, placeholder: 'สแกนบาร์โค้ดหรือค้นหาชื่อสินค้า / SKU', onChange: e => this.setState({ q: e.target.value }), style: Object.assign({}, K.inp(T), { height: D.btnH, fontSize: D.font }) }),
+        h('button', { onClick: () => this.setState({ gridView: !gridView }), style: { height: D.btnH, padding: '0 14px', fontSize: 12, fontWeight: 700, borderRadius: 9, border: '1px solid ' + c.border, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font, whiteSpace: 'nowrap' } }, gridView ? 'มุมมองตาราง' : 'มุมมองกริด'));
+      const catalog = gridView
+        ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(' + (look === 'A' ? 132 : 116) + 'px,1fr))', gap: D.gap, alignContent: 'start' } }, shown.map(i => h('button', { key: i.sku, onClick: () => this.addItem(i), style: { position: 'relative', textAlign: 'left', border: '1px solid ' + c.border, background: c.win, borderRadius: D.radius, padding: D.pad, cursor: 'pointer', fontFamily: c.font, color: c.text, display: 'flex', flexDirection: 'column', gap: 6, minHeight: look === 'A' ? 104 : 84 } },
+          h('div', { style: { display: 'flex', gap: 8, alignItems: 'flex-start' } }, this.thumb(i, look === 'A' ? 46 : 34, 8), h('span', { role: 'button', title: 'แนบรูปจากลิงก์', onClick: e => { e.stopPropagation(); this.setState({ imgEdit: { sku: i.sku, a: i.a, url: this.imgMap()[i.sku] || '' } }); }, style: { marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 6, border: '1px solid ' + c.border, background: c.winHead, color: sub, cursor: 'pointer', whiteSpace: 'nowrap' } }, this.imgMap()[i.sku] ? 'เปลี่ยนรูป' : 'แนบรูป')),
+          h('div', { style: { fontSize: look === 'A' ? 13 : 12, fontWeight: 700, lineHeight: 1.35, flex: 1 } }, i.a),
+          h('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 } },
+            h('span', { style: Object.assign({ fontSize: look === 'A' ? 17 : 14, fontWeight: 800, color: aTxt }, mono) }, this.fmt(i.price)),
+            h('span', { style: { fontSize: 10.5, color: i.stock <= 12 ? 'oklch(0.55 0.16 32)' : sub } }, 'คงเหลือ ' + i.stock)))))
+        : h('div', { style: { border: '1px solid ' + c.border, borderRadius: D.radius, overflow: 'hidden', background: c.win } }, tbl([{ h: 'รูป', render: r => this.thumb(r, 30, 6) }, { h: 'SKU', k: 'sku', b: true }, { h: 'ชื่อสินค้า', k: 'a' }, { h: 'หมวด', k: 'cat' }, { h: 'ราคา', k: 'price', num: true }, { h: 'คงเหลือ', k: 'stock', num: true }, { h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); this.setState({ imgEdit: { sku: r.sku, a: r.a, url: this.imgMap()[r.sku] || '' } }); }, style: { fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 7, border: '1px solid ' + c.border, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, this.imgMap()[r.sku] ? 'เปลี่ยนรูป' : 'แนบรูป'), h('button', { onClick: e => { e.stopPropagation(); this.addItem(r); }, style: { fontSize: 11.5, fontWeight: 700, padding: '4px 12px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'เพิ่ม')) }], shown, r => this.addItem(r)));
+      const memberBar = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 9, background: this.state.member ? c.accSoft : c.winHead, border: '1px solid ' + c.border, marginBottom: 10 } },
+        h('span', { style: { display: 'flex', color: this.state.member ? acc : sub } }, K.Icon('user', 15)),
+        h('div', { style: { flex: 1, minWidth: 0 } }, this.state.member
+          ? h('div', null, h('div', { style: { fontSize: 12, fontWeight: 700 } }, this.state.member.a + ' · ' + this.state.member.tier), h('div', { style: { fontSize: 10.5, color: sub } }, 'แต้ม ' + this.fmt(this.state.member.pts) + ' · ส่วนลดสมาชิก ' + this.state.member.disc + '%'))
+          : h('div', { style: { fontSize: 12, color: sub, whiteSpace: 'nowrap' } }, 'ลูกค้าทั่วไป')),
+        this.state.member
+          ? h('button', { onClick: () => this.setState({ member: null }), style: { fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 7, border: '1px solid ' + c.border, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font } }, 'นำออก')
+          : h('select', { value: '', onChange: e => { const m = this.MEMBERS().find(x => x.code === e.target.value); if (m) this.setState({ member: m }); }, style: Object.assign({}, K.inp(T), { width: 132, height: 30, fontSize: 12, cursor: 'pointer', flexShrink: 0 }) }, [h('option', { key: '_', value: '' }, 'ผูกสมาชิก…')].concat(this.MEMBERS().map(m => h('option', { key: m.code, value: m.code }, m.a + ' · ' + m.tier)))));
+      const lines = this.state.cart.length ? this.state.cart.map(x => h('div', { key: x.sku, style: { display: 'flex', gap: 8, alignItems: 'center', padding: look === 'A' ? '9px 0' : '6px 0', borderBottom: '1px solid ' + c.line } },
+        this.thumb(x, look === 'A' ? 32 : 26, 6),
+        h('div', { style: { flex: 1, minWidth: 0 } }, h('div', { style: { fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, x.a), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2 } }, this.fmt(x.price) + ' ฿ / ' + x.unit)),
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 4 } },
+          h('button', { onClick: () => this.setQty(x.sku, -1), style: { width: 24, height: 24, borderRadius: 6, border: '1px solid ' + c.border, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font, fontWeight: 700 } }, '−'),
+          h('span', { style: Object.assign({ width: 26, textAlign: 'center', fontSize: 12.5, fontWeight: 700 }, mono) }, x.qty),
+          h('button', { onClick: () => this.setQty(x.sku, 1), style: { width: 24, height: 24, borderRadius: 6, border: '1px solid ' + c.border, background: c.win, color: c.text, cursor: 'pointer', fontFamily: c.font, fontWeight: 700 } }, '+')),
+        h('div', { style: Object.assign({ width: 72, textAlign: 'right', fontSize: 13, fontWeight: 700 }, mono) }, this.fmt(x.price * x.qty)),
+        h('button', { onClick: () => this.rmItem(x.sku), title: 'ลบรายการ', style: { border: 'none', background: 'transparent', color: sub, cursor: 'pointer', fontSize: 14, padding: 2 } }, '×'))) : [h('div', { key: 'e', style: { padding: '28px 0', textAlign: 'center', fontSize: 12, color: sub } }, 'ยังไม่มีรายการ — เลือกสินค้าจากด้านซ้าย')];
+      const sumRow = (lb, v, strong) => h('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: strong ? 15 : 12, fontWeight: strong ? 800 : 500, color: strong ? c.text : sub, padding: strong ? '8px 0 0' : '3px 0' } }, h('span', null, lb), h('span', { style: mono }, v));
+      const cartPanel = h('div', { style: { flex: '0 1 ' + (look === 'A' ? 330 : 290) + 'px', minWidth: 250, maxWidth: look === 'A' ? 330 : 290, display: 'flex', flexDirection: 'column', background: c.card, border: '1px solid ' + c.border, borderRadius: D.radius, padding: D.pad, height: '100%', minHeight: 0, overflow: 'hidden' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 } }, h('div', { style: { fontSize: 13.5, fontWeight: 800 } }, 'บิลปัจจุบัน'), h('span', { style: { fontSize: 11, color: sub } }, 'POS-01 · ' + this.ME)),
+        memberBar,
+        h('div', { style: { flex: 1, overflowY: 'auto', minHeight: 120 } }, lines),
+        h('div', { style: { paddingTop: 10, borderTop: '1px solid ' + c.border, marginTop: 8 } },
+          sumRow('ยอดรวมก่อนส่วนลด', this.fmt(t.sub) + ' ฿'),
+          t.memDisc ? sumRow('ส่วนลดสมาชิก', '-' + this.fmt(t.memDisc) + ' ฿') : null,
+          t.promo ? sumRow('โปรโมชั่น (ยอดครบ 500)', '-' + this.fmt(t.promo) + ' ฿') : null,
+          sumRow('ภาษีมูลค่าเพิ่ม (รวมใน)', this.fmt(t.vat) + ' ฿'),
+          sumRow('ยอดสุทธิ', this.fmt(t.net) + ' ฿', true)),
+        h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 } },
+          h('button', { onClick: () => this.holdBill(), style: { height: D.btnH, borderRadius: 9, border: '1px solid ' + c.border, background: c.win, color: c.text, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', fontFamily: c.font } }, 'พักบิล'),
+          h('button', { onClick: () => this.setState({ cart: [], member: null }), style: { height: D.btnH, borderRadius: 9, border: '1px solid ' + c.border, background: c.win, color: c.text, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', fontFamily: c.font } }, 'ล้างบิล')),
+        h('button', { onClick: () => { if (!this.state.cart.length) { this.toast('ยังไม่มีรายการในบิล'); return; } this.setState({ payOpen: true, pays: [{ m: 'เงินสด', amt: t.net }] }); }, style: { height: look === 'A' ? 54 : 42, marginTop: 8, borderRadius: 10, border: 'none', background: acc, color: '#fff', fontWeight: 800, fontSize: look === 'A' ? 16 : 14, cursor: 'pointer', fontFamily: c.font } }, 'ชำระเงิน  ' + this.fmt(t.net) + ' ฿'));
+      body = [h('div', { key: 'term', style: { display: 'flex', gap: D.gap, alignItems: 'stretch', height: 'calc(100vh - 210px)', minHeight: 430, maxHeight: 820 } },
+        h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 } }, searchRow, catBar, h('div', { style: { flex: 1, overflowY: 'auto', minHeight: 0, paddingRight: 4 } }, catalog)),
+        cartPanel), aiCard('upsell', 'แนะนำขายพ่วง (Upsell)', 'ให้ AI เสนอสินค้าพ่วงจากตะกร้าปัจจุบัน'), actLegend(cfg.acts)];
+    } else if (scr === 'held') {
+      const held = this.state.held;
+      body = [K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' } }, h('div', null, h('div', { style: { fontSize: 15, fontWeight: 800 } }, 'บิลพักไว้ (' + held.length + ')'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'เรียกคืนบิลเพื่อขายต่อ หรือทิ้งบิลที่ไม่ใช้')), K.btn(T, 'กลับหน้าขาย', true, 'cart', () => this.setScr('terminal')))], { marginBottom: 14, padding: '12px 16px' }),
+        held.length
+          ? h('div', { key: 'hg', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 12 } }, held.map(hb => h('div', { key: hb.id, style: { background: c.card, border: '1px solid ' + c.border, borderRadius: 11, padding: 14 } },
+            h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } }, h('div', { style: { fontSize: 13, fontWeight: 800 } }, hb.id), h('span', { style: { fontSize: 11, color: sub } }, hb.at)),
+            h('div', { style: { fontSize: 11.5, color: sub, marginTop: 4 } }, (hb.member ? hb.member.a : 'ลูกค้าทั่วไป') + ' · ' + hb.cart.length + ' รายการ'),
+            h('div', { style: Object.assign({ fontSize: 19, fontWeight: 800, marginTop: 8 }, mono) }, this.fmt(hb.net) + ' ฿'),
+            h('div', { style: { display: 'flex', gap: 8, marginTop: 12 } },
+              h('button', { onClick: () => this.recall(hb), style: { flex: 1, height: 34, borderRadius: 8, border: 'none', background: acc, color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: c.font } }, 'เรียกคืน'),
+              h('button', { onClick: () => this.setState(s => ({ held: s.held.filter(x => x.id !== hb.id) })), style: { height: 34, padding: '0 12px', borderRadius: 8, border: '1px solid ' + c.border, background: c.win, color: c.text, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: c.font } }, 'ทิ้ง')))))
+          : K.card(T, [h('div', { style: { padding: '28px 0', textAlign: 'center', fontSize: 12.5, color: sub } }, 'ยังไม่มีบิลที่พักไว้')], { padding: '12px 16px' }),
+        actLegend(cfg.acts)];
+    } else if (scr === 'shift') {
+      const sh = this.dbRows('shift_cash', cfgAll.shift_cash.rows)[0];
+      const cashSales = this.dbRows('pos_terminal', this.BILLS()).filter(b => b.pay === 'เงินสด' && b.st === 'ชำระแล้ว').reduce((s, b) => s + b.net, 0);
+      const expect = sh.open + cashSales;
+      const stat = (lb, v, hue) => h('div', { style: { background: c.card, border: '1px solid ' + c.border, borderRadius: 11, padding: '12px 14px', flex: '1 1 170px' } }, h('div', { style: { fontSize: 11, color: sub, fontWeight: 700 } }, lb), h('div', { style: Object.assign({ fontSize: 19, fontWeight: 800, marginTop: 6, color: hue ? 'oklch(0.5 0.15 ' + hue + ')' : c.text }, mono) }, v));
+      body = [K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' } },
+        h('div', { style: { flex: 1, minWidth: 180 } }, h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'กะ ' + sh.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'เปิดโดย ' + sh.cash + ' · ' + sh.dt + ' · ' + chip('', 0) && ('สถานะ: ' + sh.st))),
+        this.canApprove() ? K.btn(T, 'นำเงินเข้า', false, 'plus', () => this.toast('Cash In')) : null,
+        this.canApprove() ? K.btn(T, 'นำเงินออก', false, 'doc', () => this.toast('Cash Out')) : null,
+        this.canApprove() ? K.btn(T, 'ปิดกะ', true, 'check', () => this.toast('ปิดกะเรียบร้อย — ส่งยอดให้ผู้จัดการสาขาตรวจสอบ')) : null)], { marginBottom: 14, padding: '12px 16px' }),
+        h('div', { key: 'st', style: { display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 } }, stat('เงินตั้งต้นในลิ้นชัก', this.fmt(sh.open) + ' ฿'), stat('ยอดขายเงินสดในกะ', this.fmt(cashSales) + ' ฿'), stat('ยอดที่ควรมีในลิ้นชัก', this.fmt(expect) + ' ฿'), stat('นับจริงล่าสุด', this.fmt(sh.count) + ' ฿'), stat('ผลต่าง', (sh.diff > 0 ? '+' : '') + this.fmt(sh.diff) + ' ฿', sh.diff === 0 ? 145 : 22)),
+        K.card(T, [h('div', { style: { fontSize: 13, fontWeight: 700, marginBottom: 10 } }, 'สรุปยอดรับตามช่องทาง (กะนี้)'), tbl([{ h: 'ช่องทาง', k: 'm', b: true }, { h: 'จำนวนบิล', k: 'n', num: true }, { h: 'ยอดรวม', k: 'amt', num: true }], (() => { const bs = this.dbRows('pos_terminal', this.BILLS()).filter(b => b.st === 'ชำระแล้ว'); const g = {}; bs.forEach(b => { g[b.pay] = g[b.pay] || { m: b.pay, n: 0, amt: 0 }; g[b.pay].n++; g[b.pay].amt += b.net; }); return Object.keys(g).map(k2 => g[k2]); })())], { marginBottom: 14, padding: '12px 16px' }),
+        aiCard('fraud', 'ตรวจจับธุรกรรมผิดปกติ', 'AI ตรวจการยกเลิก/ส่วนลด/ผลต่างเงินสดที่น่าสงสัย'), actLegend(cfg.acts)];
+    } else if (scr === 'eod') {
+      const bills = this.dbRows('pos_terminal', this.BILLS());
+      const paid = bills.filter(b => b.st === 'ชำระแล้ว');
+      const sale = paid.reduce((s, b) => s + b.net, 0);
+      const vat = Math.round(sale * 7 / 107 * 100) / 100;
+      const steps = [['ตรวจสอบบิลค้าง/บิลพักไว้', this.state.held.length ? 'พบ ' + this.state.held.length + ' บิลพักไว้' : 'ไม่มีบิลค้าง', this.state.held.length ? 32 : 145], ['ปิดกะแคชเชียร์ทุกคน', '1 กะยังเปิดอยู่', 32], ['กระทบยอดเงินสด', 'ผลต่าง 0 ฿', 145], ['ตัดสต็อกเข้า INVT', 'พร้อมส่ง 42 รายการ', 210], ['ลงบัญชีรายได้/ภาษีขาย (ACCT)', 'พร้อมส่ง', 210], ['ส่ง e-Tax Invoice', 'พร้อมส่ง 3 ใบเต็มรูป', 210]];
+      body = [K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' } },
+        h('div', { style: { flex: 1, minWidth: 200 } }, h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'ปิดรอบสิ้นวัน — 1 กันยายน 2569'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'สาขาสาทร · ' + paid.length + ' บิล · ยอดขายรวม ' + this.fmt(sale) + ' ฿')),
+        K.btn(T, 'พิมพ์ Z-Report', false, 'doc', () => this.toast('พิมพ์ Z-Report')),
+        this.canApprove() ? K.btn(T, 'ปิดรอบวันนี้', true, 'check', () => this.toast('ปิดรอบเรียบร้อย — ส่งข้อมูลเข้า ACCT และ INVT แล้ว')) : null)], { marginBottom: 14, padding: '12px 16px' }),
+        K.card(T, [h('div', { style: { fontSize: 13, fontWeight: 700, marginBottom: 12 } }, 'เช็กลิสต์ก่อนปิดรอบ'), h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, steps.map(([lb, v, hue], i) => h('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, background: c.winHead, border: '1px solid ' + c.line } },
+          h('span', { style: { width: 22, height: 22, borderRadius: 999, background: c.accSoft, color: aTxt, fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, i + 1),
+          h('div', { style: { flex: 1, fontSize: 12.5, fontWeight: 600 } }, lb), chip(v, hue))))], { marginBottom: 14, padding: '12px 16px' }),
+        K.card(T, [h('div', { style: { fontSize: 13, fontWeight: 700, marginBottom: 10 } }, 'สรุปยอดสำหรับลงบัญชี'), tbl([{ h: 'รายการ', k: 'a', b: true }, { h: 'จำนวน', k: 'n', num: true }, { h: 'ยอด (บาท)', k: 'amt', num: true }], [{ a: 'ยอดขายรวม (รวม VAT)', n: paid.length, amt: sale }, { a: 'ภาษีขาย 7% (รวมใน)', n: paid.length, amt: vat }, { a: 'รายได้ก่อนภาษี', n: paid.length, amt: Math.round((sale - vat) * 100) / 100 }, { a: 'บิลยกเลิก/คืนสินค้า', n: bills.length - paid.length, amt: bills.filter(b => b.st !== 'ชำระแล้ว').reduce((s, b) => s + b.net, 0) }])], { marginBottom: 14, padding: '12px 16px' }),
+        aiCard('eodsum', 'สรุปยอดขายสิ้นวันเป็นภาษาคน', 'AI สรุปผลการขายพร้อมข้อสังเกตและสิ่งที่ควรทำพรุ่งนี้'), actLegend(cfg.acts)];
+    } else if (scr === 'dashboard' || scr === 'branch') {
+      const bills = this.dbRows('pos_terminal', this.BILLS()).filter(b => b.st === 'ชำระแล้ว');
+      const sale = bills.reduce((s, b) => s + b.net, 0);
+      const avg = sale / (bills.length || 1);
+      if (scr === 'branch') {
+        const BRs = [{ br: 'สาขาสาทร', co: 'บมจ. มี กรุ๊ป', bills: 148, sale: 62840, avg: 425, tgt: 60000 }, { br: 'สาขาลาดพร้าว', co: 'บจก. มี เทรดดิ้ง', bills: 121, sale: 48930, avg: 404, tgt: 55000 }, { br: 'สาขาบางนา', co: 'บจก. มี โลจิสติกส์', bills: 96, sale: 39120, avg: 408, tgt: 40000 }];
+        const max = 62840;
+        body = [K.card(T, [h('div', { style: { fontSize: 13, fontWeight: 700, marginBottom: 12 } }, 'เทียบยอดขายรายสาขา (วันนี้)'), h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } }, BRs.map(b => h('div', { key: b.br, style: { display: 'flex', alignItems: 'center', gap: 12 } },
+          h('div', { style: { width: 150, flexShrink: 0 } }, h('div', { style: { fontSize: 12.5, fontWeight: 700 } }, b.br), h('div', { style: { fontSize: 10.5, color: sub } }, b.co)),
+          h('div', { style: { flex: 1, height: 26, background: c.line, borderRadius: 7, overflow: 'hidden', position: 'relative' } }, h('div', { style: { width: (b.sale / max * 100) + '%', height: '100%', background: b.sale >= b.tgt ? 'oklch(0.62 0.14 145)' : 'oklch(0.64 0.14 255)' } })),
+          h('div', { style: Object.assign({ width: 110, textAlign: 'right', fontSize: 13, fontWeight: 800 }, mono) }, this.fmt(b.sale) + ' ฿'),
+          chip(Math.round(b.sale / b.tgt * 100) + '% ของเป้า', b.sale >= b.tgt ? 145 : 32))))], { marginBottom: 14, padding: '14px 16px' }),
+          K.card(T, [tbl([{ h: 'สาขา', k: 'br', b: true }, { h: 'บริษัท', k: 'co' }, { h: 'จำนวนบิล', k: 'bills', num: true }, { h: 'ยอดขาย', k: 'sale', num: true }, { h: 'บิลเฉลี่ย', k: 'avg', num: true }, { h: 'เป้าวัน', k: 'tgt', num: true }], BRs)], { marginBottom: 14, padding: '12px 16px' }), actLegend(cfg.acts)];
+      } else {
+        const kpis = [['ยอดขายวันนี้', this.fmt(sale) + ' ฿', '+8% vs เมื่อวาน', 145], ['จำนวนบิล', String(bills.length), 'กะปัจจุบัน', 210], ['บิลเฉลี่ย', this.fmt(Math.round(avg)) + ' ฿', 'เป้า 450 ฿', 60], ['สินค้าต่อบิลเฉลี่ย', (bills.reduce((s, b) => s + b.qty, 0) / (bills.length || 1)).toFixed(1) + ' ชิ้น', '', 210], ['ยอดขายผ่านสมาชิก', '48%', '+5 จุด', 145], ['ยกเลิก/คืนสินค้า', '2 รายการ', 'ต้องตรวจสอบ', 32]];
+        const byPay = (() => { const g = {}; bills.forEach(b => { g[b.pay] = (g[b.pay] || 0) + b.net; }); return Object.keys(g).map(k2 => ({ m: k2, amt: g[k2] })).sort((a, b) => b.amt - a.amt); })();
+        const pmax = byPay[0] ? byPay[0].amt : 1;
+        const top = this.ITEMS().slice(0, 6).map((i, ix) => ({ a: i.a, cat: i.cat, qty: [42, 38, 27, 21, 19, 14][ix], amt: [42, 38, 27, 21, 19, 14][ix] * i.price }));
+        body = [h('div', { key: 'k', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 10, marginBottom: 14 } }, kpis.map(([lb, v, d, hue]) => h('div', { key: lb, style: { background: c.card, border: '1px solid ' + c.border, borderRadius: 11, padding: '12px 14px' } }, h('div', { style: { fontSize: 11, color: sub, fontWeight: 700 } }, lb), h('div', { style: Object.assign({ fontSize: 19, fontWeight: 800, marginTop: 6 }, mono) }, v), d ? h('div', { style: { marginTop: 7 } }, chip(d, hue)) : null))),
+          h('div', { key: 'r', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 14 } },
+            K.card(T, [h('div', { style: { fontSize: 13, fontWeight: 700, marginBottom: 12 } }, 'สัดส่วนช่องทางชำระเงิน'), h('div', { style: { display: 'flex', flexDirection: 'column', gap: 9 } }, byPay.map(p => h('div', { key: p.m, style: { display: 'flex', alignItems: 'center', gap: 10 } },
+              h('div', { style: { width: 130, fontSize: 11.5, color: sub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.m),
+              h('div', { style: { flex: 1, height: 20, background: c.line, borderRadius: 6, overflow: 'hidden' } }, h('div', { style: { width: Math.max(5, p.amt / pmax * 100) + '%', height: '100%', background: acc } })),
+              h('div', { style: Object.assign({ width: 78, textAlign: 'right', fontSize: 12, fontWeight: 700 }, mono) }, this.fmt(p.amt)))))], { marginBottom: 0, padding: '14px 16px' }),
+            K.card(T, [h('div', { style: { fontSize: 13, fontWeight: 700, marginBottom: 10 } }, 'สินค้าขายดีวันนี้'), tbl([{ h: 'สินค้า', k: 'a', b: true }, { h: 'หมวด', k: 'cat' }, { h: 'จำนวน', k: 'qty', num: true }, { h: 'ยอดขาย', k: 'amt', num: true }], top)], { marginBottom: 0, padding: '12px 16px' })),
+          h('div', { key: 'sp', style: { height: 14 } }), aiCard('eodsum', 'สรุปยอดขายเป็นภาษาคน', 'AI อ่านยอดขายวันนี้แล้วสรุปให้ผู้จัดการ'), actLegend(cfg.acts)];
+      }
     } else if (scr === 'detail' && cfg.roMap) {
       const r = selRow;
-      if (!r) { this.setScr('list'); body = [null]; }
+      if (!r) body = [K.card(T, [h('div', { style: { fontSize: 12.5, color: sub } }, 'ยังไม่ได้เลือกรายการ')], { padding: '14px 16px' })];
       else {
-        const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.a || r.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only)')), h('div', { style: { display: 'flex', gap: 7, flexWrap: 'wrap' } }, K.btn(T, 'พิมพ์', false, 'doc', () => this.toast('พิมพ์')), K.btn(T, 'แก้ไข', true, 'doc', () => this.enterEdit(r)), K.btn(T, 'สร้างใหม่', false, 'plus', () => this.enterCreate())))], { marginBottom: 14, padding: '12px 16px' });
+        const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } },
+          h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, r.a || r.no), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, 'โหมดดูข้อมูล (Read-only) · ' + (r.no || ''))),
+          h('div', { style: { display: 'flex', gap: 7, flexWrap: 'wrap' } },
+            nav === 'return_void' && r.st === 'รออนุมัติ' && this.canApprove() ? K.btn(T, 'อนุมัติ', true, 'check', () => this.toast('อนุมัติ ' + r.no)) : null,
+            K.btn(T, 'พิมพ์', false, 'doc', () => this.toast('พิมพ์')),
+            ro ? null : K.btn(T, 'แก้ไข', true, 'doc', () => this.enterEdit(r)),
+            ro ? null : K.btn(T, 'สร้างใหม่', false, 'plus', () => this.enterCreate())))], { marginBottom: 14, padding: '12px 16px' });
         const secs = cfg.form.map(([title, ic, fields]) => K.formSec(T, title, ic, fields.map(([lb]) => { const m = cfg.roMap[lb]; const ov = r['_f:' + lb]; const val = ov !== undefined ? ov : (m ? r[m] : ''); return K.field(T, lb, K.roField(T, val)); })));
         const curSt = r.s || 'ใช้งาน';
         const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือโหมดสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, curSt, this.statusHue(curSt))))], { marginBottom: 14, padding: '12px 16px' });
-        body = [hdr, ...secs, K.formSec(T, '\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e23\u0e30\u0e1a\u0e1a (System Info)', 'gauge', [K.field(T, '\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e40\u0e21\u0e37\u0e48\u0e2d (CreatedAt)', K.roField(T, ((v)=>{try{return v?new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}):'\u2014';}catch(e){return String(v);}})(r.createdAt||r.created_at))), K.field(T, '\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e42\u0e14\u0e22 (CreatedBy)', K.roField(T, r.createdBy||r.created_by||'\u2014')), K.field(T, '\u0e41\u0e01\u0e49\u0e44\u0e02\u0e25\u0e48\u0e32\u0e2a\u0e38\u0e14 (UpdatedAt)', K.roField(T, ((v)=>{try{return v?new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}):'\u2014';}catch(e){return String(v);}})(r.updatedAt||r.updated_at))), K.field(T, '\u0e41\u0e01\u0e49\u0e44\u0e02\u0e42\u0e14\u0e22 (UpdatedBy)', K.roField(T, r.updatedBy||r.updated_by||'\u2014'))]), statusEditor, actLegend(cfg.acts || ['Export'])];
+        body = [hdr, ...secs, statusEditor, actLegend(cfg.acts)];
       }
     } else {
-      const canEdit = !!(cfg.form && cfg.roMap);
-      const openDetail = (r) => { this.setState({ sel: r }); this.goScr('detail'); };
+      const canEdit = !!(cfg.form && cfg.roMap) && !ro;
+      const openDetail = (r) => { if (!cfg.roMap) return; this.setState({ sel: r }); this.goScr('detail'); };
+      const renderCell = (cc) => {
+        if (cc.img) return { h: cc.h, render: r => this.thumb({ sku: r.no, a: r.a }, 30, 6) };
+        if (['st', 'tier'].indexOf(cc.k) > -1) return { h: cc.h, render: r => chip(r[cc.k], this.statusHue(r[cc.k])) };
+        if (cc.k === 'diff') return { h: cc.h, num: true, render: r => h('span', { style: Object.assign({ fontWeight: 700, color: r.diff === 0 ? c.text : 'oklch(0.55 0.16 22)' }, mono) }, (r.diff > 0 ? '+' : '') + this.fmt(r.diff)) };
+        if (cc.num) return { h: cc.h, num: true, render: r => h('span', { style: mono }, this.fmt(r[cc.k])) };
+        return cc;
+      };
       const statusCol = { h: 'สถานะ', render: r => K.pill(T, r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) };
-      const baseCols = cfg.cols.some(cc => cc.h === 'สถานะ') ? cfg.cols : cfg.cols.concat([statusCol]);
-      const cols = canEdit ? baseCols.concat([{ h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } }, h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู'), h('button', { onClick: e => { e.stopPropagation(); this.enterEdit(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'แก้ไข')) }]) : baseCols;
+      const baseCols = (cfg.cols || []).map(renderCell).concat([statusCol]);
+      const cols = cfg.roMap ? baseCols.concat([{ h: '', render: r => h('div', { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } },
+        h('button', { onClick: e => { e.stopPropagation(); openDetail(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: '1px solid ' + c.border, background: c.win, color: aTxt, cursor: 'pointer', fontFamily: c.font } }, 'ดู'),
+        ro ? null : h('button', { onClick: e => { e.stopPropagation(); this.enterEdit(r); }, style: { fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', background: acc, color: '#fff', cursor: 'pointer', fontFamily: c.font } }, 'แก้ไข')) }]) : baseCols;
       const sortSt = this.state.sort || { key: 'no', dir: 'asc' };
       const setSort = (key) => this.setState(s => { const cur = s.sort || { key: 'no', dir: 'asc' }; const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'asc'; return { sort: { key, dir } }; });
-      const sortedRows = sortSt.key ? rows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); }) : rows;
-      body = [cfg.kpi ? K.kpi(T, cfg.kpi) : null, K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.no || selRow.a) : null, (cfg.th || nav), canEdit && K.btn(T, 'สร้างใหม่', true, 'plus', () => this.enterCreate())), actLegend(cfg.acts || ['Export'])];
+      const sortedRows = sortSt.key ? rows.slice().sort((a, b) => { const av = a[sortSt.key], bv = b[sortSt.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * (sortSt.dir === 'asc' ? 1 : -1); return String(av).localeCompare(String(bv), 'th', { numeric: true }) * (sortSt.dir === 'asc' ? 1 : -1); }) : rows;
+      const kpiRow = (() => {
+        if (nav === 'pos_terminal') { const paid = rows.filter(r => r.st === 'ชำระแล้ว'); const t2 = paid.reduce((s, r) => s + r.net, 0); return [['บิลวันนี้', String(rows.length), 'ทุกกะ', 210], ['ยอดขายรวม', this.fmt(t2) + ' ฿', 'เฉพาะบิลที่ชำระแล้ว', 145], ['ยกเลิก/คืน', String(rows.length - paid.length), 'ต้องตรวจสอบ', 32]]; }
+        if (nav === 'payment') { const t2 = rows.reduce((s, r) => s + r.amt, 0); return [['รายการรับชำระ', String(rows.length), '', 210], ['ยอดรับรวม', this.fmt(t2) + ' ฿', '', 145], ['รอตรวจสอบ/เก็บเงิน', String(rows.filter(r => r.st !== 'ชำระแล้ว').length), '', 60]]; }
+        if (nav === 'store_stock') return [['SKU หน้าร้าน', String(rows.length), '', 210], ['ต่ำกว่าจุดสั่งซื้อ', String(rows.filter(r => r.st === 'ต่ำกว่าจุดสั่งซื้อ').length), 'ควรขอโอนสาขา', 32], ['มูลค่าคงคลัง (ประมาณ)', this.fmtM(rows.reduce((s, r) => s + r.qty * 100, 0)) + ' ฿', '', 255]];
+        if (nav === 'loyalty') return [['สมาชิกทั้งหมด', String(rows.length), '', 210], ['Gold ขึ้นไป', String(rows.filter(r => ['Gold', 'Platinum'].indexOf(r.tier) > -1).length), 'กลุ่มมูลค่าสูง', 145], ['แต้มคงค้างรวม', this.fmt(rows.reduce((s, r) => s + r.pts, 0)), '', 60]];
+        if (nav === 'return_void') return [['เอกสารทั้งหมด', String(rows.length), 'เดือนนี้', 210], ['รออนุมัติ', String(rows.filter(r => r.st === 'รออนุมัติ').length), 'ต้องดำเนินการ', 32], ['มูลค่าคืนรวม', this.fmt(rows.reduce((s, r) => s + r.amt, 0)) + ' ฿', '', 22]];
+        if (nav === 'offline_sync') return [['คิวทั้งหมด', String(rows.length), '', 210], ['รอซิงก์', String(rows.filter(r => r.st === 'รอซิงก์').length), '', 60], ['ล้มเหลว', String(rows.filter(r => r.st === 'ซิงก์ล้มเหลว').length), 'ต้องแก้ไข', 22]];
+        if (nav === 'device_setup') return [['อุปกรณ์ทั้งหมด', String(rows.length), '', 210], ['ออนไลน์', String(rows.filter(r => r.st === 'ออนไลน์').length), '', 145], ['ต้องดูแล', String(rows.filter(r => ['ออฟไลน์', 'กระดาษใกล้หมด', 'ต้องซ่อม'].indexOf(r.st) > -1).length), '', 32]];
+        return null;
+      })();
+      const kpiEl = kpiRow ? h('div', { key: 'kp', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 10, marginBottom: 14 } }, kpiRow.map(([lb, v, d, hue]) => h('div', { key: lb, style: { background: c.card, border: '1px solid ' + c.border, borderRadius: 11, padding: '12px 14px' } }, h('div', { style: { fontSize: 11, color: sub, fontWeight: 700 } }, lb), h('div', { style: Object.assign({ fontSize: 19, fontWeight: 800, marginTop: 6 }, mono) }, v), d ? h('div', { style: { marginTop: 7 } }, chip(d, hue)) : null))) : null;
+      const rightBtn = nav === 'pos_terminal' ? K.btn(T, 'กลับหน้าขาย', true, 'cart', () => this.setScr('terminal')) : (canEdit ? K.btn(T, 'สร้างใหม่', true, 'plus', () => this.enterCreate()) : null);
+      body = [kpiEl, K.grid(T, cols, sortedRows, openDetail, selRow, { key: sortSt.key, dir: sortSt.dir, onSort: setSort }, null, nav, selRow ? (selRow.no || selRow.a) : null, (cfg.th || nav), rightBtn), actLegend(cfg.acts)];
     }
 
     const controlled = typeof this.props.onScr === 'function';
-    const modal = this.state.confirm ? h('div', { key: 'cf', style: controlled ? { position: 'fixed', top: 38, left: 0, right: 0, bottom: 0, zIndex: 100000, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } : { position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
-      h('div', { style: { background: c.dark ? 'oklch(0.23 0.014 265)' : '#fff', borderRadius: 14, border: `1px solid ${c.border}`, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: 400, maxWidth: '100%', padding: '22px 24px', fontFamily: c.font, color: c.text } },
+    const overlayStyle = controlled ? { position: 'fixed', top: 38, left: 0, right: 0, bottom: 0, zIndex: 100000, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } : { position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 };
+    const dlgBox = (w) => ({ background: c.dark ? 'oklch(0.23 0.014 265)' : '#fff', borderRadius: 14, border: '1px solid ' + c.border, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: w, maxWidth: '100%', padding: '22px 24px', fontFamily: c.font, color: c.text });
+    const modal = this.state.confirm ? h('div', { key: 'cf', style: overlayStyle },
+      h('div', { style: dlgBox(400) },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } }, h('span', { style: { width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('doc', 18)), h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'บันทึกการเปลี่ยนแปลง?')),
         h('div', { style: { fontSize: 12.5, color: sub, lineHeight: 1.6, marginBottom: 18 } }, 'คุณกำลัง' + (this.state.edit ? 'แก้ไข' : 'สร้าง') + 'รายการและยังไม่ได้บันทึก ต้องการบันทึกก่อนออกจากหน้านี้หรือไม่?'),
         h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' } }, K.btn(T, 'ยกเลิก', false, null, () => this.setState({ confirm: null })), K.btn(T, 'ไม่บันทึก', false, null, () => this.confirmDiscard()), K.btn(T, 'บันทึก', true, 'check', () => this.confirmSave())))) : null;
-    if (controlled) return { fg: c.text, view: h('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column' } }, h('div', { style: { display: 'flex', flexDirection: 'column' } }, body), modal) };
+
+    const t2 = this.cartTotals();
+    const paid = this.payTotal();
+    const remain = Math.round((t2.net - paid) * 100) / 100;
+    const payModal = this.state.payOpen ? h('div', { key: 'pm', style: overlayStyle },
+      h('div', { style: dlgBox(520) },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 } }, h('span', { style: { width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('money', 18)), h('div', null, h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'รับชำระเงิน'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 2 } }, 'ยอดสุทธิ ' + this.fmt(t2.net) + ' ฿ · แบ่งจ่ายได้หลายวิธี'))),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 } }, this.state.pays.map((p, pi) => h('div', { key: pi, style: { display: 'flex', gap: 8, alignItems: 'center' } },
+          h('select', { value: p.m, onChange: e => { const v = e.target.value; this.setState(s => ({ pays: s.pays.map((x, xi) => xi === pi ? Object.assign({}, x, { m: v }) : x) })); }, style: Object.assign({}, K.inp(T), { flex: 1, cursor: 'pointer' }) }, this.PAYS.map(pp => h('option', { key: pp[1], value: pp[0] }, pp[0]))),
+          h('input', { value: p.amt, onChange: e => { const v = e.target.value; this.setState(s => ({ pays: s.pays.map((x, xi) => xi === pi ? Object.assign({}, x, { amt: Number(v) || 0 }) : x) })); }, style: Object.assign({}, K.inp(T), { width: 120, textAlign: 'right' }) }),
+          h('button', { onClick: () => this.setState(s => ({ pays: s.pays.filter((x, xi) => xi !== pi) })), style: { width: 30, height: 30, borderRadius: 7, border: '1px solid ' + c.border, background: c.win, color: sub, cursor: 'pointer', fontFamily: c.font } }, '×')))),
+        h('button', { onClick: () => this.setState(s => ({ pays: s.pays.concat([{ m: 'บัตรเครดิต/เดบิต', amt: Math.max(0, remain) }]) })), style: { fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8, border: '1px dashed ' + c.border, background: 'transparent', color: aTxt, cursor: 'pointer', fontFamily: c.font, marginBottom: 14 } }, '+ เพิ่มวิธีชำระ'),
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 9, background: c.winHead, border: '1px solid ' + c.line, marginBottom: 6, fontSize: 12.5 } }, h('span', null, 'รับมาแล้ว'), h('span', { style: Object.assign({ fontWeight: 700 }, mono) }, this.fmt(paid) + ' ฿')),
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 9, background: remain > 0 ? 'oklch(0.96 0.04 32)' : 'oklch(0.95 0.05 145)', marginBottom: 16, fontSize: 14, fontWeight: 800, color: remain > 0 ? 'oklch(0.45 0.15 32)' : 'oklch(0.42 0.13 145)' } }, h('span', null, remain > 0 ? 'ยังขาดอีก' : 'เงินทอน'), h('span', { style: mono }, this.fmt(Math.abs(remain)) + ' ฿')),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } }, K.btn(T, 'ยกเลิก', false, null, () => this.setState({ payOpen: false, pays: [] })), K.btn(T, 'ยืนยันรับชำระ & พิมพ์สลิป', true, 'check', () => this.finishPay())))) : null;
+
+    const ie = this.state.imgEdit;
+    const imgModal = ie ? h('div', { key: 'im', style: overlayStyle },
+      h('div', { style: dlgBox(460) },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 } }, h('span', { style: { width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('box', 18)), h('div', null, h('div', { style: { fontSize: 15.5, fontWeight: 800 } }, 'แนบรูปสินค้าจากลิงก์'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 2 } }, ie.a + ' · ' + ie.sku))),
+        h('div', { style: { display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 14 } },
+          h('div', { style: { width: 88, height: 88, borderRadius: 10, flexShrink: 0, overflow: 'hidden', background: c.winHead, border: '1px solid ' + c.line, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, this.imgSrc(ie.url) ? h('img', { src: this.imgSrc(ie.url), alt: '', style: { width: '100%', height: '100%', objectFit: 'cover' } }) : h('span', { style: { fontSize: 11, color: sub } }, 'ตัวอย่าง')),
+          h('div', { style: { flex: 1, minWidth: 0 } },
+            h('input', { autoFocus: true, value: ie.url, placeholder: 'https://example.com/product.jpg', onChange: e => { const v = e.target.value; this.setState(s => ({ imgEdit: Object.assign({}, s.imgEdit, { url: v }) })); }, onKeyDown: e => { if (e.key === 'Enter') this.setImg(ie.sku, ie.url); }, style: K.inp(T) }),
+            h('div', { style: { fontSize: 11, color: sub, marginTop: 8, lineHeight: 1.6 } }, 'วางลิงก์รูปสาธารณะ (.jpg .png .webp) หรือลิงก์แชร์จาก Google Drive — ระบบแปลงให้อัตโนมัติ'),
+            h('div', { style: { fontSize: 10.5, color: sub, marginTop: 6, lineHeight: 1.6, padding: '7px 9px', borderRadius: 7, background: c.winHead, border: '1px solid ' + c.line } }, 'Google Drive: ตั้งค่าแชร์เป็น “ผู้ที่มีลิงก์ · ผู้ดู” แล้ววางลิงก์ได้ทั้งแบบ /file/d/…/view และ uc?id=…'))),
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' } },
+          K.btn(T, 'นำรูปออก', false, null, () => this.setImg(ie.sku, '')),
+          h('div', { style: { display: 'flex', gap: 8 } }, K.btn(T, 'ยกเลิก', false, null, () => this.setState({ imgEdit: null })), K.btn(T, 'บันทึกรูป', true, 'check', () => this.setImg(ie.sku, ie.url)))))) : null;
+
+    if (controlled) return { fg: c.text, view: h('div', { style: { position: 'relative', display: 'flex', flexDirection: 'column' } }, h('div', { style: { display: 'flex', flexDirection: 'column' } }, body), modal, payModal, imgModal) };
 
     const border = c.border, headBg = c.winHead, line = c.line;
     const collapsed = !!this.state.sideCollapsed;
-    const NAVS = Object.keys(cfgAll).map(k => [k, cfgAll[k].th, cfgAll[k].ic || 'pos']);
-    const menuBtns = NAVS.map(([id, th, ic]) => { const on = id === nav;
-      return h('button', { key: id, title: th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } }, h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(ic, 17)), !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, th)); });
-    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 216) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: `1px solid ${border}`, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' }, onMouseEnter: e => { e.currentTarget.style.background = c.accSoft; e.currentTarget.style.color = acc; }, onMouseLeave: e => { e.currentTarget.style.background = c.win; e.currentTarget.style.color = sub; } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
-    const tabsEl = h('div', { style: { display: 'flex', gap: 6, rowGap: 0, flexWrap: 'wrap', borderBottom: `1px solid ${border}` } }, cfg.screens.filter(([id]) => id === 'create' ? this.curMode() === 'create' : id === 'edit' ? this.curMode() === 'edit' : true).map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.indexOf(' — ') > -1 ? lb.split(' — ')[1] : lb;
-      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const GRP = [['core', 'Core Functions'], ['ext', 'Extensions'], ['rpt', 'Reports & Analytics']];
+    const menu = [];
+    GRP.forEach(([g, gl]) => {
+      const ids = Object.keys(cfgAll).filter(k => (cfgAll[k].grp || 'core') === g && this.navVisible(k));
+      if (!ids.length) return;
+      if (!collapsed) menu.push(h('div', { key: 'g' + g, style: { fontSize: 9.5, fontWeight: 800, letterSpacing: .6, color: sub, padding: '12px 11px 5px' } }, gl.toUpperCase()));
+      ids.forEach(id => { const on = id === nav; const t3 = cfgAll[id];
+        menu.push(h('button', { key: id, title: t3.th, onClick: () => this.setNav(id), style: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 9, padding: collapsed ? '9px 0' : '9px 11px', justifyContent: collapsed ? 'center' : 'flex-start', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 600 : 500, background: on ? c.accSoft : 'transparent', color: on ? aTxt : c.text } },
+          h('span', { style: { display: 'flex', flexShrink: 0, color: on ? acc : sub } }, K.Icon(t3.ic || 'cart', 17)),
+          !collapsed && h('span', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 } }, t3.th.split(' (')[0] || t3.th))); });
+    });
+    const collapseBtn = h('button', { key: 'cbtn', title: collapsed ? 'ขยายเมนู' : 'ย่อเมนู', onClick: () => this.setState(s => ({ sideCollapsed: !s.sideCollapsed })), style: { position: 'absolute', left: (collapsed ? 64 : 224) - 11, top: 16, zIndex: 40, width: 22, height: 22, border: '1px solid ' + border, background: c.win, cursor: 'pointer', color: sub, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8, boxShadow: '0 2px 6px rgba(15,20,35,.14)', transition: 'left .15s' } }, h('span', { style: { display: 'flex', transform: collapsed ? 'none' : 'rotate(180deg)' } }, K.Icon('chevron2', 13)));
+    const tabsEl = h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', borderBottom: '1px solid ' + border } }, (cfg.screens || []).filter(([id]) => id === 'create' ? this.curMode() === 'create' : id === 'edit' ? this.curMode() === 'edit' : true).map(([id, lb, ic]) => { const on = scr === id; const th2 = lb.split(' (')[0];
+      return h('button', { key: id, title: th2, onClick: () => this.setScr(id), style: { display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '5px 4px', marginBottom: -1, borderBottom: on ? '2px solid ' + acc : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 15)), h('span', null, th2)); }));
+    const headCtl = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 } },
+      h('div', { style: { display: 'flex', gap: 4, padding: 3, borderRadius: 9, background: c.win, border: '1px solid ' + c.border } }, ['A', 'B'].map(v => h('button', { key: v, onClick: () => this.setState({ look: v, gridView: null }), title: v === 'A' ? 'แนว A — สัมผัสง่าย ปุ่มใหญ่' : 'แนว B — ข้อมูลแน่นแบบ ERP', style: { fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontFamily: c.font, border: 'none', background: look === v ? c.accSoft : 'transparent', color: look === v ? aTxt : sub } }, v === 'A' ? 'A · Touch' : 'B · Dense'))),
+      h('select', { value: this.role(), onChange: e => this.setState({ role: e.target.value, nav: 'pos_terminal', scr: 'terminal', sel: null }), style: Object.assign({}, K.inp(T), { width: 150, height: 30, padding: '0 8px', fontSize: 12, cursor: 'pointer' }) }, this.ROLES.map(o => h('option', { key: o, value: o }, o))));
     const filterDd = (() => {
       const ddOpenId = this.state.openDd || null;
       const ddToggle = (id) => this.setState(s => ({ openDd: s.openDd === id ? null : id }));
       const ddWrap = (id, label, active, content) => h('div', { key: 'dd-' + id, style: { position: 'relative', display: 'flex' } },
-        h('button', { type: 'button', onClick: () => ddToggle(id), style: { display: 'flex', alignItems: 'center', gap: 7, height: 30, width: '100%', fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 8, border: `1px solid ${c.border}`, background: active ? c.accSoft : c.win, color: active ? aTxt : c.text, cursor: 'pointer', fontFamily: c.font, whiteSpace: 'nowrap' } },
+        h('button', { type: 'button', onClick: () => ddToggle(id), style: { display: 'flex', alignItems: 'center', gap: 7, height: 30, width: '100%', fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 8, border: '1px solid ' + c.border, background: active ? c.accSoft : c.win, color: active ? aTxt : c.text, cursor: 'pointer', fontFamily: c.font, whiteSpace: 'nowrap' } },
           h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' } }, label), h('span', { style: { display: 'flex', color: sub } }, K.Icon('arrowdown', 13))),
         ddOpenId === id ? h('div', { key: 'bd', onClick: () => this.setState({ openDd: null }), style: { position: 'fixed', inset: 0, zIndex: 199 } }) : null,
-        ddOpenId === id ? h('div', { key: 'pop', onClick: e => e.stopPropagation(), style: { position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', background: c.win, border: `1px solid ${c.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,20,35,.18)', padding: 6 } }, content) : null);
+        ddOpenId === id ? h('div', { key: 'pop', onClick: e => e.stopPropagation(), style: { position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: 200, maxHeight: 260, overflowY: 'auto', background: c.win, border: '1px solid ' + c.border, borderRadius: 10, boxShadow: '0 12px 32px rgba(15,20,35,.18)', padding: 6 } }, content) : null);
       const coLabel = coAll ? 'บริษัท: ทั้งหมด' : (coSel.length === 1 ? coSel[0] : 'บริษัท (' + coSel.length + ')');
       const coContent = [h('label', { key: '_all', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: c.font } },
         h('input', { type: 'checkbox', checked: coAll, ref: el => { if (el) el.indeterminate = coSel.length > 0 && !coAll; }, onChange: () => this.setState({ filterCo: coAll ? [] : PROC_COMPANIES.slice(), filterBr: [] }), style: { cursor: 'pointer' } }), h('span', null, 'ทั้งหมด'))]
@@ -249,21 +683,24 @@ class Component extends DCLogic {
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, width: '100%' } }, ddWrap('co', coLabel, !coAll, coContent), ddWrap('br', brLabel, !brAll, brContent));
     })();
     const view = h('div', { style: { display: 'flex', height: '100%', minHeight: 0, position: 'relative' } },
-      h('aside', { style: { width: collapsed ? 64 : 216, flexShrink: 0, borderRight: `1px solid ${border}`, background: headBg, padding: collapsed ? '10px 8px' : '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
+      h('aside', { style: { width: collapsed ? 64 : 224, flexShrink: 0, borderRight: '1px solid ' + border, background: headBg, padding: '10px 10px', display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'width .16s ease' } },
         collapsed
-          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('pos', 20)))
-          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('pos', 20)), h('div', { style: { fontSize: 13, fontWeight: 700, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'ขายหน้าร้าน (POS)')),
-        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menuBtns),
-        !collapsed ? h('div', { style: { flexShrink: 0, paddingTop: 10, marginTop: 6, borderTop: `1px solid ${border}` } }, filterDd) : null),
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '4px 0 12px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('cart', 20)))
+          : h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 8px' } }, h('div', { style: { width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('cart', 20)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'SALE-POS'), h('div', { style: { fontSize: 10, color: sub, marginTop: 1 } }, 'ขายหน้าร้าน'))),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 } }, menu),
+        !collapsed ? h('div', { style: { flexShrink: 0, paddingTop: 10, marginTop: 6, borderTop: '1px solid ' + border } }, filterDd) : null),
       h('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' } },
-        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: `1px solid ${line}`, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
-          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px', flexWrap: 'nowrap', position: 'relative' } }, h('div', { style: { minWidth: 0, overflow: 'hidden' } }, h('div', { style: { fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, cfg.th), h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'L1 · ระบบบริหารการขาย (SALE)  ›  L2 · ขายหน้าร้าน (POS)  ›  L3 · ' + cfg.th)), h('div', { style: { flex: 1, minWidth: 12 } })),
+        h('div', { style: { flexShrink: 0, background: headBg, borderBottom: '1px solid ' + line, display: 'flex', flexDirection: 'column', paddingTop: 4 } },
+          h('div', { style: { minHeight: 46, display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px' } },
+            h('div', { style: { minWidth: 0, overflow: 'hidden', flex: 1 } },
+              h('div', { style: { fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, cfg.th),
+              h('div', { style: { fontSize: 10.5, color: sub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'L1 · ระบบบริหารการขาย (SALE)  ›  L2 · ขายหน้าร้าน (POS)  ›  L3 · ' + cfg.th)),
+            ro ? chip('อ่านอย่างเดียว', 60) : null, headCtl),
           h('div', { style: { padding: '0 14px' } }, tabsEl)),
         h('div', { style: { flex: 1, minHeight: 0, overflow: 'auto', padding: 20 } }, body)), collapseBtn);
-    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view, modal) };
+    return { fg: c.text, view: h('div', { style: { position: 'relative', height: '100%', minHeight: 0 } }, view, modal, payModal, imgModal) };
   }
 }
-
 </script>
 </body>
 </html>
