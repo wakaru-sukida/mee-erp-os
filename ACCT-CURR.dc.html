@@ -87,7 +87,7 @@ class Component extends DCLogic {
     }).catch(() => {});
   }
   _tenantOpts() { const b = this.K && this.K.bus && this.K.bus(); const l = (b && b.get && b.get('org.tenants', null)) || []; if (Array.isArray(l) && l.length) return l; return this.state._tenants || []; }
-  ITSA_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  ITSA_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwJgoSbacCcStp2-c01q1Yb5zNjwKNHpaEMVSM07uHmiPCFZ9BHS5oAvPzFan3w4UlraQ/exec';
   _tenantPull() {
     if (this._tenantPulled) return; this._tenantPulled = true;
     fetch(this.ITSA_SHEETS_URL + '?tab=itsa-tent-management&_=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(j => {

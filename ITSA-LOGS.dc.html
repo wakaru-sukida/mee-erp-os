@@ -14,7 +14,7 @@
 class Component extends DCLogic {
   K = (typeof window !== 'undefined' && window.__erpKit) || null;
   DBKEY = 'db:itsa-logs:v1';
-  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwJgoSbacCcStp2-c01q1Yb5zNjwKNHpaEMVSM07uHmiPCFZ9BHS5oAvPzFan3w4UlraQ/exec';
   SHEETS_TABS = {'system-log':'itsa-logs-system-log','application-log':'itsa-logs-application-log','access-log':'itsa-logs-access-log','log-retention':'itsa-logs-log-retention','log-search':'itsa-logs-log-search'};
   _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); if (K.sheetsBind && this.SHEETS_URL) K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS); } K.dbPersist(this, this.DBKEY); }
   state = { nav: 'system-log', scr: 'list', sel: null, mode: 'view', filt: 'ทั้งหมด', sort: { key: 'ts', dir: 'desc' } };

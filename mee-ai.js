@@ -28,7 +28,7 @@ function vendorReady(v) { return !!(v && (v.apiKey || v.proxyUrl || v.auth === '
 
 // ---- bootstrap: adopt the primary provider row saved at ITSA › ผู้ให้บริการ AI ----
 // ทำให้ทุกโมดูล (รวม Shell) ใช้ผู้ให้บริการหลักเดียวกัน แม้เครื่องนั้นยังไม่เคยเปิดหน้า ITSA
-const PROV_SHEET = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+const PROV_SHEET = 'https://script.google.com/macros/s/AKfycbwJgoSbacCcStp2-c01q1Yb5zNjwKNHpaEMVSM07uHmiPCFZ9BHS5oAvPzFan3w4UlraQ/exec';
 const PROV_TAB = 'itsa-aien-provider';
 let _bootPromise = null;
 

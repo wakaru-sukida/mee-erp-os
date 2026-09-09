@@ -14,7 +14,7 @@
 class Component extends DCLogic {
   K = (typeof window !== 'undefined' && window.__erpKit) || null;
   DBKEY = 'db:itsa-intg:v1';
-  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwJgoSbacCcStp2-c01q1Yb5zNjwKNHpaEMVSM07uHmiPCFZ9BHS5oAvPzFan3w4UlraQ/exec';
   SHEETS_TABS = {'api-management':'itsa-intg-api','webhook':'itsa-intg-webhook','oauth-client':'itsa-intg-oauth-client','external-system':'itsa-intg-external-system','api-monitor':'itsa-intg-api-monitor','api-log':'itsa-intg-api-log'};
   _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); if (K.sheetsBind && this.SHEETS_URL) K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS); } K.dbPersist(this, this.DBKEY); }
   state = { nav: 'api-management', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {} };

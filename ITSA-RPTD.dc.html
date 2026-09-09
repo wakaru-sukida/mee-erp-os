@@ -14,7 +14,7 @@
 class Component extends DCLogic {
   K = (typeof window !== 'undefined' && window.__erpKit) || null;
   DBKEY = 'db:itsa-rptd:v1';
-  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwJgoSbacCcStp2-c01q1Yb5zNjwKNHpaEMVSM07uHmiPCFZ9BHS5oAvPzFan3w4UlraQ/exec';
   SHEETS_TABS = {'report-management':'itsa-rptd-report','dataset-designer':'itsa-rptd-dataset-designer','query-builder':'itsa-rptd-query-builder','report-layout':'itsa-rptd-report-layout','chart-designer':'itsa-rptd-chart-designer','print-layout':'itsa-rptd-print-layout','report-version':'itsa-rptd-report-version','report-template':'itsa-rptd-report-template'};
   _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); if (K.sheetsBind && this.SHEETS_URL) K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS); } K.dbPersist(this, this.DBKEY); }
   state = { nav: 'report-management', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {} };

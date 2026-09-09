@@ -470,6 +470,11 @@ function Icon(name, size, color){
     wifi:['path:M2 8a15 15 0 0120 0','path:M5 12a10 10 0 0114 0','path:M8.5 15.5a5 5 0 017 0','circle:12,19,.6'],
     battery:['rect:2,7,18,10','line:22,10,22,14'],
     user:['circle:12,8,4','path:M4 20a8 8 0 0116 0'],
+    layers:['path:M12 3l9 4.5-9 4.5-9-4.5z','path:M3 12l9 4.5 9-4.5','path:M3 16.5l9 4.5 9-4.5'],
+    sitemap:['rect:9,3,6,5','rect:2,16,6,5','rect:16,16,6,5','path:M12 8v4','path:M5 16v-2h14v2','line:12,12,12,14'],
+    shapes:['circle:8,8,4.4','rect:13.5,13.5,7,7','path:M7.6 13.2l4 7.6h-8z'],
+    folder:['path:M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z'],
+    ruler:['path:M3 14.5L14.5 3 21 9.5 9.5 21z','path:M7 11l2 2','path:M10 8l2 2','path:M13 5l2 2'],
     filter:['path:M3 5h18l-7 8v6l-4-2v-4z'],
     dots:['circle:5,12,1','circle:12,12,1','circle:19,12,1'],
     check:['path:M4 12l5 5L20 6'],
@@ -635,7 +640,7 @@ class Component extends DCLogic {
   }
   componentWillUnmount(){ clearInterval(this._tick); clearInterval(this._sheetsTick); window.removeEventListener('pointermove',this._onMove); window.removeEventListener('pointerup',this._onUp); if(this._ro) this._ro.disconnect(); }
   SHEETS_URL='https://script.google.com/macros/s/AKfycbyqQHysSeJWj84k-LT3ylopSrTwr54BgZN4D-5Y9PKQdPNgC5UPcSi8dSp_CDQLG-Jb/exec';
-  UAM_SHEETS_URL='https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  UAM_SHEETS_URL='https://script.google.com/macros/s/AKfycbwJgoSbacCcStp2-c01q1Yb5zNjwKNHpaEMVSM07uHmiPCFZ9BHS5oAvPzFan3w4UlraQ/exec';
   _fetchUamUsers(attempt){
     attempt=attempt||0;
     const withTimeout=(p,ms)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
