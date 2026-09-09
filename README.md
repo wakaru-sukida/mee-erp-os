@@ -1,34 +1,19 @@
-# Mee-ERP OS
+# ชุดอัปเดต — ผู้ให้บริการ AI หลายเจ้า + ศูนย์ AI ต่อฐานข้อมูล
+อัปโหลดไฟล์ทั้ง 8 ไฟล์นี้ทับของเดิมที่ repo `wakaru-sukida/mee-erp-os` (branch main) ที่ root เดียวกัน
 
-Enterprise Operating System — *One Platform. Every Business Process.*
-
-ตัวอย่างนำเสนอ (prototype) ของ Mee-ERP OS — Platform-centric Architecture, Single Source of Truth
-
-## Deploy บน GitHub Pages
-
-1. สร้าง repository ใหม่บน GitHub แล้ว push ไฟล์ทั้งหมดในโฟลเดอร์นี้ขึ้นไปที่ branch `main`
-2. ไปที่ **Settings › Pages** → Source: `Deploy from a branch` → Branch: `main` / `/ (root)` → Save
-3. รอ 1–2 นาที แล้วเปิด `https://<username>.github.io/<repo>/`
-
-`index.html` จะพาเข้าหน้าหลัก `Mee-ERP OS.dc.html` โดยอัตโนมัติ
-ไฟล์ `.nojekyll` จำเป็นเพื่อให้ GitHub Pages ไม่กรองไฟล์ออก — อย่าลบ
-
-## โครงสร้างไฟล์
-
-| ไฟล์ | หน้าที่ |
+| ไฟล์ | สิ่งที่เปลี่ยน |
 |---|---|
-| `index.html` | หน้า entry สำหรับ GitHub Pages |
-| `Mee-ERP OS.dc.html` | Shell หลัก + เมนู + navigation ทุกโมดูล |
-| `support.js` | Runtime ของ Design Component |
-| `erp-kit.js` | Helper กลาง (สถาปัตยกรรม/ข้อมูล/สไตล์) |
-| `<CODE>-<SUB>.dc.html` | หน้าจอระดับ L4 ของแต่ละโมดูล (เช่น `PROC-PR.dc.html`) |
+| mee-ai.js | adapter 3 แบบ (Anthropic · OpenAI-compatible · Gemini), pingVendor, ดึงผู้ให้บริการหลักจากฐานข้อมูลอัตโนมัติ (?v=9) |
+| mee-ai-appsscript.gs | Relay รองรับหลายผู้ให้บริการ (ต้อง Deploy › New version ที่ Apps Script) |
+| Mee-ERP OS.dc.html | ชื่อระบบ Mee-ERP OS ทุกจุด, ป้ายผู้ให้บริการจริง, แก้สกรอลล์กล่องแชต |
+| ITSA-AIEN.dc.html | GUI ตั้งค่า API Key รายผู้ให้บริการ (เชื่อมต่อด่วน / ขั้นสูง / ข้อมูล) + บันทึกลงชีต |
+| AI Center.dc.html | ดึง insight · automation · activity จากฐานข้อมูล, KPI คำนวณจริง |
+| INVT-ITEM · PROC-PO · PROC-PR | อัปเดตเวอร์ชัน mee-ai.js เป็น ?v=9 |
 
-## โมดูล
+## ขั้นตอน
+1. อัปโหลดไฟล์ทั้งหมด (Add file › Upload files › Commit)
+2. เปิดโปรเจกต์ Apps Script → วาง mee-ai-appsscript.gs → Deploy › Manage deployments › New version
+3. เปิดเว็บแล้ว hard refresh (Ctrl+Shift+R)
 
-`PROC` · `SALE` · `INVT` · `PROD` · `SRVC` · `ACCT` · `HRMS` · `ADMS` · `ITSA`
-
-## หมายเหตุการนำเสนอ
-
-- ต้องเปิดผ่าน HTTP (GitHub Pages หรือ local server) — เปิดจากไฟล์ตรง ๆ (`file://`) จะโหลดโมดูลไม่ได้
-- ข้อมูลบางส่วนดึงจาก Google Sheets ผ่าน Apps Script และ cache ไว้ใน localStorage ของเบราว์เซอร์
-- ต้องต่ออินเทอร์เน็ตสำหรับฟอนต์และการดึงข้อมูล
+## ตารางในฐานข้อมูล (สร้างแล้ว)
+itsa-aien-provider · ai-center-insight · ai-center-automation · ai-center-activity

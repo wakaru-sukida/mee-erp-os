@@ -43,7 +43,7 @@ class Component extends DCLogic {
   _prLines(r) { if (r) { if (Array.isArray(r.lineItems) && r.lineItems.length) return r.lineItems.map(l => Object.assign({}, l)); if (typeof r.lines === 'string' && r.lines) { try { const a = JSON.parse(r.lines); if (Array.isArray(a) && a.length) return a.map(l => Object.assign({}, l)); } catch (e) {} } } return [{ item: '', desc: '', uom: '', qty: 1, price: 0 }]; }
   CC_NAME = { 'CC-1001': 'ฝ่ายขาย — สำนักงานใหญ่', 'CC-1002': 'แผนกขายต่างประเทศ', 'CC-1003': 'ฝ่ายจัดซื้อ — สำนักงานใหญ่', 'CC-1101': 'ฝ่ายขาย — เชียงใหม่', 'CC-1102': 'ฝ่ายจัดซื้อ — เชียงใหม่', 'CC-2001': 'ฝ่ายบัญชีการเงิน', 'CC-2002': 'แผนกการเงิน', 'CC-2101': 'ฝ่ายไอที — เชียงใหม่', 'CC-3001': 'ฝ่ายโลจิสติกส์', 'CC-3002': 'ฝ่ายคลังสินค้า' };
   CC_KEYS = Object.keys(this.CC_NAME);
-  state = { nav: 'pr-summary', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {}, sheetsStatus: 'off' };
+  state = { nav: 'pr-summary', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {}, sheetsStatus: 'off', aiPaste: '', aiFilling: false, aiInsight: null, aiBusy: false };
   componentDidMount() { this._tenantPull(); if (this.K) { this.SHEETS_URL = this._resolveSheetUrl(); if (this.K.sheetsBind) { this.K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS, { 'purchase-requisition': r => this._prNativeFromSchema(r) }); this._wrapPush(); } this._reportMode(); this._reportCatalog(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.SHEETS_URL = this._resolveSheetUrl(); if (K.sheetsBind) { K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS, { 'purchase-requisition': r => this._prNativeFromSchema(r) }); this._wrapPush(); } this.setState({ ready: true }); this._reportCatalog(); }); }
   _wrapPush() { if (this._pushWrapped || typeof this._sheetsPush !== 'function') return; this._pushWrapped = true; const orig = this._sheetsPush; this._sheetsPush = (key, rowsIn) => orig(key, key === 'purchase-requisition' ? (rowsIn || []).map(r => this._prHeaderProject(r)) : rowsIn); }
   _prNativeFromSchema(r) {
@@ -130,6 +130,55 @@ class Component extends DCLogic {
   setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
   dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
   curScr() { return this.props.scr || this.state.scr; }
+  aiEngine() {
+    if (this._aiEngine) return Promise.resolve(this._aiEngine);
+    if (!this._aiEnginePromise) this._aiEnginePromise = import('./mee-ai.js?v=9').then(m => { this._aiEngine = m.MeeAI; return m.MeeAI; });
+    return this._aiEnginePromise;
+  }
+  _aiNotReady() { this.toast('ยังไม่ได้ตั้งค่า Claude API — เปิด ITSA › บริหารเครื่องมือ AI › การเชื่อมต่อ'); }
+  _itemPool() {
+    const rows = this.state.db['item-master'] || this.state.db['items'] || null;
+    if (Array.isArray(rows) && rows.length) return rows.slice(0, 60).map(r => ({ code: r.no || r.code || '', name: r.a || r.name || '', uom: r.uom || '' }));
+    try { const b = this.K && this.K.bus && this.K.bus(); const v = b && b.get ? b.get('invt.items', null) : null; if (Array.isArray(v)) return v.slice(0, 60); } catch (e) {}
+    return null;
+  }
+  async smartFill(cfg, pre) {
+    const text = (this.state.aiPaste || '').trim();
+    if (!text) { this.toast('วางข้อความคำขอซื้อก่อน'); return; }
+    const AI = await this.aiEngine();
+    if (!AI.ready) return this._aiNotReady();
+    this.setState({ aiFilling: true });
+    try {
+      const labels = []; cfg.form.forEach(sc => sc[2].forEach(f => labels.push(f[0])));
+      const schema = {}; labels.forEach(l => { schema[l] = ''; });
+      schema.lineItems = [{ item: 'รหัสหรือชื่อสินค้า', desc: 'รายละเอียด', uom: 'หน่วย', qty: 0, price: 0 }];
+      AI.setContext({ module: 'PROC-PR', label: 'ใบขอจัดซื้อ (Purchase Requisition)', data: { itemMaster: this._itemPool() } });
+      const r = await AI.tasks.smartFill(text, schema);
+      this.setState(st => {
+        const d = Object.assign({}, st.draft);
+        labels.forEach(l => { const v = r[l]; if (v !== undefined && v !== null && v !== '') d[pre + l] = String(v); });
+        if (Array.isArray(r.lineItems) && r.lineItems.length) {
+          d[pre + '__lines'] = r.lineItems.map(x => ({ item: x.item || '', desc: x.desc || '', uom: x.uom || '', qty: Number(x.qty) || 0, price: Number(x.price) || 0 }));
+        }
+        return { draft: d, aiFilling: false };
+      });
+      this.toast('AI กรอกฟอร์มให้แล้ว — ตรวจทานก่อนบันทึก');
+    } catch (e) { this.setState({ aiFilling: false }); this.toast('AI ไม่สำเร็จ: ' + (e.message || e)); }
+  }
+  async aiInspect(r) {
+    const AI = await this.aiEngine();
+    if (!AI.ready) return this._aiNotReady();
+    this.setState({ aiBusy: true, aiInsight: null });
+    try {
+      const doc = {
+        type: 'ใบขอจัดซื้อ (PR)', no: r.no, date: r.ts, needBy: r.needby, requester: r.req, dept: r.dept,
+        company: r.co, branch: r.br, costCenter: r.cc, urgency: r.urg, status: r.s, approval: r.appr,
+        total: r.total, itemCount: r.items, lineItems: this._prLines(r),
+      };
+      const out = await AI.tasks.docInsight(doc);
+      this.setState({ aiBusy: false, aiInsight: out });
+    } catch (e) { this.setState({ aiBusy: false, aiInsight: { summary: 'เรียก AI ไม่สำเร็จ: ' + (e.message || e), risks: [], checks: [] } }); }
+  }
   curMode() { return this.state.mode; }
   isDirty() { const m = this.curMode(); return m === 'create' || m === 'edit'; }
   enterCreate() { this.setState({ mode: 'create', edit: null, draft: {} }); this._goScr('create'); }
@@ -366,6 +415,22 @@ class Component extends DCLogic {
       const mode = er ? ('edit:' + (er.no || er.a || '')) : 'new';
       const dr = this.state.draft || {}, pre = mode + '|';
       const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, er ? (er.a || er.no) : 'สร้างรายการใหม่'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, er ? 'โหมดแก้ไข (Edit)' : 'โหมดสร้างใหม่ (New)')), K.btn(T, 'กลับ', false, 'doc', () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }))], { marginBottom: 14, padding: '12px 16px' });
+      const aiFill = (nav === 'purchase-requisition') ? K.card(T, [
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 } },
+          h('span', { style: { width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 16)),
+          h('div', null,
+            h('div', { style: { fontSize: 13.5, fontWeight: 800 } }, 'Smart Fill — ให้ AI กรอกฟอร์มให้'),
+            h('div', { style: { fontSize: 11.5, color: sub, marginTop: 2 } }, 'วางอีเมล ข้อความแชท หรือคำขอซื้อแบบข้อความอิสระ แล้วกดปุ่ม'))),
+        h('textarea', {
+          value: this.state.aiPaste, rows: 3,
+          onChange: e => this.setState({ aiPaste: e.target.value }),
+          placeholder: 'เช่น ขอซื้อเม็ดพลาสติก 2 ตัน ราคาประมาณ 36 บาท/กก. ให้แผนกผลิต ต้องการใช้ 15 ก.ย. ด่วน',
+          style: { width: '100%', resize: 'vertical', padding: '10px 12px', borderRadius: 9, border: '1px solid ' + c.border, background: c.field, color: c.text, fontSize: 12.5, fontFamily: c.font, lineHeight: 1.6, outline: 'none' },
+        }),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 } },
+          this.state.aiPaste ? K.btn(T, 'ล้าง', false, null, () => this.setState({ aiPaste: '' })) : null,
+          K.btn(T, this.state.aiFilling ? 'AI กำลังอ่าน…' : 'กรอกด้วย AI', true, 'spark', () => this.state.aiFilling ? null : this.smartFill(cfg, pre))),
+      ], { marginBottom: 14, padding: '14px 16px' }) : null;
       const secs = cfg.form.map(([title, ic, fields]) => { const coFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'co'); const brFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'br'); return K.formSec(T, title, ic, fields.map(([lb, ty, opt]) => {
         const m = cfg.roMap && cfg.roMap[lb];
         const ev = er ? (er['_f:' + lb] !== undefined ? er['_f:' + lb] : (m ? er[m] : null)) : null;
@@ -424,7 +489,7 @@ class Component extends DCLogic {
       const stDk = pre + 'สถานะ';
       const stCur = dr[stDk] !== undefined ? dr[stDk] : (er ? (er.s || 'ใช้งาน') : 'ใช้งาน');
       const statusFormEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, stCur, this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPTS.map(o => h('option', { key: o, value: o }, o)))))], { marginBottom: 14, padding: '12px 16px' });
-      body = [hdr, ...secs, linesEditor, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts || ['Export'])];
+      body = [hdr, aiFill, ...secs, linesEditor, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts || ['Export'])];
     } else if (scr === 'detail' && cfg.roMap) {
       const r = selRow;
       if (!r) { this.setScr('list'); body = [null]; }
@@ -456,7 +521,29 @@ class Component extends DCLogic {
         ], { marginBottom: 14, padding: '14px 16px' });
         const curSt = r.s || 'ใช้งาน';
         const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือโหมดสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, curSt, this.statusHue(curSt))))], { marginBottom: 14, padding: '12px 16px' });
-        body = [hdr, ...secs, linesTable, sysInfo, statusEditor, actLegend(cfg.acts || ['Export'])];
+        const ins = this.state.aiInsight;
+        const LVL = { high: ['oklch(0.62 0.22 25)', 'ความเสี่ยงสูง'], medium: ['oklch(0.72 0.15 70)', 'ควรระวัง'], low: [acc, 'ข้อสังเกต'] };
+        const aiCard = K.card(T, [
+          h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: ins ? 13 : 0 } },
+            h('span', { style: { width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 16)),
+            h('div', { style: { flex: 1, minWidth: 0 } },
+              h('div', { style: { fontSize: 13.5, fontWeight: 800 } }, 'Document Insight — วิเคราะห์เอกสารด้วย AI'),
+              h('div', { style: { fontSize: 11.5, color: sub, marginTop: 2 } }, 'สรุปใบขอจัดซื้อ พร้อมชี้ความเสี่ยงและสิ่งที่ควรตรวจก่อนอนุมัติ')),
+            K.btn(T, this.state.aiBusy ? 'กำลังวิเคราะห์…' : (ins ? 'วิเคราะห์อีกครั้ง' : 'วิเคราะห์'), true, 'spark', () => this.state.aiBusy ? null : this.aiInspect(r))),
+          ins ? h('div', { key: 'b', style: { display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 13, borderTop: '1px solid ' + c.line } },
+            h('div', { style: { fontSize: 13, lineHeight: 1.7, color: c.text, whiteSpace: 'pre-wrap' } }, ins.summary || ''),
+            (ins.risks || []).length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+              (ins.risks || []).map((x, i) => { const lv = LVL[x.level] || LVL.low; return h('div', { key: i, style: { display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 9, background: c.field, borderLeft: '3px solid ' + lv[0] } },
+                h('span', { style: { flexShrink: 0, display: 'flex', color: lv[0], marginTop: 1 } }, K.Icon('shield', 15)),
+                h('div', { style: { minWidth: 0 } },
+                  h('div', { style: { fontSize: 12.5, fontWeight: 700, color: c.text } }, x.title || lv[1]),
+                  h('div', { style: { fontSize: 12, color: sub, lineHeight: 1.55, marginTop: 2 } }, x.detail || ''))); })) : null,
+            (ins.checks || []).length ? h('div', null,
+              h('div', { style: { fontSize: 11.5, fontWeight: 700, color: sub, marginBottom: 6 } }, 'ควรตรวจก่อนอนุมัติ'),
+              h('div', { style: { display: 'flex', flexDirection: 'column', gap: 5 } },
+                (ins.checks || []).map((x, i) => h('div', { key: i, style: { display: 'flex', gap: 8, fontSize: 12.5, color: c.text, lineHeight: 1.55 } }, h('span', { style: { color: acc } }, '·'), h('span', null, x))))) : null) : null,
+        ], { marginBottom: 14, padding: '14px 16px' });
+        body = [hdr, ...secs, linesTable, aiCard, sysInfo, statusEditor, actLegend(cfg.acts || ['Export'])];
       }
     } else {
       const canEdit = !!(cfg.form && cfg.roMap);

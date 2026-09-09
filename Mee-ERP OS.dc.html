@@ -616,6 +616,7 @@ class Component extends DCLogic {
 
   componentDidMount(){
     if(this.props.showHidden!==undefined) this.setState({showHidden:!!this.props.showHidden});
+    this.aiEngine().catch(()=>{});   // โหลด AI Engine + ดึงผู้ให้บริการหลักจากฐานข้อมูล เพื่อให้ป้ายชื่อผู้ให้บริการถูกต้องตั้งแต่เปิดหน้า
     // warm the shared UI kit at app start so submodule DCs (ITSA-ORG …) open with no loading flash
     if(typeof window!=='undefined' && !window.__erpKit){ import('./erp-kit.js?v=7').then(m=>{ if(!window.__erpKit) window.__erpKit=m.createKit(React); }).catch(()=>{}); }
     this._pollSheets();
@@ -863,15 +864,22 @@ class Component extends DCLogic {
     }catch(e){
       const nc=(e&&e.code)==='NOT_CONFIGURED';
       const msg=nc
-        ? 'ยังไม่ได้ตั้งค่าการเชื่อมต่อ Claude API\n\nเปิด ITSA › บริหารเครื่องมือ AI › การเชื่อมต่อ Claude API แล้วเลือกช่องทางหนึ่งช่องทาง:\n· Apps Script Relay — วางโค้ด mee-ai-appsscript.gs ในโปรเจกต์ Apps Script เดิม (คีย์ปลอดภัย แนะนำสำหรับ deploy)\n· API Key ในเบราว์เซอร์ — วางคีย์ sk-ant-… ได้ทันที เหมาะกับการสาธิต'
+        ? 'ยังไม่ได้ตั้งค่าผู้ให้บริการ AI\n\nเปิด ITSA › ผู้ให้บริการ AI แล้วกด “ตั้งค่า” ที่การ์ดผู้ให้บริการที่ต้องการ (Claude · Gemini · OpenAI · Together …)\n\n· แท็บ เชื่อมต่อด่วน — วาง API Key ช่องเดียว กด “ตรวจและเชื่อมต่อ” ระบบตรวจ ทดสอบ และบันทึกให้เอง\n· แท็บ ตั้งค่าขั้นสูง — ใช้ Apps Script Relay (คีย์อยู่ฝั่ง server แนะนำสำหรับ deploy) หรือเซิร์ฟเวอร์ในองค์กร'
         : 'ขออภัย เชื่อมต่อผู้ช่วยไม่สำเร็จ: '+(e&&e.message||e);
       this.setState(s=>({aiMsgs:s.aiMsgs.concat([{role:'assistant',content:msg,err:true,setup:nc}]), aiBusy:false}));
     }
   }
+  aiProviderLabel(){
+    const v=this._aiEngine&&this._aiEngine.config&&this._aiEngine.config.vendor;
+    if(v) return 'ขับเคลื่อนด้วย '+(v.name||({anthropic:'Claude',gemini:'Gemini',openai:'OpenAI-compatible'}[v.api]||v.api||'AI'));
+    const p=this._aiEngine&&this._aiEngine.provider;
+    if(p==='host') return 'ขับเคลื่อนด้วย Design Host';
+    return 'ผู้ช่วยในระบบ';
+  }
   aiEngine(){
     if(this._aiEngine) return Promise.resolve(this._aiEngine);
     if(!this._aiEnginePromise){
-      this._aiEnginePromise=import('./mee-ai.js?v=1').then(m=>{ this._aiEngine=m.MeeAI; return m.MeeAI; });
+      this._aiEnginePromise=import('./mee-ai.js?v=9').then(m=>{ this._aiEngine=m.MeeAI; this.forceUpdate(); if(m.MeeAI.bootstrapVendor) m.MeeAI.bootstrapVendor().then(()=>this.forceUpdate()).catch(()=>{}); return m.MeeAI; });
     }
     return this._aiEnginePromise;
   }
@@ -933,14 +941,14 @@ class Component extends DCLogic {
     const bubbleUser={alignSelf:'flex-end',maxWidth:'86%',background:acc,color:'#fff',borderRadius:'14px 14px 4px 14px',padding:'9px 12px',fontSize:13,lineHeight:1.6,whiteSpace:'pre-wrap'};
     const bubbleAI=(err)=>({alignSelf:'flex-start',maxWidth:'90%',background:err?(dark?'rgba(229,72,77,.16)':'oklch(0.96 0.05 22)'):(dark?'rgba(255,255,255,.07)':'oklch(0.975 0.004 255)'),color:err?'#e5484d':T.text,border:`1px solid ${err?'rgba(229,72,77,.3)':T.border}`,borderRadius:'14px 14px 14px 4px',padding:'9px 12px',fontSize:13,lineHeight:1.6,whiteSpace:'pre-wrap'});
     const chips=['SALE คือโมดูลอะไร ใช้ทำอะไรบ้าง','ช่วยร่างอีเมลแจ้งลูกค้าเรื่องจัดส่งล่าช้า','ฉันควรเริ่มตั้งค่าโมดูลไหนก่อน'];
-    const empty=h('div',{style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,padding:'20px 22px',textAlign:'center'}},
+    const empty=h('div',{style:{flex:1,minHeight:0,overflowY:'auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,padding:'20px 22px',textAlign:'center'}},
       h('div',{style:{width:52,height:52,borderRadius:15,background:acc,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}},Icon('spark',26)),
       h('div',{style:{fontSize:14.5,fontWeight:700,color:T.text}},'สวัสดีครับ ให้ช่วยอะไรดี?'),
       h('div',{style:{fontSize:12,color:T.sub,lineHeight:1.6}},'ถามเรื่องการใช้งานระบบ นำทางโมดูล ร่างเอกสาร หรือสรุปข้อมูลได้เลย'),
       h('div',{style:{display:'flex',flexDirection:'column',gap:7,width:'100%',marginTop:6}},chips.map((c,i)=>
         h('button',{key:i,onClick:()=>this.aiSend(c),style:{textAlign:'left',fontFamily:T.font,fontSize:12,color:T.text,background:dark?'rgba(255,255,255,.05)':'#fff',border:`1px solid ${T.border}`,borderRadius:10,padding:'9px 12px',cursor:'pointer'},
           onMouseEnter:e=>{e.currentTarget.style.borderColor=acc;e.currentTarget.style.background=T.accSoft;},onMouseLeave:e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.background=dark?'rgba(255,255,255,.05)':'#fff';}},c))));
-    const list=h('div',{key:'list',ref:el=>{if(el)el.scrollTop=el.scrollHeight;},style:{flex:1,minHeight:0,overflow:'auto',padding:'16px',display:'flex',flexDirection:'column',gap:10}},
+    const list=h('div',{key:'list',ref:el=>{this._aiList=el; if(el&&this._aiStick!==false) el.scrollTop=el.scrollHeight;},onScroll:e=>{const el=e.currentTarget; this._aiStick=(el.scrollHeight-el.scrollTop-el.clientHeight)<40;},style:{flex:1,minHeight:0,overflowY:'auto',overscrollBehavior:'contain',padding:'16px',display:'flex',flexDirection:'column',gap:10}},
       st.aiMsgs.map((m,i)=>h('div',{key:i,style:m.role==='user'?bubbleUser:bubbleAI(m.err)},m.content,
         m.setup?h('button',{key:'setup',onClick:()=>{this.setState({aiOpen:false});this.open('itsa-aien',false,true);},
           style:{marginTop:10,display:'flex',alignItems:'center',gap:7,fontFamily:T.font,fontSize:12,fontWeight:700,padding:'8px 13px',borderRadius:9,border:'none',cursor:'pointer',background:acc,color:'#fff'}},Icon('settings',15),'ไปตั้งค่า Claude API'):null)),
@@ -974,7 +982,7 @@ class Component extends DCLogic {
     const panel=h('div',{key:'aipanel',ref:el=>{this._aiWinEl=el;},style:winStyle},
       h('div',{onMouseDown:e=>this.aiDragStart(e),style:{flexShrink:0,padding:'12px 12px 12px 14px',borderBottom:`1px solid ${T.border}`,display:'flex',alignItems:'center',gap:10,background:T.winHead,cursor:st.aiPinned?'default':'grab',borderTopLeftRadius:st.aiPinned?0:16,borderTopRightRadius:st.aiPinned?0:16}},
         h('span',{style:{width:34,height:34,borderRadius:9,flexShrink:0,background:acc,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}},Icon('spark',18)),
-        h('div',{style:{flex:1,minWidth:0}},h('div',{style:{fontSize:13.5,fontWeight:800,color:T.text}},'ผู้ช่วย AI'),h('div',{style:{fontSize:10.5,color:T.sub,marginTop:1}},'Mee-ERP OS · ขับเคลื่อนด้วย Claude')),
+        h('div',{style:{flex:1,minWidth:0}},h('div',{style:{fontSize:13.5,fontWeight:800,color:T.text}},'ผู้ช่วย AI'),h('div',{style:{fontSize:10.5,color:T.sub,marginTop:1}},'Mee-ERP OS · '+this.aiProviderLabel())),
         h('button',{title:st.aiPinned?'ปลดตรึงหน้าต่าง (เคลื่อนย้ายได้)':'ตรึงหน้าต่างเข้าขอบ',onClick:()=>this.setState(s=>({aiPinned:!s.aiPinned})),style:{border:`1px solid ${st.aiPinned?'transparent':acc}`,background:st.aiPinned?'transparent':T.accSoft,color:st.aiPinned?T.sub:acc,cursor:'pointer',display:'flex',padding:6,borderRadius:7}},Icon('pin',16)),
         h('button',{title:'ปิด',onClick:()=>this.setState({aiOpen:false}),style:{border:'none',background:'transparent',color:T.sub,cursor:'pointer',display:'flex',padding:6,borderRadius:7}},Icon('close',17))),
       tabs,
@@ -1073,11 +1081,11 @@ class Component extends DCLogic {
       h('div',{style:{flex:stacked?'0 0 auto':'0 0 44%',minHeight:stacked?170:'auto',background:panel,color:'#fff',padding:stacked?'34px 30px':'54px 48px',display:'flex',flexDirection:'column',justifyContent:'space-between',position:'relative',overflow:'hidden'}},
         h('div',{style:{display:'flex',alignItems:'center',gap:12}},
           h('div',{style:{width:44,height:44,borderRadius:13,background:'rgba(255,255,255,.2)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center'}},Icon('grid',24,'#fff')),
-          h('div',null,h('div',{style:{fontSize:19,fontWeight:800,letterSpacing:-.3}},'WebOS ERP'),h('div',{style:{fontSize:12,opacity:.85}},'ระบบบริหารธุรกิจครบวงจร'))),
+          h('div',null,h('div',{style:{fontSize:19,fontWeight:800,letterSpacing:-.3}},'Mee-ERP OS'),h('div',{style:{fontSize:12,opacity:.85}},'ระบบบริหารธุรกิจครบวงจร'))),
         !stacked&&h('div',null,
           h('div',{style:{fontSize:30,fontWeight:800,lineHeight:1.25,letterSpacing:-.5,textWrap:'balance'}},'บริหารทุกส่วนของธุรกิจ ในที่เดียว'),
           h('div',{style:{fontSize:14,opacity:.9,marginTop:14,lineHeight:1.6,maxWidth:340}},'ขาย จัดซื้อ สต็อก บัญชี บุคคล การผลิต และ POS — ทำงานพร้อมกันหลายโมดูลแบบ multi-tasking')),
-        h('div',{style:{fontSize:11.5,opacity:.75}},'© 2026 WebOS ERP · เวอร์ชัน 1.0')
+        h('div',{style:{fontSize:11.5,opacity:.75}},'© 2026 Mee-ERP OS · เวอร์ชัน 1.0')
       ),
       // form panel
       h('div',{style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:stacked?'28px 22px 40px':'40px'}},
@@ -2422,7 +2430,7 @@ class Component extends DCLogic {
       {id:'mood',label:'ธีมสำเร็จรูป',icon:'spark',body:[gMood]},
     ];
   }
-  secTheme(T){ return [h('div',{key:'desc',style:{fontSize:12.5,color:T.sub,marginBottom:14,marginTop:-2}},'ปรับแต่งลักษณะและการทำงานของ WebOS')].concat(...this.settingsSections(T).map(s=>s.body)); }
+  secTheme(T){ return [h('div',{key:'desc',style:{fontSize:12.5,color:T.sub,marginBottom:14,marginTop:-2}},'ปรับแต่งลักษณะและการทำงานของ Mee-ERP OS')].concat(...this.settingsSections(T).map(s=>s.body)); }
   secBiz(T){ const st=this.state; const {opt,group}=this.settingsCtl(T);
     return [
       group('ประเภทธุรกิจ','ปรับโมดูลและ workflow ให้เหมาะกับกิจการ',[

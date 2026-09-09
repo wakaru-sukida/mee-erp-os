@@ -13,9 +13,18 @@
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;api&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;win&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onCatalog&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;function&quot;}}">
 class Component extends DCLogic {
   K = (typeof window !== 'undefined' && window.__erpKit) || null;
-  state = { nav: 'provider', db: {}, addOpen: false, editId: null, draft2: {} };
+  state = { nav: 'provider', db: {}, addOpen: false, editId: null, draft2: {}, aiCfg: null, aiTest: null, connOpen: false };
+  openConn() { const p = this.allProv().find(x => x.id === 'claude'); if (p) { this.setNav('provider'); this.openCred(p); } }
+  liveProv() { const a = this.AI; return a && a.ready ? a.provider : null; }
+  liveLabel() { const p = this.liveProv();
+    if (p === 'vendor') { const v = (this.AI && this.AI.config && this.AI.config.vendor) || {};
+      return ['ผู้ให้บริการหลักของระบบ · ' + (v.name || v.id || v.api || ''), '#1ba94c']; }
+    return { host: ['ใช้งานผ่าน Design Host (พรีวิวเท่านั้น)', 'oklch(0.62 0.15 70)'],
+             proxy: ['เชื่อมต่อแล้ว · Apps Script Relay', '#1ba94c'],
+             direct: ['เชื่อมต่อแล้ว · API Key ในเบราว์เซอร์', '#1ba94c'] }[p]
+        || ['ยังไม่ได้ตั้งค่าคีย์', 'oklch(0.62 0.18 35)']; }
   _km(kind) { return { 'Commercial API':['spark',265], 'Open-weight · Self-hosted':['server',158], 'Open-weight · Cloud inference':['cloud',35] }[kind || 'Commercial API']; }
-  providers() { const p = this.state.db.provider; return (p && p.length) ? p : this.PROV(); }
+  providers() { const p = this.state.db.provider; return (p && p.length) ? p.map(r => /^sk-/i.test(r && r.host || '') ? Object.assign({}, r, { host: '—' }) : r) : this.PROV(); }
   allProv() { return this.providers(); }
   setProviders(rows) { this.setState(s => ({ db: Object.assign({}, s.db, { provider: rows }) })); }
   provOn(p) { return p.on !== false; }
@@ -23,6 +32,7 @@ class Component extends DCLogic {
   openEdit(p) { this.setState({ addOpen:true, editId:p.id, draft2:{ name:p.name, kind:p.kind, model:p.model, host:p.host, cost:p.cost, note:p.note } }); }
   saveProvider() {
     const d = this.state.draft2 || {}; if (!d.name) { this.toast('กรุณากรอกชื่อโมเดล'); return; }
+    if (/^sk-/i.test(d.host || '')) { this.toast('ช่องปลายทางมี API Key อยู่ — ให้ตั้งคีย์ที่ “ตั้งค่าการเชื่อมต่อ” แทน'); return; }
     const km = this._km(d.kind); const editId = this.state.editId;
     if (editId) {
       const patch = { name:d.name, kind:d.kind || 'Commercial API', ic:km[0], hue:km[1], model:d.model || '—', host:d.host || '—', cost:d.cost || (km[0]==='server'?'GPU ภายในองค์กร':'จ่ายตาม token'), note:d.note || '' };
@@ -45,8 +55,144 @@ class Component extends DCLogic {
   DBKEY = 'db:itsa-aien:v1';
   _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); if (K.sheetsBind && this.SHEETS_URL) K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS); } K.dbPersist(this, this.DBKEY); this._seed(); }
   _seed() { if (this._sheetsPulled && !this._seeded && this.state.db.provider === undefined) { this._seeded = true; const rows = this.PROV(); this.setState(s => ({ db: Object.assign({}, s.db, { provider: rows }) })); } }
-  componentDidMount() { if (this.K) { this._reportMode(); this._reportCatalog(); this._db(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); this._db(); }); }
-  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._handleReq(); }
+  componentDidMount() { this._loadAI(); if (this.K) { this._reportMode(); this._reportCatalog(); this._db(); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._reportCatalog(); this._db(); this._loadAI(); }); }
+  _loadAI() {
+    if (this._aiLoading || !this.K) return; this._aiLoading = true;
+    Promise.all([import('./mee-ai.js?v=9'), import('./mee-ai-ui.js?v=1')]).then(([a, u]) => {
+      this.AI = a.MeeAI; this.AIU = u.createAIUI(React, this.K);
+      this.setState({ aiCfg: a.MeeAI.config });
+    }).catch(() => { this._aiLoading = false; });
+  }
+  componentDidUpdate() { this._db(); this._reportMode(); this._reportCatalog(); this._handleReq(); this._aiSync(); }
+  // ---- per-provider credentials (sheet columns: auth / apiKey / proxyUrl / endpoint / keyUpdated) ----
+  AUTH_MODES(p) {
+    const k = p.kind || 'Commercial API';
+    if (k === 'Open-weight · Self-hosted') return [['none','ไม่ต้องรับรองสิทธิ์','เซิร์ฟเวอร์อยู่ในเครือข่ายองค์กร'],['key','Bearer Token','เซิร์ฟเวอร์ที่เปิด auth']];
+    if (k === 'Open-weight · Cloud inference') return [['key','API Key ของผู้ให้บริการ','วางคีย์จากคอนโซลผู้ให้บริการ']];
+    return [['relay','Apps Script Relay','คีย์เก็บฝั่ง server — แนะนำสำหรับ deploy'],['key','API Key ในเบราว์เซอร์','ง่ายสุด แต่คีย์อยู่ฝั่งผู้ใช้']];
+  }
+  fmtStamp(v) { if (!v) return ''; const s = String(v); if (!/T\d\d:/.test(s)) return s;
+    const d = new Date(s); if (isNaN(d)) return s; const p2 = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p2(d.getMonth()+1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()); }
+  credOf(p) {
+    const live = (p.id === 'claude' && this.AI && this.AI.config) ? this.AI.config : null;
+    const host = (p.host && p.host !== '—') ? p.host : (p.id === 'claude' ? 'api.anthropic.com' : '');
+    let auth = p.auth || (live ? (live.provider === 'proxy' ? 'relay' : (live.apiKey ? 'key' : (live.proxyUrl ? 'relay' : null))) : null) || this.AUTH_MODES(p)[0][0];
+    const guess = /claude|anthropic/i.test(p.id + ' ' + p.model) ? 'anthropic' : (/gemini/i.test(p.id + ' ' + p.model) ? 'gemini' : 'openai');
+    return {
+      auth,
+      api: p.api || guess,
+      apiKey: p.apiKey || (live && live.apiKey) || '',
+      proxyUrl: p.proxyUrl || (live && live.proxyUrl) || '',
+      endpoint: p.endpoint || host,
+      model: p.model || (live && live.model) || '',
+      keyUpdated: this.fmtStamp(p.keyUpdated),
+    };
+  }
+  credState(p) { const d = this.credOf(p);
+    if (d.auth === 'none') return ['ไม่ต้องใช้คีย์', '#1ba94c'];
+    if (d.apiKey) return ['ตั้งค่าคีย์แล้ว', '#1ba94c'];
+    if (d.proxyUrl) return ['ตั้งค่า Relay แล้ว', '#1ba94c'];
+    if (!p.auth) return ['ยังไม่ได้ตั้งค่า', '#8a8f98'];
+    return [d.auth === 'relay' ? 'ยังไม่ได้ใส่ Relay URL' : 'ยังไม่ได้ใส่คีย์', 'oklch(0.62 0.18 35)'];
+  }
+  // เดารูปแบบ API · ปลายทาง · โมเดล จากหน้าตาของคีย์ที่วาง
+  detectKey(k) {
+    k = String(k || '').trim();
+    if (/^sk-ant-/.test(k)) return { api:'anthropic', endpoint:'api.anthropic.com', model:'claude-sonnet-4-5', name:'Claude (Anthropic)' };
+    if (/^(AQ\.|AIza|ya29\.)/.test(k)) return { api:'gemini', endpoint:'generativelanguage.googleapis.com', model:'gemini-3.6-flash', name:'Gemini (Google)' };
+    if (/^tgp_/.test(k)) return { api:'openai', endpoint:'api.together.xyz', model:'openai/gpt-oss-20b', name:'Together AI' };
+    if (/^sk-/.test(k)) return { api:'openai', endpoint:'api.openai.com', model:'gpt-4o-mini', name:'OpenAI' };
+    return null;
+  }
+  async quickConnect() {
+    const d = this.state.credDraft || {};
+    const det = this.detectKey(d.apiKey);
+    if (!det) { this.setState({ credMsg: ['err','ไม่รู้จักรูปแบบคีย์นี้ — ใช้แท็บ “ตั้งค่าขั้นสูง” ระบุเอง'] }); return; }
+    if (!this.AI || !this.AI.pingVendor) { this._loadAI(); this.setState({ credMsg: ['err','AI Engine ยังโหลดไม่เสร็จ — รอสักครู่แล้วกดใหม่'] }); return; }
+    this.setState(s => ({ credDraft: Object.assign({}, s.credDraft, { auth:'key', api:det.api, endpoint:det.endpoint, model: s.credDraft.model || det.model }), credMsg: ['busy','ตรวจพบ ' + det.name + ' · กำลังทดสอบ…'] }));
+    const v = { id: this.state.credId, api:det.api, auth:'key', apiKey:d.apiKey, endpoint:det.endpoint, model: d.model || det.model };
+    const r = await this.AI.pingVendor(v);
+    this.setState({ credTest: Object.assign({ busy:false }, r) });
+    if (r.ok) { this.setState({ credPrimary: true }); await this.saveCred({ primary: true }); }
+    else this.setState({ credMsg: ['err','คีย์ใช้ไม่ได้: ' + (r.error || '') ] });
+  }
+  openCred(p, tab) { this._loadAI(); this.setState({ credId: p.id, credTab: tab || 'quick', credDraft: Object.assign({ name:p.name, kind:p.kind, cost:p.cost || '', note:p.note || '' }, this.credOf(p)), credShow: false, credMsg: null, credTest: null }); }
+  setCd(k, v) { this.setState(s => ({ credDraft: Object.assign({}, s.credDraft, { [k]: v }), credMsg: null })); }
+  async saveCred(opts) {
+    const p = this.allProv().find(x => x.id === this.state.credId); if (!p) return;
+    const d = this.state.credDraft || {};
+    if (d.auth === 'key' && !d.apiKey) { this.setState({ credMsg: ['err','กรุณาใส่ API Key'] }); return; }
+    if (d.auth === 'relay' && !/^https:\/\/script\.google\.com\/.+\/exec$/.test(d.proxyUrl || '')) { this.setState({ credMsg: ['err','Relay URL ต้องเป็นลิงก์ Apps Script ที่ลงท้ายด้วย /exec'] }); return; }
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const km = this._km(d.kind || p.kind);
+    const patch = { name: d.name || p.name, kind: d.kind || p.kind, hue: km[1], ic: km[0], cost: d.cost || p.cost, note: d.note || p.note,
+      auth: d.auth, api: d.api || 'openai', apiKey: d.auth === 'key' ? d.apiKey : '', proxyUrl: d.auth === 'relay' ? d.proxyUrl : '',
+      endpoint: d.endpoint || '', host: d.endpoint || p.host, model: d.model || p.model, keyUpdated: stamp,
+      status: (d.auth === 'none' || d.apiKey || d.proxyUrl) ? 'connected' : 'offline' };
+    const rows = this.allProv().map(x => x.id === p.id ? Object.assign({}, x, patch) : x);
+    this.setState(s => ({ db: Object.assign({}, s.db, { provider: rows }), credMsg: ['busy','กำลังบันทึกลงชีต…'] }));
+    // ตั้งเป็นผู้ให้บริการหลักของทั้งระบบ (ผู้ช่วย AI ทุกโมดูลจะเรียกผ่านตัวนี้)
+    const wantPrimary = (opts && typeof opts.primary === 'boolean') ? opts.primary
+      : (this.state.credPrimary === true || (this.state.credPrimary == null && (!!p.primary || !this.allProv().some(x => x.primary))));
+    if (this.AI && wantPrimary) {
+      const vendor = { id: p.id, name: patch.name, api: patch.api, auth: patch.auth, apiKey: patch.apiKey, proxyUrl: patch.proxyUrl, endpoint: patch.endpoint, model: patch.model };
+      // ล้างคีย์เก่า (Anthropic ที่เคยตั้งไว้) ไม่ให้ถูกหยิบไปใช้แทน
+      const next = this.AI.configure({ provider: 'vendor', vendor: vendor, model: patch.model,
+        apiKey: patch.api === 'anthropic' ? patch.apiKey : '', proxyUrl: patch.api === 'anthropic' ? patch.proxyUrl : '' });
+      this._aiBase = JSON.stringify(next); this.setState({ aiCfg: next });
+      rows.forEach(r => { if (r.id !== p.id) r.primary = false; });
+      const me = rows.find(r => r.id === p.id); if (me) me.primary = true;
+    }
+    if (this._sheetsLast) this._sheetsLast.provider = null;
+    try {
+      const r = await fetch(this.SHEETS_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({ tab: this.SHEETS_TABS.provider, action:'replaceAll', rows: rows }) });
+      const j = await r.json(); if (!j || !j.ok) throw new Error((j && j.error) || 'ชีตตอบกลับไม่สำเร็จ');
+      if (this._sheetsLast) this._sheetsLast.provider = JSON.stringify(rows);
+      this.setState({ sheetsStatus:'connected', credMsg: ['ok','บันทึกลงชีต ' + this.SHEETS_TABS.provider + ' แล้ว · ' + stamp + (wantPrimary ? ' · ตั้งเป็นผู้ให้บริการหลักของระบบ' : ' · ยังไม่ได้ตั้งเป็นผู้ให้บริการหลัก (ผู้ช่วย AI จะยังใช้เจ้าเดิม)')] });
+      if (p.id === 'claude') this.saveAICfg();
+    } catch (e) { this.setState({ credMsg: ['err','บันทึกลงชีตไม่สำเร็จ: ' + e.message] }); }
+  }
+  async testCred() {
+    const p = this.allProv().find(x => x.id === this.state.credId); if (!p) return;
+    const d = this.state.credDraft || {};
+    if (!this.AI || !this.AI.pingVendor) { this.setState({ credTest: { busy:false, ok:false, error:'AI Engine ยังโหลดไม่เสร็จ' } }); return; }
+    this.setState({ credTest: { busy:true } });
+    const r = await this.AI.pingVendor({ id: p.id, api: d.api, auth: d.auth, apiKey: d.apiKey, proxyUrl: d.proxyUrl, endpoint: d.endpoint, model: d.model });
+    this.setState({ credTest: Object.assign({ busy:false }, r) });
+  }
+  async saveAICfg() {
+    if (!this.AI) { this.setState({ aiSaveErr: 'AI Engine ยังโหลดไม่เสร็จ' }); return; }
+    const cur = JSON.stringify(this.state.aiCfg || this.AI.config);
+    this._aiBase = cur;
+    const rows = this.settings().slice();
+    const i = rows.findIndex(x => x.k === 'ai:cfg');
+    if (i >= 0) rows[i] = Object.assign({}, rows[i], { v: cur }); else rows.push({ k: 'ai:cfg', v: cur });
+    this.setState(s => ({ db: Object.assign({}, s.db, { settings: rows }), aiSaved: null, aiSaveErr: null, aiSaving: true }));
+    if (this._sheetsLast) this._sheetsLast.settings = null;
+    try {
+      const r = await fetch(this.SHEETS_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+        body: JSON.stringify({ tab: this.SHEETS_TABS.settings, action:'replaceAll', rows: rows }) });
+      const j = await r.json();
+      if (!j || !j.ok) throw new Error((j && j.error) || 'ชีตตอบกลับไม่สำเร็จ');
+      if (this._sheetsLast) this._sheetsLast.settings = JSON.stringify(rows);
+      this.setState({ aiSaving: false, sheetsStatus: 'connected',
+        aiSaved: new Date().toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) });
+    } catch (e) {
+      this.setState({ aiSaving: false, aiSaveErr: 'บันทึกลงชีตไม่สำเร็จ: ' + e.message + ' — ตรวจว่ามีแท็บ ' + this.SHEETS_TABS.settings + ' ในสเปรดชีต' });
+    }
+  }
+  // ---- AI config ↔ Google Sheet (itsa-aien-settings, key 'ai:cfg') ----
+  _aiSync() {
+    if (!this.AI || !this._sheetsPulled) return;
+    const raw = this.getSetting('ai:cfg', null);
+    const apply = (s) => { try { this.setState({ aiCfg: this.AI.configure(JSON.parse(s)) }); } catch (e) {} };
+    if (!this._aiBase) { this._aiBase = raw || JSON.stringify(this.AI.config); if (raw) apply(raw); return; }
+    if (raw && raw !== this._aiBase && raw !== JSON.stringify(this.state.aiCfg || {})) { this._aiBase = raw; apply(raw); return; }
+    const cur = JSON.stringify(this.state.aiCfg || this.AI.config);
+    if (cur !== this._aiBase) { this._aiBase = cur; this.setSetting('ai:cfg', cur); }
+  }
   _reportCatalog() { if (typeof this.props.onCatalog !== 'function' || !this.K || this._catReported) return; this._catReported = true; const f = this.FEATS(); this.props.onCatalog(f.map(x => ({ id: x[0], th: x[1], ic: x[2], hidden: false, screens: [['list', x[1], x[2]]] }))); }
   _handleReq() { const r = this.props.req; if (!r || typeof r.nonce !== 'number' || r.nonce === this._reqNonce) return; this._reqNonce = r.nonce; if (r.kind === 'nav') this.setNav(r.id); }
   _reportMode() { if (typeof this.props.onMode !== 'function') return; if ('view' !== this._lastMode) { this._lastMode = 'view'; this.props.onMode('view'); } }
@@ -97,7 +243,12 @@ class Component extends DCLogic {
     ], { marginBottom: 16, borderLeft: `3px solid ${acc}` });
     const statusPill = (st) => { const on = st === 'connected'; return h('span', { style:{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, fontWeight:700, color: on?'#1ba94c':sub } }, h('span', { style:{ width:8, height:8, borderRadius:'50%', background: on?'#1ba94c':c.border } }), on?'เชื่อมต่อแล้ว':'ยังไม่เชื่อมต่อ'); };
     const toggle = (on, onClick) => h('button', { onClick, title: on?'ปิดใช้งาน':'เปิดใช้งาน', style:{ width:42, height:24, borderRadius:14, border:'none', cursor:'pointer', padding:2, background: on?acc:c.border, display:'flex', justifyContent: on?'flex-end':'flex-start', transition:'background .15s', flexShrink:0 } }, h('span', { style:{ width:20, height:20, borderRadius:'50%', background:'#fff', boxShadow:'0 1px 3px rgba(0,0,0,.25)', transition:'all .15s' } }));
-    const kv = (label, val, m) => h('div', { style:{ display:'flex', flexDirection:'column', gap:3 } }, h('span', { style:{ fontSize:9.5, fontWeight:700, letterSpacing:.4, color:sub, textTransform:'uppercase' } }, label), h('span', { style:{ fontSize:12, fontWeight:600, color:c.text, fontFamily: m?mono:c.font, wordBreak:'break-all' } }, val));
+    const mask = (v) => { const s = String(v == null ? '' : v); return /^sk-|api03/i.test(s) ? s.slice(0, 7) + '••••••••' : s; };
+    const kv = (label, val, m) => { const s = mask(val), secret = s !== String(val == null ? '' : val);
+      return h('div', { style:{ display:'flex', flexDirection:'column', gap:3 } },
+        h('span', { style:{ fontSize:9.5, fontWeight:700, letterSpacing:.4, color:sub, textTransform:'uppercase' } }, label),
+        h('span', { style:{ fontSize:12, fontWeight:600, color: secret ? 'oklch(0.62 0.18 35)' : c.text, fontFamily: m?mono:c.font, wordBreak:'break-all' } }, s),
+        secret ? h('span', { style:{ fontSize:10, color:'oklch(0.62 0.18 35)', fontWeight:600 } }, 'ค่านี้เป็นคีย์ ไม่ควรอยู่ในช่องนี้ — ย้ายไปที่ “ตั้งค่าการเชื่อมต่อ”') : null); };
     const addRow = h('div', { key:'addrow', style:{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, gap:10 } },
       h('div', { style:{ fontSize:12.5, fontWeight:700, color:c.text } }, 'ผู้ให้บริการทั้งหมด (' + this.allProv().length + ')'),
       K.btn(T, 'เพิ่มผู้ให้บริการ', true, 'plus', () => this.setState({ addOpen:true, editId:null, draft2:{} })));
@@ -106,19 +257,31 @@ class Component extends DCLogic {
         h('div', { key:'top', style:{ display:'flex', alignItems:'flex-start', gap:12 } },
           h('span', { style:{ width:38, height:38, borderRadius:10, flexShrink:0, background:`oklch(0.95 0.05 ${p.hue})`, color:`oklch(0.5 0.16 ${p.hue})`, display:'flex', alignItems:'center', justifyContent:'center' } }, K.Icon(p.ic, 20)),
           h('div', { style:{ flex:1, minWidth:0 } },
-            h('div', { style:{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' } }, h('span', { style:{ fontSize:14, fontWeight:800 } }, p.name), K.pill(T, p.kind, p.hue)),
+            h('div', { style:{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' } }, h('span', { style:{ fontSize:14, fontWeight:800 } }, p.name), K.pill(T, p.kind, p.hue),
+              p.primary ? h('span', { style:{ fontSize:10, fontWeight:800, color:'#fff', background:'#1ba94c', borderRadius:6, padding:'3px 8px', letterSpacing:.2 } }, 'ผู้ให้บริการหลัก') : null),
             h('div', { style:{ fontSize:11.5, color:sub, marginTop:4, lineHeight:1.55 } }, p.note)),
           h('div', { style:{ display:'flex', alignItems:'center', gap:8, flexShrink:0 } },
             p.custom ? h('span', { style:{ fontSize:9, fontWeight:700, letterSpacing:.4, color:sub, border:`1px solid ${c.border}`, borderRadius:5, padding:'2px 6px' } }, 'เพิ่มเอง') : null,
             toggle(on, () => this.toggleProv(p.id)),
             p.custom ? h('button', { title:'นำออก', onClick: () => this.removeProvider(p.id), style:{ width:26, height:26, borderRadius:7, border:`1px solid ${c.border}`, background:c.win, color:sub, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, lineHeight:1, fontFamily:c.font } }, '×') : null)),
         h('div', { key:'grid', style:{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:14, marginTop:14, paddingTop:14, borderTop:`1px solid ${c.line}`, opacity: on?1:0.5 } },
-          kv('โมเดล', p.model, true), kv('ปลายทาง', p.host, true), kv('Latency เฉลี่ย', p.latency), kv('ต้นทุน', p.cost)),
-        h('div', { key:'ft', style:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginTop:14 } },
-          statusPill(on ? p.status : 'off'),
+          kv('โมเดล', p.model, true), kv('ปลายทาง', p.host, true),
+          (() => { const d = this.credOf(p), [lb, clr] = this.credState(p);
+            return h('div', { style:{ display:'flex', flexDirection:'column', gap:3 } },
+              h('span', { style:{ fontSize:9.5, fontWeight:700, letterSpacing:.4, color:sub, textTransform:'uppercase' } }, 'การรับรองสิทธิ์'),
+              h('span', { style:{ fontSize:12, fontWeight:700, color:clr, display:'inline-flex', alignItems:'center', gap:5 } },
+                h('span', { style:{ width:7, height:7, borderRadius:'50%', background:clr, flexShrink:0 } }), lb),
+              d.apiKey ? h('span', { style:{ fontSize:10.5, color:sub, fontFamily:mono } }, d.apiKey.slice(0,7) + '••••' + d.apiKey.slice(-4)) : null,
+              d.keyUpdated ? h('span', { style:{ fontSize:10, color:sub } }, 'อัปเดต ' + d.keyUpdated) : null); })(),
+          kv('ต้นทุน', p.cost)),
+        h('div', { key:'ft', style:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginTop:14, flexWrap:'wrap' } },
+          p.id === 'claude'
+            ? (() => { const [lb, clr] = this.liveLabel();
+                return h('span', { style:{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, fontWeight:700, color: clr } },
+                  h('span', { style:{ width:8, height:8, borderRadius:'50%', background: clr } }), lb); })()
+            : statusPill(on ? p.status : 'off'),
           h('div', { style:{ display:'flex', gap:8, flexWrap:'wrap' } },
-            K.btn(T, 'แก้ไข', false, 'doc', () => this.openEdit(p)),
-            K.btn(T, 'ทดสอบการเชื่อมต่อ', false, 'gauge', () => this.toast('กำลังทดสอบการเชื่อมต่อ ' + p.name + ' …'))))
+            K.btn(T, 'ตั้งค่า', true, 'settings', () => this.openCred(p))))
       ], { marginBottom: 12, display:'flex', flexDirection:'column' });
     });
     // ---- add-provider modal ----
@@ -135,11 +298,120 @@ class Component extends DCLogic {
           fld('ชื่อที่แสดง *', h('input', { value:df('name'), onChange:e=>setDf('name', e.target.value), placeholder:'เช่น Gemini 2.5 Pro', style:inp })),
           fld('ประเภท', h('select', { value:df('kind') || KINDS[0], onChange:e=>setDf('kind', e.target.value), style:Object.assign({}, inp, { cursor:'pointer' }) }, KINDS.map(k => h('option', { key:k, value:k }, k)))),
           fld('ชื่อโมเดล', h('input', { value:df('model'), onChange:e=>setDf('model', e.target.value), placeholder:'เช่น gemini-2.5-pro', style:inp })),
-          fld('ปลายทาง (endpoint / host)', h('input', { value:df('host'), onChange:e=>setDf('host', e.target.value), placeholder:'เช่น api.provider.com', style:inp })),
+          fld('ปลายทาง (endpoint / host)', h('div', null,
+            h('input', { value:df('host'), onChange:e=>setDf('host', e.target.value), placeholder:'เช่น api.provider.com', style:Object.assign({}, inp, /^sk-/i.test(df('host')) ? { borderColor:'oklch(0.62 0.18 35)' } : null) }),
+            /^sk-/i.test(df('host')) ? h('div', { style:{ fontSize:10.5, color:'oklch(0.62 0.18 35)', marginTop:5, lineHeight:1.5 } },
+              'นี่คือ API Key ไม่ใช่ปลายทาง — ',
+              h('button', { onClick:()=>{ setDf('host',''); this.setState({ addOpen:false, editId:null }); this.openConn(); }, style:{ border:'none', background:'none', padding:0, color:acc, fontWeight:700, cursor:'pointer', fontFamily:c.font, fontSize:10.5, textDecoration:'underline' } }, 'ไปที่ “ตั้งค่าการเชื่อมต่อ”')) : null)),
           fld('ต้นทุน', h('input', { value:df('cost'), onChange:e=>setDf('cost', e.target.value), placeholder:'จ่ายตาม token / GPU ภายในองค์กร', style:inp })),
           fld('คำอธิบายสั้น', h('input', { value:df('note'), onChange:e=>setDf('note', e.target.value), placeholder:'จุดเด่นของโมเดล', style:inp }))),
         h('div', { style:{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 } }, K.btn(T, 'ยกเลิก', false, null, () => this.setState({ addOpen:false, editId:null, draft2:{} })), K.btn(T, this.state.editId ? 'บันทึกการแก้ไข' : 'เพิ่มผู้ให้บริการ', true, 'check', () => this.saveProvider())))) : null;
-    return [hero, addRow, ...cards, modal];
+    const connModal = false ? h('div', { key:'conn', onClick:()=>this.setState({connOpen:false}), style:{ position:'fixed', top: embedded?38:0, left:0, right:0, bottom:0, zIndex:210, background:'rgba(0,0,0,0.38)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:24, overflow:'auto' } },
+      h('div', { onClick:e=>e.stopPropagation(), style:{ background:c.win, borderRadius:15, border:`1px solid ${c.border}`, boxShadow:'0 24px 64px rgba(0,0,0,0.28)', width:660, maxWidth:'100%', maxHeight:'88vh', overflow:'auto', padding:'20px 22px', fontFamily:c.font } },
+        h('div', { style:{ display:'flex', alignItems:'center', gap:10, marginBottom:16 } },
+          h('span', { style:{ width:36, height:36, borderRadius:10, flexShrink:0, background:acc, color:'#fff', display:'flex', alignItems:'center', justifyContent:'center' } }, K.Icon('link', 19)),
+          h('div', { style:{ flex:1 } },
+            h('div', { style:{ fontSize:15.5, fontWeight:800 } }, 'ตั้งค่าการเชื่อมต่อ — Claude (Anthropic)'),
+            h('div', { style:{ fontSize:11.5, color:sub, marginTop:2 } }, 'ค่าที่ AI Engine ใช้เรียกจริงทั้งระบบ · บันทึกลง Google Sheet และดึงกลับมาใช้ทุกครั้งที่เปิดระบบ')),
+          h('button', { onClick:()=>this.setState({connOpen:false}), style:{ width:28, height:28, borderRadius:8, border:`1px solid ${c.border}`, background:c.card, color:sub, cursor:'pointer', fontSize:16, lineHeight:1, fontFamily:c.font, flexShrink:0 } }, '×')),
+        h('div', { style:{ display:'flex', gap:8, alignItems:'flex-start', fontSize:11, lineHeight:1.6, color:'oklch(0.5 0.12 70)', background:'oklch(0.97 0.04 80)', border:'1px solid oklch(0.85 0.09 80)', borderRadius:10, padding:'10px 12px', marginBottom:14 } },
+          K.Icon('shield', 14), h('span', null, 'ค่าที่บันทึกจะถูกเก็บลงชีต ', h('b', null, 'itsa-aien-settings'), ' (คีย์ ai:cfg) และดึงกลับมาใช้อัตโนมัติทุกเครื่อง — ผู้ที่เข้าถึงชีตได้จะเห็น API Key ด้วย จึงแนะนำ Apps Script Relay มากกว่าการเก็บคีย์ตรง'),
+        ),
+        this.AIU ? this.AIU.settingsPanel(T, this) : h('div', { style:{ fontSize:13, color:sub, padding:'20px 2px' } }, 'กำลังโหลด AI Engine…'),
+        h('div', { style:{ display:'flex', alignItems:'center', gap:10, justifyContent:'flex-end', marginTop:18, paddingTop:14, borderTop:`1px solid ${c.line}` } },
+          this.state.aiSaveErr
+            ? h('span', { style:{ fontSize:11, fontWeight:700, color:'oklch(0.55 0.19 27)', marginRight:'auto', lineHeight:1.5, maxWidth:400 } }, this.state.aiSaveErr)
+            : this.state.aiSaving
+              ? h('span', { style:{ fontSize:11.5, color:sub, marginRight:'auto' } }, 'กำลังบันทึกลงชีต…')
+              : this.state.aiSaved
+                ? h('span', { style:{ fontSize:11.5, fontWeight:700, color:'#1ba94c', marginRight:'auto', display:'inline-flex', alignItems:'center', gap:6 } }, K.Icon('check', 13), 'บันทึกลงชีต itsa-aien-settings แล้ว ' + this.state.aiSaved)
+                : h('span', { style:{ fontSize:11, color:sub, marginRight:'auto' } }, 'บันทึกลงชีต itsa-aien-settings · ใช้ได้ทุกเครื่อง'),
+          K.btn(T, 'ปิด', false, null, () => this.setState({ connOpen:false })),
+          K.btn(T, 'บันทึกค่า', true, 'check', () => this.saveAICfg())))) : null;
+    const cp = this.state.credId ? this.allProv().find(x => x.id === this.state.credId) : null;
+    const cd = this.state.credDraft || {};
+    const closeCred = () => this.setState({ credId:null, credDraft:null, credMsg:null, credTest:null });
+    const lbl = (t, hint) => h('div', { style:{ marginBottom:5 } },
+      h('div', { style:{ fontSize:11, fontWeight:700, color:c.text } }, t),
+      hint ? h('div', { style:{ fontSize:10.5, color:sub, marginTop:2, lineHeight:1.5 } }, hint) : null);
+    const credModal = cp ? h('div', { key:'cred', onClick:closeCred, style:{ position:'fixed', top: embedded?38:0, left:0, right:0, bottom:0, zIndex:210, background:'rgba(0,0,0,0.42)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:24, overflow:'auto' } },
+      h('div', { onClick:e=>e.stopPropagation(), style:{ background:c.card, borderRadius:16, border:`1px solid ${c.border}`, boxShadow:'0 24px 64px rgba(0,0,0,0.3)', width:620, maxWidth:'100%', maxHeight:'88vh', overflow:'auto', fontFamily:c.font } },
+        h('div', { style:{ display:'flex', alignItems:'center', gap:11, padding:'18px 22px', borderBottom:`1px solid ${c.line}`, position:'sticky', top:0, background:c.card, zIndex:1 } },
+          h('span', { style:{ width:38, height:38, borderRadius:10, flexShrink:0, background:`oklch(0.95 0.05 ${cp.hue})`, color:`oklch(0.5 0.16 ${cp.hue})`, display:'flex', alignItems:'center', justifyContent:'center' } }, K.Icon(cp.ic, 20)),
+          h('div', { style:{ flex:1, minWidth:0 } },
+            h('div', { style:{ fontSize:15, fontWeight:800 } }, 'ตั้งค่าผู้ให้บริการ — ' + cp.name),
+            h('div', { style:{ fontSize:11, color:sub, marginTop:2 } }, cp.kind + ' · บันทึกลงชีต ' + this.SHEETS_TABS.provider)),
+          h('button', { onClick:closeCred, style:{ width:28, height:28, borderRadius:8, border:`1px solid ${c.border}`, background:c.win, color:sub, cursor:'pointer', fontSize:16, lineHeight:1, fontFamily:c.font, flexShrink:0 } }, '×')),
+        h('div', { style:{ display:'flex', gap:4, padding:'12px 22px 0' } }, [['quick','เชื่อมต่อด่วน'],['conn','ตั้งค่าขั้นสูง'],['info','ข้อมูลผู้ให้บริการ']].map(([id, t]) => { const on = (this.state.credTab || 'quick') === id;
+          return h('button', { key:id, onClick:()=>this.setState({ credTab:id }), style:{ fontFamily:c.font, fontSize:12, fontWeight:700, cursor:'pointer', padding:'8px 14px', borderRadius:'9px 9px 0 0', border:`1px solid ${on?c.border:'transparent'}`, borderBottom:'none', background: on?c.win:'transparent', color: on?c.text:sub } }, t); })),
+        (this.state.credTab || 'quick') === 'quick' ? (() => { const det = this.detectKey(cd.apiKey);
+          return h('div', { style:{ padding:'20px 22px', display:'flex', flexDirection:'column', gap:14 } },
+            h('div', { style:{ fontSize:12.5, color:sub, lineHeight:1.65 } }, 'วาง API Key ของผู้ให้บริการแล้วกดปุ่มเดียว — ระบบตรวจรูปแบบคีย์ เลือกปลายทางและโมเดลให้เอง ทดสอบ แล้วบันทึกลงฐานข้อมูลถ้าใช้ได้'),
+            h('div', { style:{ display:'flex', gap:8 } },
+              h('input', { type: this.state.credShow ? 'text' : 'password', value: cd.apiKey || '', onChange:e=>this.setCd('apiKey', e.target.value.trim()), placeholder:'วางคีย์ที่นี่ — sk-ant-… · AQ.… · sk-… · tgp_…', spellCheck:false, style:Object.assign({}, inp, { flex:1, fontFamily:mono, fontSize:12 }) }),
+              h('button', { onClick:()=>this.setState(s=>({credShow:!s.credShow})), style:{ flexShrink:0, padding:'0 12px', borderRadius:8, border:`1px solid ${c.border}`, background:c.win, color:sub, cursor:'pointer', fontSize:11.5, fontWeight:700, fontFamily:c.font } }, this.state.credShow ? 'ซ่อน' : 'แสดง')),
+            det ? h('div', { style:{ display:'flex', alignItems:'center', gap:8, fontSize:11.5, fontWeight:700, color:'#1ba94c', background:'oklch(0.97 0.03 150)', border:'1px solid oklch(0.85 0.08 150)', borderRadius:10, padding:'10px 12px' } },
+              K.Icon('check', 14), h('span', { style:{ fontWeight:600, color:c.text } }, 'ตรวจพบ ', h('b', null, det.name), ' · ปลายทาง ', det.endpoint, ' · โมเดล ', det.model))
+              : (cd.apiKey ? h('div', { style:{ fontSize:11.5, color:'oklch(0.55 0.19 27)', fontWeight:600 } }, 'ไม่รู้จักรูปแบบคีย์นี้ — ไปแท็บ “ตั้งค่าขั้นสูง” เพื่อระบุเอง') : null),
+            h('div', { style:{ display:'flex', gap:9, alignItems:'center', flexWrap:'wrap' } },
+              K.btn(T, 'ตรวจและเชื่อมต่อ', true, 'link', () => this.quickConnect()),
+              h('span', { style:{ fontSize:10.5, color:sub } }, 'ทดสอบ + บันทึกลงชีตให้อัตโนมัติ')),
+            h('div', { style:{ fontSize:10.5, color:sub, lineHeight:1.6, borderTop:`1px solid ${c.line}`, paddingTop:12 } },
+              'ต้องการให้คีย์อยู่ฝั่ง server (ปลอดภัยกว่าเมื่อ deploy) หรือใช้เซิร์ฟเวอร์ในองค์กร → ใช้แท็บ ',
+              h('button', { onClick:()=>this.setState({ credTab:'conn' }), style:{ border:'none', background:'none', padding:0, color:acc, fontWeight:700, cursor:'pointer', fontFamily:c.font, fontSize:10.5, textDecoration:'underline' } }, 'ตั้งค่าขั้นสูง'))); })()
+        : (this.state.credTab || 'quick') === 'info' ? h('div', { style:{ padding:'18px 22px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 } },
+          h('div', null, lbl('ชื่อที่แสดง'), h('input', { value: cd.name || '', onChange:e=>this.setCd('name', e.target.value), style:Object.assign({}, inp, { width:'100%' }) })),
+          h('div', null, lbl('ประเภท'), h('select', { value: cd.kind || 'Commercial API', onChange:e=>{ this.setCd('kind', e.target.value); this.setCd('auth', this.AUTH_MODES({ kind:e.target.value })[0][0]); }, style:Object.assign({}, inp, { width:'100%', cursor:'pointer' }) }, ['Commercial API','Open-weight · Self-hosted','Open-weight · Cloud inference'].map(k => h('option', { key:k, value:k }, k)))),
+          h('div', null, lbl('ต้นทุน'), h('input', { value: cd.cost || '', onChange:e=>this.setCd('cost', e.target.value), placeholder:'จ่ายตาม token', style:Object.assign({}, inp, { width:'100%' }) })),
+          h('div', null, lbl('คำอธิบายสั้น'), h('input', { value: cd.note || '', onChange:e=>this.setCd('note', e.target.value), placeholder:'จุดเด่นของโมเดล', style:Object.assign({}, inp, { width:'100%' }) }))
+        ) : h('div', { style:{ padding:'18px 22px', display:'flex', flexDirection:'column', gap:18 } },
+          h('div', null, lbl('วิธีรับรองสิทธิ์'),
+            h('div', { style:{ display:'flex', flexDirection:'column', gap:8 } }, this.AUTH_MODES(cp).map(([id, name, desc]) => { const on = cd.auth === id;
+              return h('button', { key:id, onClick:()=>this.setCd('auth', id), style:{ display:'flex', gap:11, alignItems:'flex-start', textAlign:'left', cursor:'pointer', fontFamily:c.font, border:`1.5px solid ${on?acc:c.border}`, background: on?c.accSoft:c.win, borderRadius:11, padding:'11px 13px' } },
+                h('span', { style:{ width:15, height:15, borderRadius:'50%', flexShrink:0, marginTop:1, border:`2px solid ${on?acc:c.border}`, background: on?acc:'transparent', display:'flex', alignItems:'center', justifyContent:'center' } }, on?h('span',{style:{width:5,height:5,borderRadius:'50%',background:'#fff'}}):null),
+                h('span', null, h('span', { style:{ display:'block', fontSize:12.5, fontWeight:700, color:c.text } }, name),
+                  h('span', { style:{ display:'block', fontSize:10.5, color:sub, marginTop:2, lineHeight:1.5 } }, desc))); }))),
+          cd.auth === 'key' ? h('div', null,
+            lbl('API Key', 'วางคีย์จากคอนโซลผู้ให้บริการ — เก็บลงคอลัมน์ apiKey ของชีต'),
+            h('div', { style:{ display:'flex', gap:8 } },
+              h('input', { type: this.state.credShow ? 'text' : 'password', value: cd.apiKey || '', onChange:e=>this.setCd('apiKey', e.target.value.trim()), placeholder: cp.id==='claude' ? 'sk-ant-…' : 'วางคีย์ที่นี่', spellCheck:false, style:Object.assign({}, inp, { flex:1, fontFamily:mono, fontSize:12 }) }),
+              h('button', { onClick:()=>this.setState(s=>({credShow:!s.credShow})), style:{ flexShrink:0, padding:'0 12px', borderRadius:8, border:`1px solid ${c.border}`, background:c.win, color:sub, cursor:'pointer', fontSize:11.5, fontWeight:700, fontFamily:c.font } }, this.state.credShow ? 'ซ่อน' : 'แสดง')),
+            cd.apiKey ? h('div', { style:{ fontSize:10.5, color:sub, marginTop:6, fontFamily:mono } }, 'เก็บเป็น ' + cd.apiKey.slice(0,7) + '••••' + cd.apiKey.slice(-4) + ' · ' + cd.apiKey.length + ' อักขระ') : null) : null,
+          cd.auth === 'relay' ? h('div', null,
+            lbl('Apps Script Relay URL', 'คีย์อยู่ใน Script Properties ฝั่ง server — เก็บลงคอลัมน์ proxyUrl'),
+            h('input', { value: cd.proxyUrl || '', onChange:e=>this.setCd('proxyUrl', e.target.value.trim()), placeholder:'https://script.google.com/macros/s/…/exec', spellCheck:false, style:Object.assign({}, inp, { width:'100%', fontFamily:mono, fontSize:11.5 }) })) : null,
+          h('div', null, lbl('รูปแบบ API', 'ตัวแปลงคำขอที่ AI Engine ใช้กับปลายทางนี้'),
+            h('div', { style:{ display:'flex', gap:8, flexWrap:'wrap' } }, [['anthropic','Anthropic','Claude · /v1/messages'],['openai','OpenAI-compatible','vLLM · Ollama · Together · OpenAI'],['gemini','Gemini','generateContent']].map(([id, nm, ds]) => { const on = (cd.api || 'openai') === id;
+              return h('button', { key:id, onClick:()=>this.setCd('api', id), style:{ flex:'1 1 160px', textAlign:'left', cursor:'pointer', fontFamily:c.font, border:`1.5px solid ${on?acc:c.border}`, background: on?c.accSoft:c.win, borderRadius:10, padding:'9px 11px' } },
+                h('div', { style:{ fontSize:12, fontWeight:700, color: on?acc:c.text } }, nm),
+                h('div', { style:{ fontSize:10, color:sub, marginTop:2 } }, ds)); }))),
+          h('div', { style:{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 } },
+            (() => { const ep = { anthropic:'api.anthropic.com', gemini:'generativelanguage.googleapis.com', openai:'api.openai.com' }[cd.api || 'openai'];
+              const bad = /aistudio\.google\.com/i.test(cd.endpoint || '');
+              return h('div', null, lbl('ปลายทาง (endpoint)', 'ค่าที่ถูกต้องของรูปแบบนี้: ' + ep),
+                h('input', { value: cd.endpoint || '', onChange:e=>this.setCd('endpoint', e.target.value.trim()), placeholder:ep, spellCheck:false, style:Object.assign({}, inp, { width:'100%', fontFamily:mono, fontSize:11.5 }, bad ? { borderColor:'oklch(0.62 0.18 35)' } : null) }),
+                bad ? h('div', { style:{ fontSize:10.5, color:'oklch(0.62 0.18 35)', marginTop:5 } }, 'aistudio.google.com คือหน้าคอนโซล ไม่ใช่ปลายทาง API — ',
+                  h('button', { onClick:()=>this.setCd('endpoint', ep), style:{ border:'none', background:'none', padding:0, color:acc, fontWeight:700, cursor:'pointer', fontFamily:c.font, fontSize:10.5, textDecoration:'underline' } }, 'แก้เป็น ' + ep)) : null); })(),
+            h('div', null, lbl('โมเดลที่ใช้'), h('input', { value: cd.model || '', onChange:e=>this.setCd('model', e.target.value.trim()), placeholder:'claude-sonnet-4-5', spellCheck:false, style:Object.assign({}, inp, { width:'100%', fontFamily:mono, fontSize:11.5 }) }))),
+          h('label', { style:{ display:'flex', alignItems:'center', gap:8, fontSize:12, fontWeight:600, color:c.text, cursor:'pointer', background:c.win, border:`1px solid ${c.border}`, borderRadius:10, padding:'11px 13px' } },
+            h('input', { type:'checkbox', checked: this.state.credPrimary === true || (this.state.credPrimary == null && !!cp.primary), onChange:e=>this.setState({ credPrimary: e.target.checked }), style:{ cursor:'pointer', width:15, height:15 } }),
+            h('span', null, 'ตั้งเป็นผู้ให้บริการหลักของระบบ',
+              h('span', { style:{ display:'block', fontSize:10.5, color:sub, fontWeight:400, marginTop:2 } }, 'ผู้ช่วย AI ทุกโมดูลจะเรียกผ่านผู้ให้บริการนี้'))),
+          h('div', { style:{ display:'flex', gap:8, alignItems:'flex-start', fontSize:10.5, lineHeight:1.6, color:sub, background:c.win, border:`1px solid ${c.border}`, borderRadius:10, padding:'10px 12px' } },
+            K.Icon('shield', 13), h('span', null, 'ผูกกับคอลัมน์ในชีต ', h('b', null, this.SHEETS_TABS.provider), ': api · auth · apiKey · proxyUrl · endpoint · model · keyUpdated — ค่าที่บันทึกจะถูกดึงกลับมาใช้ทุกเครื่อง คีย์ในชีตเป็นข้อความธรรมดา จึงแนะนำ Relay สำหรับระบบจริง')),
+          this.state.credTest ? h('div', { style:{ fontSize:11.5, lineHeight:1.55, borderRadius:10, padding:'10px 12px', fontWeight:600,
+              background: this.state.credTest.busy ? c.win : (this.state.credTest.ok ? 'oklch(0.96 0.05 150)' : 'oklch(0.97 0.04 27)'),
+              border:`1px solid ${this.state.credTest.busy ? c.border : (this.state.credTest.ok ? 'oklch(0.8 0.1 150)' : 'oklch(0.85 0.09 27)')}`,
+              color: this.state.credTest.busy ? sub : (this.state.credTest.ok ? '#177a3e' : 'oklch(0.5 0.18 27)') } },
+            this.state.credTest.busy ? 'กำลังทดสอบ…' : (this.state.credTest.ok ? '✓ เชื่อมต่อสำเร็จ · ' + (this.state.credTest.text || '') : '✕ ' + (this.state.credTest.error || 'ล้มเหลว'))) : null),
+        h('div', { style:{ display:'flex', alignItems:'center', gap:9, padding:'14px 22px', borderTop:`1px solid ${c.line}`, position:'sticky', bottom:0, background:c.card, flexWrap:'wrap' } },
+          this.state.credMsg ? h('span', { style:{ fontSize:11.5, fontWeight:700, marginRight:'auto', maxWidth:330, lineHeight:1.5,
+            color: this.state.credMsg[0]==='ok' ? '#1ba94c' : this.state.credMsg[0]==='err' ? 'oklch(0.55 0.19 27)' : sub } }, this.state.credMsg[1])
+            : h('span', { style:{ fontSize:10.5, color:sub, marginRight:'auto' } }, cd.keyUpdated ? 'แก้ไขล่าสุด ' + cd.keyUpdated : 'ยังไม่เคยบันทึก'),
+          K.btn(T, 'ทดสอบ', false, 'gauge', () => this.testCred()),
+          K.btn(T, 'ยกเลิก', false, null, closeCred),
+          K.btn(T, 'บันทึกลงฐานข้อมูล', true, 'check', () => this.saveCred())))) : null;
+    return [hero, addRow, ...cards, modal, connModal, credModal];
   }
 
   bodyRouting(K, T, c) {
@@ -189,11 +461,11 @@ class Component extends DCLogic {
     const CFG_FIELDS = {
       onprem: [['Inference server', h('input', { defaultValue:'http://ai-node-01.local:8000', style:inp })], ['Runtime', h('input', { defaultValue:'vLLM 0.6 · CUDA', style:inp })]],
       cloud: [['Inference provider', h('input', { defaultValue:'Together AI', style:inp })], ['ภูมิภาค', h('input', { defaultValue:'ap-southeast-1', style:inp })]],
-      api: [['Endpoint', h('input', { defaultValue:'https://api.anthropic.com', style:inp })], ['API Key', h('input', { defaultValue:'sk-ant-••••••••••••', type:'password', style:inp })]],
+      api: [['Endpoint', h('input', { defaultValue:'https://api.anthropic.com', style:inp })], ['คีย์ / ช่องทางเรียกใช้', h('button', { onClick: () => { this.setNav('provider'); this.openConn(); }, style:{ width:'100%', textAlign:'left', cursor:'pointer', fontFamily:c.font, fontSize:12, color:acc, fontWeight:700, padding:'9px 11px', border:`1px dashed ${acc}`, borderRadius:8, background:c.accSoft, display:'flex', alignItems:'center', gap:7 } }, K.Icon('link', 14), 'ตั้งค่าที่ “ผู้ให้บริการ AI” →')]],
       hybrid: [['Backend งานอ่อนไหว', h('input', { defaultValue:'on-prem · ai-node-01.local', style:inp })], ['Backend งานยาก', h('input', { defaultValue:'api · api.anthropic.com', style:inp })]],
     };
     const cfgCard = K.card(T, [
-      h('div', { key:'h', style:{ display:'flex', alignItems:'center', gap:8, marginBottom:14 } }, h('span', { style:{ display:'flex', color:acc } }, K.Icon('settings', 16)), h('span', { style:{ fontSize:13, fontWeight:700 } }, 'ค่าปลายทาง — ' + modeObj.th)),
+      h('div', { key:'h', style:{ display:'flex', alignItems:'center', gap:8, marginBottom:14 } }, h('span', { style:{ display:'flex', color:acc } }, K.Icon('settings', 16)), h('span', { style:{ fontSize:13, fontWeight:700 } }, 'ค่าปลายทาง — ' + modeObj.th), h('span', { style:{ fontSize:10.5, color:sub, marginLeft:'auto', fontWeight:600 } }, 'ผังสถาปัตยกรรม · ไม่ใช่ค่าเชื่อมต่อจริง')),
       h('div', { key:'g', style:{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 } }, (CFG_FIELDS[mode] || []).map(([lb, node], i) => h('div', { key:i }, field(lb, node))))
     ], { marginBottom: 16 });
     const foot = h('div', { style:{ display:'flex', justifyContent:'flex-end' } }, K.btn(T, 'บันทึกรูปแบบการติดตั้ง', true, 'check', () => this.save('บันทึกรูปแบบการติดตั้ง: ' + modeObj.th)));
@@ -216,6 +488,9 @@ class Component extends DCLogic {
   }
 
   bodyFor(nav, K, T, c) {
+    if (nav === 'connect') {
+      return this.bodyProvider(K, T, c);
+    }
     if (nav === 'routing') return this.bodyRouting(K, T, c);
     if (nav === 'deploy') return this.bodyDeploy(K, T, c);
     if (nav === 'usage') return this.bodyUsage(K, T, c);

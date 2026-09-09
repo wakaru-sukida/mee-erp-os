@@ -17,7 +17,7 @@ class Component extends DCLogic {
   SHEETS_URL = 'https://script.google.com/macros/s/AKfycbx1rJ24AXRBkIQ-YsooCtXdFbQsdmwC8_3LuXl13OT77FTmFfM2kEq03Xh7arygTVBxwg/exec';
   SHEETS_TABS = { 'item-class': 'invt-item-class', 'item-type': 'invt-item-type', 'item-category': 'invt-item-category', 'item-grade': 'invt-item-grade', 'item-brand': 'invt-item-brand', 'item-uom': 'invt-uom', 'item-uomgroup': 'invt-uom-group', 'item-uomgroup-conv': 'invt-uom-group-conversion', 'item-main': 'invt-item', 'item-uom': 'invt-uom', 'item-uomgroup': 'invt-uom-group', 'item-group': 'invt-item-group' };
   _db() { const K = this.K; if (!K || !K.dbWire) return; if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); } K.dbPersist(this, this.DBKEY); }
-  state = { nav: 'item-main', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {}, sheetsStatus: 'off', aiOpen: false, aiMsgs: [], aiInput: '' };
+  state = { nav: 'item-main', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {}, sheetsStatus: 'off', aiOpen: false, aiMsgs: [], aiInput: '', aiEnriching: false };
   _clearItemGroupSheet() { if (typeof window === 'undefined' || !this.SHEETS_URL) return; try { if (window.localStorage.getItem('meeerp.invt.itemgroup.cleared') === '1') return; } catch (e) {} try { fetch(this.SHEETS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ tab: 'invt-item-group', action: 'replaceAll', rows: [] }) }).then(() => { try { window.localStorage.setItem('meeerp.invt.itemgroup.cleared', '1'); } catch (e) {} }).catch(() => {}); } catch (e) {} }
   _itSeedRows() { return [
     { no: 'RM', tyid: 1, en: 'Raw Material', a: 'วัตถุดิบ', cls: 'MATERIAL', co: '', br: '', tid: '', stk: 'ใช่', pur: 'ใช่', sel: 'ไม่ใช่', mfg: 'ไม่ใช่', svc: 'ไม่ใช่', sort: 10, remark: '', s: 'ใช้งาน' },
@@ -139,7 +139,7 @@ class Component extends DCLogic {
         acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
       },
       'item-group': {
-        th: 'ข้อมูลกลุ่มสินค้า (Product Group)', ic: 'tag',
+        th: 'ข้อมูลกลุ่มสินค้า (Product Group)', ic: 'layers',
         screens: [['list', 'Product Group List — รายการกลุ่มสินค้า', 'list'], ['detail', 'Product Group Detail — รายละเอียดกลุ่มสินค้า', 'doc'], ['create', 'Create Product Group — สร้างกลุ่มสินค้า', 'plus']],
         kpi: [['กลุ่มสินค้าทั้งหมด', '0', 'Product Group', 145], ['ใช้งาน', '0', 'ACTIVE', 130], ['ข้อมูลกลาง', '0', 'ไม่ผูกบริษัท', 35]],
         cols: [{ h: 'รหัสกลุ่มสินค้า', k: 'no', b: true }, { h: 'ชื่อกลุ่มสินค้า', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'ประเภทธุรกิจ', k: 'bt' }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'สาขา', k: 'br' }],
@@ -149,7 +149,7 @@ class Component extends DCLogic {
         acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
       },
       'item-class': {
-        th: 'ข้อมูลจำแนกสินค้า (Item Class)', ic: 'tag',
+        th: 'ข้อมูลจำแนกสินค้า (Item Class)', ic: 'sitemap',
         screens: [['list', 'Item Class List — รายการจำแนกสินค้า', 'list'], ['detail', 'Item Class Detail — รายละเอียดจำแนกสินค้า', 'doc'], ['create', 'Create Item Class — สร้างจำแนกสินค้า', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
         kpi: [['จำแนกสินค้าทั้งหมด', '8', 'Item Class', 145], ['เปิดใช้งาน', '7', 'ACTIVE', 130], ['ข้อมูลกลาง', '5', 'ไม่ผูกบริษัท', 35]],
         cols: [{ h: 'รหัสจำแนกสินค้า', k: 'no', b: true }, { h: 'ชื่อจำแนกสินค้า', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a || r.en), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'สาขา', render: r => r.br ? h('span', null, r.br) : h('span', { style: { color: sub } }, '—') }, { h: 'ลำดับ', k: 'sort', r: true }, { h: 'สถานะ', render: r => P(r.s, this.statusHue(r.s)) }],
@@ -168,7 +168,7 @@ class Component extends DCLogic {
         acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
       },
       'item-type': {
-        th: 'ข้อมูลชนิดสินค้า (Item Type)', ic: 'tag',
+        th: 'ข้อมูลชนิดสินค้า (Item Type)', ic: 'shapes',
         screens: [['list', 'Item Type List — รายการชนิดสินค้า', 'list'], ['detail', 'Item Type Detail — รายละเอียดชนิดสินค้า', 'doc'], ['create', 'Create Item Type — สร้างชนิดสินค้า', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
         kpi: [['ชนิดสินค้าทั้งหมด', '11', 'Item Type', 145], ['เก็บ Stock', '8', '—', 130], ['จัดซื้อได้', '9', '—', 200], ['ข้อมูลกลาง', '11', 'ไม่ผูกบริษัท', 35]],
         cols: [{ h: 'รหัสชนิดสินค้า', k: 'no', b: true }, { h: 'ชื่อชนิดสินค้า', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a || r.en), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'จำแนกสินค้า', render: r => r.cls && r.cls !== '— ไม่ระบุ —' ? P(r.cls, this.itemTypeHue(r.cls)) : h('span', { style: { color: sub } }, '—') }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'คุณสมบัติ', render: r => { const on = []; if (r.stk === 'ใช่') on.push('Stock'); if (r.pur === 'ใช่') on.push('ซื้อ'); if (r.sel === 'ใช่') on.push('ขาย'); if (r.mfg === 'ใช่') on.push('ผลิต'); if (r.svc === 'ใช่') on.push('บริการ'); return h('span', { style: { fontSize: 11, color: sub } }, on.join(' · ') || '—'); } }, { h: 'ลำดับ', k: 'sort', r: true }, { h: 'สถานะ', render: r => P(r.s, this.statusHue(r.s)) }],
@@ -178,7 +178,7 @@ class Component extends DCLogic {
         acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
       },
       'item-category': {
-        th: 'ข้อมูลหมวดหมู่สินค้า (Item Category)', ic: 'tag',
+        th: 'ข้อมูลหมวดหมู่สินค้า (Item Category)', ic: 'folder',
         screens: [['list', 'Item Category List — รายการหมวดหมู่สินค้า', 'list'], ['detail', 'Item Category Detail — รายละเอียดหมวดหมู่สินค้า', 'doc'], ['create', 'Create Item Category — สร้างหมวดหมู่', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
         kpi: [['หมวดหมู่ทั้งหมด', '3', 'Item Category', 145], ['ใช้งาน', '3', 'ACTIVE', 130], ['ข้อมูลกลาง', '3', 'ไม่ผูกบริษัท', 35]],
         cols: [{ h: 'รหัสหมวดหมู่', k: 'no', b: true }, { h: 'ชื่อหมวดหมู่', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'ประเภทธุรกิจ', k: 'grp' }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'สถานะ', render: r => this.K.pill(this.T(), r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) }],
@@ -192,7 +192,7 @@ class Component extends DCLogic {
         acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
       },
       'item-grade': {
-        th: 'ข้อมูลเกรดสินค้า (Item Grade)', ic: 'tag',
+        th: 'ข้อมูลเกรดสินค้า (Item Grade)', ic: 'star',
         screens: [['list', 'Item Grade List — รายการเกรดสินค้า', 'list'], ['detail', 'Item Grade Detail — รายละเอียดเกรดสินค้า', 'doc'], ['create', 'Create Item Grade — สร้างเกรดสินค้า', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
         kpi: [['เกรดทั้งหมด', '3', 'Item Grade', 145], ['ใช้งาน', '3', 'ACTIVE', 130], ['ข้อมูลกลาง', '3', 'ไม่ผูกบริษัท', 35]],
         cols: [{ h: 'รหัสเกรดสินค้า', k: 'no', b: true }, { h: 'ชื่อเกรดสินค้า', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'บริษัท', render: r => r.co ? h('span', null, r.co) : P('ข้อมูลกลาง', 200) }, { h: 'ลำดับ', k: 'sort', r: true }, { h: 'สถานะ', render: r => this.K.pill(this.T(), r.s || 'ใช้งาน', this.statusHue(r.s || 'ใช้งาน')) }],
@@ -220,7 +220,7 @@ class Component extends DCLogic {
         acts: ['Create', 'Update', 'Delete', 'Activate', 'Export']
       },
       'item-uom': {
-        th: 'ข้อมูลหน่วย (UOM)', ic: 'gauge',
+        th: 'ข้อมูลหน่วย (UOM)', ic: 'ruler',
         screens: [['list', 'UOM List — รายการหน่วยนับ', 'list'], ['detail', 'UOM Detail — รายละเอียดหน่วยนับ', 'doc'], ['create', 'Create UOM — สร้างหน่วยนับ', 'plus'], ['edit', 'Edit — แก้ไข', 'doc']],
         kpi: [['หน่วยทั้งหมด', '0', 'UOM', 145], ['เปิดใช้งาน', '0', 'ACTIVE', 130], ['ข้อมูลกลาง', '0', 'ไม่ผูกบริษัท', 35]],
         cols: [{ h: 'UOM Code', k: 'no', b: true }, { h: 'ชื่อหน่วย', render: r => h('span', null, h('div', { style: { fontWeight: 600 } }, r.a || r.en), h('div', { style: { fontSize: 11, color: sub } }, r.en || '')) }, { h: 'สัญลักษณ์', render: r => r.sym ? h('span', { style: { fontWeight: 600 } }, r.sym) : h('span', { style: { color: sub } }, '—') }, { h: 'ทศนิยม', k: 'dec', r: true }, { h: 'ลำดับ', k: 'sort', r: true }, { h: 'สถานะ', render: r => P(r.s, this.statusHue(r.s)) }],
@@ -259,6 +259,49 @@ class Component extends DCLogic {
   curNav() { return this.props.nav || this.state.nav; }
   _setNav(id) { if (this.props.onNav) this.props.onNav(id); this.setState({ nav: id, scr: 'list', mode: 'view', edit: null, sel: null }); }
   setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
+  aiEngine() {
+    if (this._aiEngine) return Promise.resolve(this._aiEngine);
+    if (!this._aiEnginePromise) this._aiEnginePromise = import('./mee-ai.js?v=9').then(m => { this._aiEngine = m.MeeAI; return m.MeeAI; });
+    return this._aiEnginePromise;
+  }
+  async aiEnrich(cfg, pre, er) {
+    const AI = await this.aiEngine();
+    if (!AI.ready) { this.toast('ยังไม่ได้ตั้งค่า Claude API — เปิด ITSA › บริหารเครื่องมือ AI › การเชื่อมต่อ'); return; }
+    const dr = this.state.draft || {};
+    const labels = []; cfg.form.forEach(sc => sc[2].forEach(f => labels.push(f[0])));
+    const cur = {};
+    labels.forEach(l => {
+      const m = cfg.roMap && cfg.roMap[l];
+      const ev = er ? (er['_f:' + l] !== undefined ? er['_f:' + l] : (m ? er[m] : null)) : null;
+      const v = dr[pre + l] !== undefined ? dr[pre + l] : (ev != null ? ev : '');
+      if (v !== '' && v != null) cur[l] = String(v);
+    });
+    const code = cur['รหัสสินค้า (Item Code)'] || '';
+    const nameTh = cur['ชื่อสินค้า (ไทย)'] || '';
+    if (!code && !nameTh) { this.toast('ใส่รหัสสินค้าหรือชื่อสินค้าก่อน แล้วให้ AI เติมส่วนที่เหลือ'); return; }
+    const cats = (this.dbRows('item-category', []) || []).map(x => x.a || x.no).filter(Boolean).slice(0, 40);
+    const uoms = (this.dbRows('item-uom', []) || []).map(x => x.no || x.a).filter(Boolean).slice(0, 40);
+    this.setState({ aiEnriching: true });
+    try {
+      const peers = (this.dbRows('item-main', []) || []).slice(0, 25).map(x => ({ code: x.no, nameTh: x.a, nameEn: x.en, cat: x.cat, uom: x.uom }));
+      AI.setContext({ module: 'INVT-ITEM', label: 'ข้อมูลหลักสินค้า (Item Master)', data: { existingItems: peers } });
+      const r = await AI.tasks.itemEnrich({ code: code, nameTh: nameTh, nameEn: cur['ชื่อสินค้า (อังกฤษ)'] || '', desc: cur['รายละเอียด (Description)'] || '', currentFields: cur }, cats, uoms);
+      const MAP = {
+        nameTh: 'ชื่อสินค้า (ไทย)', nameEn: 'ชื่อสินค้า (อังกฤษ)', desc: 'รายละเอียด (Description)',
+      };
+      this.setState(st => {
+        const d = Object.assign({}, st.draft);
+        Object.keys(MAP).forEach(k => { const lb = MAP[k]; if (r[k] && labels.indexOf(lb) > -1) d[pre + lb] = String(r[k]); });
+        labels.forEach(l => {
+          const m = cfg.roMap && cfg.roMap[l];
+          if (m === 'cat' && r.category) d[pre + l] = String(r.category);
+          if (m === 'uom' && r.uom) d[pre + l] = String(r.uom);
+        });
+        return { draft: d, aiEnriching: false };
+      });
+      this.toast(r.note ? ('AI เติมข้อมูลแล้ว — ' + r.note) : 'AI เติมข้อมูลให้แล้ว — ตรวจทานก่อนบันทึก');
+    } catch (e) { this.setState({ aiEnriching: false }); this.toast('AI ไม่สำเร็จ: ' + (e.message || e)); }
+  }
   dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
   curScr() { return this.props.scr || this.state.scr; }
   curMode() { return this.state.mode; }
@@ -594,6 +637,14 @@ class Component extends DCLogic {
       const hdr = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 } }, h('div', null, h('div', { style: { fontSize: 16, fontWeight: 800 } }, er ? (er.a || er.no) : 'สร้างรายการใหม่'), h('div', { style: { fontSize: 11.5, color: sub, marginTop: 3 } }, er ? 'โหมดแก้ไข (Edit)' : 'โหมดสร้างใหม่ (New)')), K.btn(T, 'กลับ', false, 'doc', () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }))], { marginBottom: 14, padding: '12px 16px' });
       const typeRowsAll = this.dbRows('item-type', (cfgAll['item-type'] || {}).rows || []);
       const TYPES_BY_CLASS = {}; typeRowsAll.forEach(tr => { const kk = tr.cls || '—'; (TYPES_BY_CLASS[kk] = TYPES_BY_CLASS[kk] || []).push(tr.no); });
+      const aiEnrichCard = (nav === 'item-main') ? K.card(T, [
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+          h('span', { style: { width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 16)),
+          h('div', { style: { flex: 1, minWidth: 0 } },
+            h('div', { style: { fontSize: 13.5, fontWeight: 800 } }, 'Item Enrichment — ให้ AI เติมข้อมูลสินค้า'),
+            h('div', { style: { fontSize: 11.5, color: sub, marginTop: 2 } }, 'ใส่รหัสหรือชื่อสินค้าไว้ก่อน แล้วให้ AI เติมชื่ออังกฤษ คำอธิบาย หมวดหมู่ และหน่วยนับให้สอดคล้องกับสินค้าเดิม')),
+          K.btn(T, this.state.aiEnriching ? 'AI กำลังเติม…' : 'เติมด้วย AI', true, 'spark', () => this.state.aiEnriching ? null : this.aiEnrich(cfg, pre, er))),
+      ], { marginBottom: 14, padding: '14px 16px' }) : null;
       const secs = cfg.form.map(([title, ic, fields]) => { const coFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'co'); const brFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'br'); const clsFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'cls'); const typFieldLb = fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === 'typ'); const fieldByMk = mk => fields.find(fx => cfg.roMap && cfg.roMap[fx[0]] === mk); const UOM_OF_GRP = { uomgrp: 'uom', puruomgrp: 'puruom', seluomgrp: 'seluom' }; const GRP_OF_UOM = { uom: 'uomgrp', puruom: 'puruomgrp', seluom: 'seluomgrp' }; return K.formSec(T, title, ic, fields.map(([lb, ty, opt]) => {
         const m = cfg.roMap && cfg.roMap[lb];
         const ev = er ? (er['_f:' + lb] !== undefined ? er['_f:' + lb] : (m ? er[m] : null)) : null;
@@ -701,7 +752,7 @@ class Component extends DCLogic {
       const stDk = pre + 'สถานะ';
       const stCur = dr[stDk] !== undefined ? dr[stDk] : (er ? (er.s || 'ใช้งาน') : 'ใช้งาน');
       const statusFormEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'เลือกสถานะการใช้งาน'))), h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, K.pill(T, stCur, this.statusHue(stCur)), h('select', { value: stCur, onChange: e => { const v = e.target.value; this.setState(s => ({ draft: Object.assign({}, s.draft, { [stDk]: v }) })); }, style: Object.assign({}, K.inp(T), { width: 140, cursor: 'pointer' }) }, this.STATUS_OPTS.map(o => h('option', { key: o, value: o }, o)))))], { marginBottom: 14, padding: '12px 16px' });
-      body = [hdr, ...secs, linesEditor, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts || ['Export'])];
+      body = [hdr, aiEnrichCard, ...secs, linesEditor, statusFormEditor, h('div', { key: 'ft', style: { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 } }, K.btn(T, 'ยกเลิก', false, null, () => { this.setState({ draft: {}, mode: 'view', edit: null }); this.goScr('detail'); }), save), actLegend(cfg.acts || ['Export'])];
     } else if (scr === 'detail' && cfg.roMap) {
       const r = selRow;
       if (!r) { this.setScr('list'); body = [null]; }

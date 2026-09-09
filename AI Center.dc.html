@@ -15,15 +15,41 @@ class Component extends DCLogic {
   K = (typeof window !== 'undefined' && window.__erpKit) || null;
   state = {
     tab: 'insights', ready: false, answer: null, ask: '', task: null, doneKeys: [],
-    autos: [
-      { id: 1, on: true, mod: 'PROC', name: 'จับคู่ 3-Way Match (PO–GR–Invoice)', trig: 'เมื่อบันทึกใบแจ้งหนี้', act: 'ตรวจและแจ้งเตือนเมื่อยอดไม่ตรง', runs: 142 },
-      { id: 2, on: true, mod: 'INVT', name: 'เติมสต็อกอัตโนมัติ (Auto Replenish)', trig: 'เมื่อสต็อก < จุดสั่งซื้อ (ReOrder Point)', act: 'สร้างใบขอซื้อ (PR) ฉบับร่าง', runs: 38 },
-      { id: 3, on: false, mod: 'INVT', name: 'อ่านใบเสนอราคา (OCR) → สร้างสินค้า', trig: 'เมื่ออัปโหลดเอกสาร', act: 'กรอกฟอร์มสินค้าให้อัตโนมัติ', runs: 0 },
-      { id: 4, on: true, mod: 'SALE', name: 'สรุป Dashboard รายวัน', trig: 'ทุกวัน 08:00 น.', act: 'ส่งสรุปยอดขาย/สต็อกทางอีเมล', runs: 60 },
-      { id: 5, on: false, mod: 'ACCT', name: 'เตือนลูกหนี้เกินวงเงิน', trig: 'เมื่อสร้างใบสั่งขาย', act: 'บล็อกรายการและแจ้งผู้อนุมัติ', runs: 0 }
-    ]
+    aiCfg: null, aiTest: null, chat: [], busy: false, aiErr: null, db: {}
   };
-  componentDidMount() { if (this.K) { this.setState({ ready: true }); return; } import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); }); }
+  SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
+  SHEETS_TABS = { insight:'ai-center-insight', automation:'ai-center-automation', activity:'ai-center-activity' };
+  DBKEY = 'db:ai-center:v1';
+  _db() { const K = this.K; if (!K || !K.dbWire) return;
+    if (!this._dbWired) { this._dbWired = true; K.dbWire(this, this.DBKEY); if (K.sheetsBind && this.SHEETS_URL) K.sheetsBind(this, this.SHEETS_URL, this.SHEETS_TABS); }
+    K.dbPersist(this, this.DBKEY); this._seed(); }
+  _seed() {}
+  async pushRows(key, rows) {
+    if (!this.SHEETS_URL) return;
+    try {
+      await fetch(this.SHEETS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ tab: this.SHEETS_TABS[key], action: 'replaceAll', rows: rows }) });
+      if (this._sheetsLast) this._sheetsLast[key] = JSON.stringify(rows);
+    } catch (e) {}
+  }
+  rows(k) { const r = (this.state.db || {})[k]; return Array.isArray(r) ? r : []; }
+  componentDidMount() {
+    this._loadAI();
+    if (this.K) { this.setState({ ready: true }); this._db(); return; }
+    import('./erp-kit.js?v=7').then(m => { const K = m.createKit(React); window.__erpKit = K; this.K = K; this.setState({ ready: true }); this._db(); this._loadAI(); });
+  }
+  componentDidUpdate() { this._db(); }
+  _loadAI() {
+    if (this._aiLoading) return; this._aiLoading = true;
+    Promise.all([import('./mee-ai.js?v=9'), import('./mee-ai-ui.js?v=1')]).then(([a, u]) => {
+      this.AI = a.MeeAI;
+      if (a.MeeAI.bootstrapVendor) a.MeeAI.bootstrapVendor().then(() => this.setState({ aiCfg: a.MeeAI.config })).catch(() => {});
+      if (this.K) this.AIU = u.createAIUI(React, this.K);
+      this.setState({ aiCfg: a.MeeAI.config });
+    }).catch(e => { this._aiLoading = false; this.setState({ aiErr: String(e) }); });
+  }
+  _aiuInit() { if (this.AIU || !this.K) return; if (this._aiuPending) return; this._aiuPending = true; import('./mee-ai-ui.js?v=1').then(u => { this.AIU = u.createAIUI(React, this.K); this.forceUpdate(); }); }
+  _aiu() { if (!this.AIU && this.K && typeof window !== 'undefined' && window.__meeAIUI) this.AIU = window.__meeAIUI; return this.AIU; }
   componentWillUnmount() { if (this._t) clearTimeout(this._t); }
   runTask(key, steps, msg, cmd) {
     if (this._t) clearTimeout(this._t);
@@ -39,29 +65,14 @@ class Component extends DCLogic {
   T() { return this.props.theme || {}; }
   toast(msg) { const a = this.props.api || {}; if (typeof a.toast === 'function') a.toast(msg); else if (typeof window !== 'undefined') { /* noop */ } }
   MODHUE = { INVT: 220, PROC: 265, SALE: 35, ACCT: 190, HRMS: 158, PROD: 300 };
-  INSIGHTS() {
-    return [
-      { sev: 'warn', mod: 'INVT', title: 'สินค้า 1 ตัวยังไม่ผูกชุดหน่วยนับ', desc: 'TG-BOX-001 (กล่องบรรจุภัณฑ์) ยังไม่มี UOM Group — แนะนำสร้างชุด GRP-BOX (EA เป็นหลัก)', action: 'ผูก UOM Group', role: 'Advise', cmd: { action: 'link-uomgroup', item: 'TG-BOX-001', group: { no: 'GRP-BOX', a: 'ชุดบรรจุกล่อง', en: 'Box Packaging', utype: 'Quantity', base: 'EA', lines: [{ uom: 'EA', conv: 1 }], d: 'ชุดหน่วยนับกล่อง (สร้างโดย AI)' } }, steps: [{ t: 'วิเคราะห์สินค้า TG-BOX-001 และหน่วยที่ใช้ (EA)', api: 'GET /api/items/TG-BOX-001', resp: '200 OK' }, { t: 'สร้างชุดหน่วยนับ GRP-BOX (EA = หน่วยหลัก ×1)', api: 'POST /api/uom-groups', resp: '201 Created' }, { t: 'ผูกชุด GRP-BOX เข้ากับสินค้า TG-BOX-001', api: 'PATCH /api/items/TG-BOX-001', resp: '200 OK' }, { t: 'ตรวจสอบความถูกต้องของอัตราแปลง', api: 'POST /api/uom-groups/GRP-BOX/validate', resp: '200 OK' }, { t: 'สำเร็จ — TG-BOX-001 ผูกชุดหน่วยนับแล้ว' }] },
-      { sev: 'risk', mod: 'PROC', title: 'ราคาซื้อเม็ดพลาสติกสูงกว่าค่าเฉลี่ย 18%', desc: 'ใบขอซื้อล่าสุดของ RM-RESIN-001 ราคา 42.5 ฿/KG เทียบค่าเฉลี่ย 90 วัน 36 ฿/KG', action: 'ดู Supplier ทางเลือก', role: 'Alert' },
-      { sev: 'warn', mod: 'INVT', title: 'สต็อกเม็ดพลาสติกจะต่ำกว่าจุดสั่งซื้อใน 6 วัน', desc: 'อัตราการใช้เฉลี่ย 1.2 ตัน/วัน · คงเหลือ 8.4 ตัน · ReOrder Point 6 ตัน', action: 'สร้างใบขอซื้อ (PR)', role: 'Alert', steps: [{ t: 'ดึงข้อมูลสต็อกและอัตราการใช้ของ RM-RESIN-001', api: 'GET /api/stock/RM-RESIN-001', resp: '200 OK' }, { t: 'คำนวณปริมาณสั่งซื้อที่แนะนำ (7.2 ตัน)', api: 'POST /api/mrp/suggest', resp: '200 OK' }, { t: 'เลือก Supplier หลักตามประวัติราคา/การส่ง', api: 'GET /api/suppliers?item=RM-RESIN-001', resp: '200 OK' }, { t: 'สร้างใบขอซื้อ PR-2026-0149 (ฉบับร่าง)', api: 'POST /api/purchase-requests', resp: '201 Created' }, { t: 'สำเร็จ — สร้าง PR ฉบับร่างและส่งให้ผู้อนุมัติแล้ว' }] },
-      { sev: 'info', mod: 'SALE', title: 'พยากรณ์ยอดขายฟิล์มเดือนหน้า +12%', desc: 'จากแนวโน้ม 6 เดือนและฤดูกาล — แนะนำเพิ่มแผนผลิต FG-FILM-001 ล่วงหน้า', action: 'ดูรายละเอียด', role: 'Advise' },
-      { sev: 'risk', mod: 'ACCT', title: 'พบใบแจ้งหนี้อาจซ้ำซ้อน 2 ฉบับ', desc: 'INV-2026-0091 และ INV-2026-0093 มีผู้ขาย ยอดเงิน และวันที่ใกล้เคียงกัน', action: 'ตรวจสอบ', role: 'Alert', steps: [{ t: 'เปรียบเทียบ INV-2026-0091 กับ INV-2026-0093', api: 'GET /api/invoices?ids=0091,0093', resp: '200 OK' }, { t: 'ตรวจผู้ขาย · ยอดเงิน · วันที่ · เลขที่อ้างอิง', api: 'POST /api/invoices/dup-check', resp: '200 OK' }, { t: 'ทำเครื่องหมาย “อาจซ้ำ” และพักการชำระ', api: 'PATCH /api/invoices/0093', resp: '200 OK' }, { t: 'แจ้งเตือนผู้อนุมัติให้ตรวจสอบ', api: 'POST /api/notifications', resp: '202 Accepted' }, { t: 'สำเร็จ — ตั้งค่าตรวจซ้ำและแจ้งเตือนแล้ว' }] },
-      { sev: 'info', mod: 'HRMS', title: 'สรุป: อัตราเข้างานตรงเวลา 96% เดือนนี้', desc: 'ดีขึ้น 3% จากเดือนก่อน — แผนกผลิตมีสายบ่อยสุด แนะนำทบทวนกะ', action: 'ดูรายงาน', role: 'Author' }
-    ];
-  }
-  ACTIVITY() {
-    return [
-      { t: '2 นาทีที่แล้ว', role: 'Act', mod: 'INVT', text: 'สร้างใบขอซื้อ PR-2026-0148 (ฉบับร่าง) จากสต็อกเม็ดพลาสติกต่ำกว่าจุดสั่งซื้อ' },
-      { t: '25 นาทีที่แล้ว', role: 'Alert', mod: 'PROC', text: 'แจ้งเตือนราคาซื้อ RM-RESIN-001 สูงผิดปกติ (+18% จากค่าเฉลี่ย)' },
-      { t: '1 ชม.ที่แล้ว', role: 'Author', mod: 'SALE', text: 'สรุปรายงานยอดขายประจำวันและส่งอีเมลถึงผู้บริหาร 4 ท่าน' },
-      { t: '3 ชม.ที่แล้ว', role: 'Advise', mod: 'PROC', text: 'แนะนำ Supplier ทางเลือกสำหรับ RM-RESIN-001 (ราคาต่ำกว่า 8%, ประวัติส่งตรงเวลา 98%)' },
-      { t: 'เมื่อวาน 16:20', role: 'Assist', mod: 'INVT', text: 'ช่วยผู้ใช้ค้นหาและเปิดหน้าจอ “ชุดหน่วยนับ (UOM Group)”' },
-      { t: 'เมื่อวาน 09:02', role: 'Act', mod: 'ACCT', text: 'จับคู่ 3-Way Match ใบแจ้งหนี้ 12 ฉบับสำเร็จ · พบไม่ตรง 1 ฉบับ' }
-    ];
-  }
-  ask(text) {
+  INSIGHTS() { return this.rows('insight'); }
+  ACTIVITY() { return this.rows('activity'); }
+  AUTOS() { return this.rows('automation'); }
+  async ask(text) {
     const q = (text != null ? String(text) : (this.state.ask || '')).trim();
     if (!q) return;
+    if (this.AI && this.AI.ready) return this.askAI(q);
+    if (this.AI && !this.AI.ready) { this.setState({ tab: 'settings', ask: '' }); this.toast('ตั้งค่า AI ก่อนเริ่มใช้งาน'); return; }
     if (/ผูก|group|อัตโนมัติ|ทำให้|ดำเนินการ/i.test(q)) {
       const it = this.INSIGHTS().find(x => /UOM Group/.test(x.action));
       if (it && it.steps && (this.state.doneKeys || []).indexOf(it.title) === -1) { this.runTask(it.title, it.steps, 'AI: สร้าง GRP-BOX และผูกกับ TG-BOX-001 สำเร็จ', it.cmd); this.setState({ answer: { q: q, a: 'กำลังดำเนินการผูกชุดหน่วยนับให้ TG-BOX-001 โดยอัตโนมัติ — ดูขั้นตอนและ API log ด้านล่างครับ' }, ask: '' }); return; }
@@ -74,10 +85,52 @@ class Component extends DCLogic {
     else a = 'รับทราบ “' + q + '” — ผมรวมข้อมูลจากทุกโมดูลให้ได้ ทั้งพยากรณ์ แนะนำการตัดสินใจ เตือนความเสี่ยง สรุปรายงาน และตั้งงานอัตโนมัติ บอกเป้าหมายได้เลยครับ';
     this.setState({ answer: { q: q, a: a }, ask: '' });
   }
-  toggleAuto(id) { this.setState(s => ({ autos: s.autos.map(x => x.id === id ? Object.assign({}, x, { on: !x.on }) : x) })); }
+  async askAI(q) {
+    const hist = (this.state.chat || []).map(m => ({ role: m.role, content: m.text }));
+    this.setState({ busy: true, ask: '', answer: { q: q, a: '' } });
+    try {
+      this.AI.setContext({
+        module: 'AI Center', label: 'ศูนย์ AI อัจฉริยะ (AI Center)',
+        data: { insights: this.INSIGHTS().map(i => ({ mod: i.mod, sev: i.sev, title: i.title, desc: i.desc })), automations: this.AUTOS(), activity: this.ACTIVITY() },
+      });
+      const a = await this.AI.tasks.assistant(q, hist);
+      this.setState(st => ({
+        busy: false, answer: { q: q, a: a },
+        chat: (st.chat || []).concat([{ role: 'user', text: q }, { role: 'assistant', text: a }]).slice(-16),
+      }));
+    } catch (e) {
+      this.setState({ busy: false, answer: { q: q, a: 'เรียก AI ไม่สำเร็จ: ' + (e.message || e) } });
+    }
+  }
+  async narrate() {
+    if (!this.AI || !this.AI.ready) { this.setState({ tab: 'settings' }); return; }
+    this.setState({ busy: true, answer: { q: 'สรุปผู้บริหารจากตัวเลขบน Dashboard', a: '' } });
+    try {
+      const m = {
+        aiActionsToday: 24, newInsights: 6, riskAlerts: 3,
+        activeRules: this.AUTOS().filter(a => a.on).length + '/' + this.AUTOS().length,
+        insights: this.INSIGHTS().map(i => ({ mod: i.mod, sev: i.sev, title: i.title, desc: i.desc })),
+      };
+      const a = await this.AI.tasks.dashboardNarrative(m, 'ผู้บริหารระดับสูง');
+      this.setState({ busy: false, answer: { q: 'สรุปผู้บริหารจากตัวเลขบน Dashboard', a: a } });
+    } catch (e) { this.setState({ busy: false, answer: { q: 'สรุปผู้บริหาร', a: 'เรียก AI ไม่สำเร็จ: ' + (e.message || e) } }); }
+  }
+  async insight(it) {
+    if (!this.AI || !this.AI.ready) { this.setState({ tab: 'settings' }); return; }
+    this.setState({ busy: true, answer: { q: 'วิเคราะห์: ' + it.title, a: '' } });
+    try {
+      const r = await this.AI.tasks.docInsight({ module: it.mod, title: it.title, detail: it.desc, severity: it.sev });
+      const lines = [r.summary || ''];
+      (r.risks || []).forEach(x => lines.push('· [' + (x.level || '') + '] ' + (x.title || '') + ' — ' + (x.detail || '')));
+      if ((r.checks || []).length) { lines.push(''); lines.push('ควรตรวจก่อนอนุมัติ:'); (r.checks || []).forEach(x => lines.push('· ' + x)); }
+      this.setState({ busy: false, answer: { q: 'วิเคราะห์: ' + it.title, a: lines.join('\n') } });
+    } catch (e) { this.setState({ busy: false, answer: { q: it.title, a: 'เรียก AI ไม่สำเร็จ: ' + (e.message || e) } }); }
+  }
+  toggleAuto(id) { const rows = this.AUTOS().map(x => x.id === id ? Object.assign({}, x, { on: !x.on }) : x); this.setState(s => ({ db: Object.assign({}, s.db, { automation: rows }) })); }
 
   renderVals() {
     if (!this.K) return { fg: '#333', view: null };
+    if (!this.AIU && this.AI) { try { this._aiuInit(); } catch (e) {} }
     const K = this.K, T = this.T(), c = K.tk(T), h = K.h;
     const acc = c.acc, sub = c.sub, aTxt = c.aTxt || acc;
     const tab = this.state.tab;
@@ -85,6 +138,10 @@ class Component extends DCLogic {
     const modPill = m => P(m, this.MODHUE[m] || 220);
     const SEV = { warn: ['oklch(0.72 0.15 70)', 'แจ้งเตือน'], risk: ['oklch(0.62 0.22 25)', 'ความเสี่ยง'], info: [acc, 'ข้อมูลเชิงลึก'] };
     const ROLEHUE = { Act: 265, Advise: 220, Alert: 25, Author: 300, Assist: 158 };
+    const emptyBox = (msg, tab) => h('div', { style: { fontSize: 13, lineHeight: 1.7, color: sub, background: c.win, border: `1px dashed ${c.border}`, borderRadius: 13, padding: '30px 24px', textAlign: 'center' } },
+      h('div', { style: { display: 'flex', justifyContent: 'center', marginBottom: 10, color: c.border } }, K.Icon('cloud', 26)),
+      h('div', { style: { fontWeight: 700, color: c.text, fontSize: 13.5, marginBottom: 4 } }, msg),
+      h('div', null, this._sheetsPulled ? ('เพิ่มแถวในตาราง ' + tab + ' ของฐานข้อมูล แล้วข้อมูลจะแสดงที่นี่') : 'กำลังดึงข้อมูลจากฐานข้อมูล…'));
 
     // hero
     const chips = ['สต็อกไหนใกล้หมด?', 'สรุปยอดขายเดือนนี้', 'มีใบแจ้งหนี้ซ้ำไหม', 'ราคาซื้อผิดปกติหรือเปล่า'];
@@ -94,12 +151,14 @@ class Component extends DCLogic {
         h('div', null, h('div', { style: { fontSize: 19, fontWeight: 800 } }, 'AI Center — ศูนย์ AI อัจฉริยะ'), h('div', { style: { fontSize: 12, opacity: .85, marginTop: 2 } }, 'Enterprise AI Layer · รวมข้อมูลจากทุกโมดูลของ Mee-ERP OS'))),
       h('form', { onSubmit: e => { e.preventDefault(); this.ask(); }, style: { display: 'flex', gap: 8, marginBottom: 12 } },
         h('input', { value: this.state.ask, onChange: e => this.setState({ ask: e.target.value }), placeholder: 'ถาม AI ข้ามทุกโมดูล เช่น “สินค้าไหนใกล้หมดสต็อก?”', style: { flex: 1, height: 42, padding: '0 15px', borderRadius: 11, border: 'none', fontSize: 13.5, fontFamily: c.font, color: c.text, background: 'rgba(255,255,255,.96)' } }),
-        h('button', { type: 'submit', style: { height: 42, padding: '0 20px', borderRadius: 11, border: 'none', cursor: 'pointer', fontFamily: c.font, fontSize: 13.5, fontWeight: 700, color: acc, background: '#fff', display: 'flex', alignItems: 'center', gap: 7 } }, K.Icon('spark', 16), 'ถาม AI')),
-      h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } }, chips.map(q => h('button', { key: q, onClick: () => this.ask(q), style: { fontSize: 12, fontWeight: 500, padding: '6px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,.35)', background: 'rgba(255,255,255,.12)', color: '#fff', cursor: 'pointer', fontFamily: c.font } }, q))));
+        h('button', { type: 'submit', disabled: !!this.state.busy, style: { height: 42, padding: '0 20px', borderRadius: 11, border: 'none', cursor: this.state.busy ? 'progress' : 'pointer', opacity: this.state.busy ? .7 : 1, fontFamily: c.font, fontSize: 13.5, fontWeight: 700, color: acc, background: '#fff', display: 'flex', alignItems: 'center', gap: 7 } }, K.Icon('spark', 16), this.state.busy ? 'กำลังคิด…' : 'ถาม AI')),
+      h('div', { key: 'src', style: { fontSize: 11, opacity: .8, marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
+        K.Icon('cloud', 13), h('span', null, this._sheetsPulled ? ('ข้อมูลจากฐานข้อมูล · ' + this.SHEETS_TABS.insight + ' · ' + this.SHEETS_TABS.automation + ' · ' + this.SHEETS_TABS.activity) : 'กำลังดึงข้อมูลจากฐานข้อมูล…')),
+      h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } }, chips.concat(['สรุปผู้บริหาร']).map(q => h('button', { key: q, onClick: () => (q === 'สรุปผู้บริหาร' ? this.narrate() : this.ask(q)), style: { fontSize: 12, fontWeight: 500, padding: '6px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,.35)', background: 'rgba(255,255,255,.12)', color: '#fff', cursor: 'pointer', fontFamily: c.font } }, q))));
 
     const answer = this.state.answer ? K.card(T, [
       h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: sub } }, K.Icon('crm', 15), 'คุณถาม: ' + this.state.answer.q), h('button', { onClick: () => this.setState({ answer: null }), style: { width: 26, height: 26, borderRadius: 7, border: `1px solid ${c.border}`, background: c.win, color: sub, cursor: 'pointer', fontSize: 15, lineHeight: 1, fontFamily: c.font } }, '×')),
-      h('div', { style: { display: 'flex', gap: 10 } }, h('span', { style: { flexShrink: 0, width: 30, height: 30, borderRadius: 9, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 17)), h('div', { style: { fontSize: 13, lineHeight: 1.65, color: c.text } }, this.state.answer.a))
+      h('div', { style: { display: 'flex', gap: 10 } }, h('span', { style: { flexShrink: 0, width: 30, height: 30, borderRadius: 9, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 17)), h('div', { style: { fontSize: 13, lineHeight: 1.65, color: c.text, whiteSpace: 'pre-wrap' } }, this.state.answer.a || (this.state.busy ? 'กำลังวิเคราะห์…' : '')))
     ], { marginBottom: 18, padding: '14px 16px' }) : null;
 
     const tk = this.state.task;
@@ -115,14 +174,49 @@ class Component extends DCLogic {
           (s.api && s.status !== 'pending') ? h('span', { style: { fontFamily: 'ui-monospace,Menlo,Consolas,monospace', fontSize: 10.5, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } }, h('span', { style: { color: acc } }, s.api), s.status === 'done' ? h('span', { style: { color: 'oklch(0.6 0.16 150)', fontWeight: 700 } }, '→ ' + (s.resp || '200 OK')) : h('span', { style: { color: sub } }, '…')) : null))))
     ], { marginBottom: 18, padding: '14px 16px' }) : null;
 
-    const kpi = K.kpi(T, [['งานที่ AI ทำวันนี้', '24', 'Actions', 265], ['Insight ใหม่', '6', 'วันนี้', 220], ['การเตือนความเสี่ยง', '3', 'ต้องตรวจ', 25], ['กฎอัตโนมัติเปิดใช้', this.state.autos.filter(a => a.on).length + ' / ' + this.state.autos.length, 'Rules', 158]]);
+    const ins = this.INSIGHTS(), act = this.ACTIVITY(), au = this.AUTOS();
+    const isToday = a => {
+      const d = a.at || a.date || a.ts;
+      if (d) { const x = new Date(d); if (!isNaN(x)) return x.toDateString() === new Date().toDateString(); }
+      return /นาที|ชม\.|วันนี้|วินาที/.test(String(a.t || ''));
+    };
+    const kpi = K.kpi(T, [
+      ['งานที่ AI ทำวันนี้', String(act.filter(isToday).length), 'Actions', 265],
+      ['ข้อมูลเชิงลึกทั้งหมด', String(ins.length), 'Insights', 220],
+      ['การเตือนความเสี่ยง', String(ins.filter(i => i.sev === 'risk').length), 'ต้องตรวจ', 25],
+      ['กฎอัตโนมัติเปิดใช้', au.filter(a => a.on).length + ' / ' + au.length, 'Rules', 158],
+      ['ทำงานสะสม', String(au.reduce((n, a) => n + (Number(a.runs) || 0), 0)), 'Runs', 300]]);
 
-    const TABS = [['insights', 'ข้อมูลเชิงลึกและการเตือน', 'spark'], ['automation', 'งานอัตโนมัติ', 'settings'], ['activity', 'บันทึกกิจกรรม AI', 'list']];
+    const TABS = [['insights', 'ข้อมูลเชิงลึกและการเตือน', 'spark'], ['automation', 'งานอัตโนมัติ', 'settings'], ['activity', 'บันทึกกิจกรรม AI', 'list'], ['settings', 'ตั้งค่า AI', 'shield']];
     const tabsEl = h('div', { style: { display: 'flex', gap: 4, marginBottom: 16, borderBottom: `1px solid ${c.border}` } }, TABS.map(([id, lb, ic]) => { const on = tab === id; return h('button', { key: id, onClick: () => this.setState({ tab: id }), style: { display: 'flex', alignItems: 'center', gap: 8, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: c.font, fontSize: 13, fontWeight: on ? 700 : 500, color: on ? aTxt : sub, padding: '9px 12px', marginBottom: -1, borderBottom: on ? `2px solid ${acc}` : '2px solid transparent' } }, h('span', { style: { display: 'flex', color: on ? acc : sub } }, K.Icon(ic, 16)), lb); }));
 
     let content;
-    if (tab === 'insights') {
-      content = h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 } }, this.INSIGHTS().map((it, i) => {
+    if (tab === 'settings') {
+      const v = (this.AI && this.AI.config && this.AI.config.vendor) || null;
+      const apiName = { anthropic: 'Anthropic (Claude)', gemini: 'Gemini (Google)', openai: 'OpenAI-compatible' };
+      const row = (k, val, m) => h('div', { key: k, style: { display: 'flex', gap: 12, padding: '11px 0', borderBottom: `1px solid ${c.line}` } },
+        h('span', { style: { width: 150, flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: sub } }, k),
+        h('span', { style: { fontSize: 12.5, color: c.text, fontFamily: m ? "'IBM Plex Mono',ui-monospace,monospace" : 'inherit', wordBreak: 'break-all' } }, val || '—'));
+      content = K.card(T, [
+        h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 } },
+          h('span', { style: { width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 17)),
+          h('div', null, h('div', { style: { fontSize: 14, fontWeight: 800, color: c.text } }, 'ผู้ให้บริการ AI ที่ระบบใช้งาน'),
+            h('div', { style: { fontSize: 11.5, color: sub, marginTop: 2 } }, 'ค่าที่ตั้งไว้ที่ ITSA › ผู้ให้บริการ AI — ดึงจากฐานข้อมูลอัตโนมัติ'))),
+        h('div', { key: 'b', style: { marginTop: 10 } },
+          row('ผู้ให้บริการหลัก', v ? (v.name || v.id || '') : 'ยังไม่ได้ตั้งค่า'),
+          row('รูปแบบ API', v ? (apiName[v.api] || v.api) : ''),
+          row('โมเดล', v && v.model, true),
+          row('ปลายทาง', v && v.endpoint, true),
+          row('การรับรองสิทธิ์', v ? (v.auth === 'relay' ? 'Apps Script Relay (คีย์อยู่ฝั่ง server)' : v.auth === 'none' ? 'ไม่ต้องใช้คีย์' : (v.apiKey ? 'API Key ในเบราว์เซอร์ · ' + String(v.apiKey).slice(0, 7) + '••••' + String(v.apiKey).slice(-4) : 'ยังไม่ได้ใส่คีย์')) : ''),
+          row('สถานะ', this.AI && this.AI.ready ? 'พร้อมใช้งาน' : 'ยังไม่พร้อม')),
+        h('div', { key: 'f', style: { display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' } },
+          K.btn(T, 'ทดสอบการเชื่อมต่อ', true, 'gauge', async () => { if (!this.AI) return; this.setState({ answer: { q: 'ทดสอบการเชื่อมต่อ AI', a: 'กำลังทดสอบ…' } });
+            const r = await this.AI.pingVendor(Object.assign({ id: v && v.id }, v || {}));
+            this.setState({ answer: { q: 'ทดสอบการเชื่อมต่อ AI', a: r.ok ? '✓ เชื่อมต่อสำเร็จ · ' + (r.text || '') : '✕ ' + (r.error || 'ล้มเหลว') } }); }),
+          K.btn(T, 'ตั้งค่าที่ ITSA › ผู้ให้บริการ AI', false, 'settings', () => { const a = this.props.api || {}; if (typeof a.open === 'function') a.open('itsa-aien'); else this.toast('เปิด ITSA › ผู้ให้บริการ AI เพื่อตั้งค่า'); }))
+      ], { padding: '16px 18px' });
+    } else if (tab === 'insights') {
+      content = ins.length ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 } }, ins.map((it, i) => {
         const sv = SEV[it.sev] || SEV.info;
         const done = (this.state.doneKeys || []).indexOf(it.title) > -1;
         return h('div', { key: i, style: { position: 'relative', background: c.win, border: `1px solid ${c.border}`, borderRadius: 13, padding: '16px 16px 16px 18px', overflow: 'hidden' } },
@@ -130,20 +224,20 @@ class Component extends DCLogic {
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 } }, modPill(it.mod), h('span', { style: { fontSize: 10.5, fontWeight: 700, letterSpacing: .3, color: sv[0], display: 'flex', alignItems: 'center', gap: 5 } }, K.Icon(it.sev === 'info' ? 'spark' : 'shield', 13), sv[1]), h('span', { style: { marginLeft: 'auto' } }, P(it.role, ROLEHUE[it.role] || 220))),
           h('div', { style: { fontSize: 14, fontWeight: 700, marginBottom: 5, color: c.text } }, it.title),
           h('div', { style: { fontSize: 12, lineHeight: 1.55, color: sub, marginBottom: 14 } }, it.desc),
-          h('div', { style: { display: 'flex', gap: 8 } }, done ? h('span', { style: { display: 'flex', alignItems: 'center', gap: 8 } }, P('เสร็จแล้ว', 130), h('span', { style: { fontSize: 11.5, color: sub } }, 'AI ดำเนินการแล้ว')) : h('span', { style: { display: 'flex', gap: 8 } }, K.btn(T, it.action, true, 'spark', () => it.steps ? this.runTask(it.title, it.steps, 'AI: ' + it.action + ' สำเร็จ', it.cmd) : this.toast(it.action)), K.btn(T, 'ปิด', false, null, () => this.toast('ปิด Insight')))));
-      }));
+          h('div', { style: { display: 'flex', gap: 8 } }, done ? h('span', { style: { display: 'flex', alignItems: 'center', gap: 8 } }, P('เสร็จแล้ว', 130), h('span', { style: { fontSize: 11.5, color: sub } }, 'AI ดำเนินการแล้ว')) : h('span', { style: { display: 'flex', gap: 8 } }, K.btn(T, it.action, true, 'spark', () => it.steps ? this.runTask(it.title, it.steps, 'AI: ' + it.action + ' สำเร็จ', it.cmd) : this.toast(it.action)), K.btn(T, 'วิเคราะห์ด้วย AI', false, 'crm', () => this.insight(it)))));
+      })) : emptyBox('ยังไม่มีข้อมูลเชิงลึกในฐานข้อมูล', this.SHEETS_TABS.insight);
     } else if (tab === 'automation') {
-      content = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } }, this.state.autos.map(a => h('div', { key: a.id, style: { display: 'flex', alignItems: 'center', gap: 16, background: c.win, border: `1px solid ${c.border}`, borderRadius: 13, padding: '14px 18px' } },
+      content = au.length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } }, au.map(a => h('div', { key: a.id, style: { display: 'flex', alignItems: 'center', gap: 16, background: c.win, border: `1px solid ${c.border}`, borderRadius: 13, padding: '14px 18px' } },
         h('button', { onClick: () => this.toggleAuto(a.id), title: a.on ? 'ปิดกฎ' : 'เปิดกฎ', style: { flexShrink: 0, width: 46, height: 26, borderRadius: 999, border: 'none', cursor: 'pointer', padding: 3, background: a.on ? acc : c.border, display: 'flex', justifyContent: a.on ? 'flex-end' : 'flex-start', transition: 'all .15s' } }, h('span', { style: { width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.3)' } })),
         h('div', { style: { flex: 1, minWidth: 0 } },
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 } }, modPill(a.mod), h('span', { style: { fontSize: 13.5, fontWeight: 700, color: c.text } }, a.name)),
           h('div', { style: { fontSize: 11.5, color: sub, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' } }, h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 4 } }, K.Icon('gauge', 12), a.trig), h('span', { style: { color: acc, display: 'flex' } }, K.Icon('chevron2', 12)), h('span', null, a.act))),
         h('div', { style: { flexShrink: 0, textAlign: 'right' } }, h('div', { style: { fontSize: 16, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: a.on ? c.text : sub } }, a.runs), h('div', { style: { fontSize: 10, color: sub } }, 'ครั้งที่ทำงาน')),
-        h('span', { style: { flexShrink: 0 } }, P(a.on ? 'เปิดใช้งาน' : 'ปิดอยู่', a.on ? 130 : 22)))));
+        h('span', { style: { flexShrink: 0 } }, P(a.on ? 'เปิดใช้งาน' : 'ปิดอยู่', a.on ? 130 : 22))))) : emptyBox('ยังไม่มีกฎอัตโนมัติในฐานข้อมูล', this.SHEETS_TABS.automation);
     } else {
-      content = h('div', { style: { background: c.win, border: `1px solid ${c.border}`, borderRadius: 13, padding: '6px 18px' } }, this.ACTIVITY().map((a, i, arr) => h('div', { key: i, style: { display: 'flex', gap: 14, padding: '14px 0', borderBottom: i < arr.length - 1 ? `1px solid ${c.line}` : 'none' } },
+      content = act.length ? h('div', { style: { background: c.win, border: `1px solid ${c.border}`, borderRadius: 13, padding: '6px 18px' } }, act.map((a, i, arr) => h('div', { key: i, style: { display: 'flex', gap: 14, padding: '14px 0', borderBottom: i < arr.length - 1 ? `1px solid ${c.line}` : 'none' } },
         h('span', { style: { flexShrink: 0, width: 34, height: 34, borderRadius: 10, background: `oklch(0.95 0.04 ${ROLEHUE[a.role] || 220})`, color: `oklch(0.5 0.16 ${ROLEHUE[a.role] || 220})`, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon(a.role === 'Act' ? 'settings' : a.role === 'Alert' ? 'shield' : a.role === 'Author' ? 'doc' : a.role === 'Assist' ? 'crm' : 'spark', 17)),
-        h('div', { style: { flex: 1, minWidth: 0 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 } }, P(a.role, ROLEHUE[a.role] || 220), modPill(a.mod), h('span', { style: { marginLeft: 'auto', fontSize: 11, color: sub } }, a.t)), h('div', { style: { fontSize: 13, lineHeight: 1.5, color: c.text } }, a.text)))));
+        h('div', { style: { flex: 1, minWidth: 0 } }, h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 } }, P(a.role, ROLEHUE[a.role] || 220), modPill(a.mod), h('span', { style: { marginLeft: 'auto', fontSize: 11, color: sub } }, a.t)), h('div', { style: { fontSize: 13, lineHeight: 1.5, color: c.text } }, a.text))))) : emptyBox('ยังไม่มีบันทึกกิจกรรมในฐานข้อมูล', this.SHEETS_TABS.activity);
     }
 
     const view = h('div', { style: { height: '100%', overflow: 'auto', background: c.bg, padding: 22 } },

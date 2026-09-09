@@ -35,7 +35,7 @@ class Component extends DCLogic {
   _prLines(r) { if (r) { if (Array.isArray(r.lineItems) && r.lineItems.length) return r.lineItems.map(l => Object.assign({}, l)); if (typeof r.lines === 'string' && r.lines) { try { const a = JSON.parse(r.lines); if (Array.isArray(a) && a.length) return a.map(l => Object.assign({}, l)); } catch (e) {} } } return [{ item: '', desc: '', uom: '', qty: 1, price: 0 }]; }
   CC_NAME = { 'CC-1001': 'ฝ่ายขาย — สำนักงานใหญ่', 'CC-1002': 'แผนกขายต่างประเทศ', 'CC-1003': 'ฝ่ายจัดซื้อ — สำนักงานใหญ่', 'CC-1101': 'ฝ่ายขาย — เชียงใหม่', 'CC-1102': 'ฝ่ายจัดซื้อ — เชียงใหม่', 'CC-2001': 'ฝ่ายบัญชีการเงิน', 'CC-2002': 'แผนกการเงิน', 'CC-2101': 'ฝ่ายไอที — เชียงใหม่', 'CC-3001': 'ฝ่ายโลจิสติกส์', 'CC-3002': 'ฝ่ายคลังสินค้า' };
   CC_KEYS = Object.keys(this.CC_NAME);
-  state = { nav: 'purchase-order', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {}, sheetsStatus: 'off' };
+  state = { nav: 'purchase-order', scr: 'list', sel: null, edit: null, mode: 'view', db: {}, confirm: null, draft: {}, sort: {}, sheetsStatus: 'off', aiAdvice: null, aiBusy: false };
   _tenantOpts() { const b = this.K && this.K.bus && this.K.bus(); const norm = a => (Array.isArray(a) ? a : []).map(t => ({ id: String(t.id || t.tent_id || t.code || t.tent_code || ''), code: t.code || t.tent_code || '', name_th: t.name_th || t.tent_name || t.name || t.name_en || '' })).filter(t => t.id); let l = (b && b.get && b.get('org.tenants', null)) || []; let fromBus = norm(l); if (fromBus.length) return fromBus; if (b && b.get) { const tdb = b.get('db:itsa-tent:v2', null) || b.get('db:itsa-tent:v1', null); const trows = (tdb && tdb['tenant-management']) || []; fromBus = norm(trows); if (fromBus.length) return fromBus; } return this.state._tenants || []; }
   TENT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxoyL61PLDzlZNKKJcT1Wwy0UpH2f84HeXEAF12EWj4kzkLTxrOujEuRx0HjAwKSF2lRQ/exec';
   _tenantPull() { if (this._tenantPulled || typeof fetch === 'undefined') return; this._tenantPulled = true; fetch(this.TENT_SHEETS_URL + '?tab=itsa-tent-management&_=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(j => { if (!j || !j.ok || !j.rows) { this._tenantPulled = false; return; } const list = j.rows.filter(r2 => r2 && (r2.tent_name || r2.tent_code)).map(r2 => ({ id: String(r2.tent_id || r2.tent_code || ''), code: r2.tent_code || '', name_th: r2.tent_name || r2.tent_name_en || '' })); if (list.length) this.setState({ _tenants: list }); else this._tenantPulled = false; }).catch(() => { this._tenantPulled = false; }); }
@@ -117,6 +117,38 @@ class Component extends DCLogic {
   setNav(id) { if (id !== this.curNav() && this.isDirty()) { this.askConfirm(() => this._setNav(id)); return; } this._setNav(id); }
   dbRows(key, seed) { const d = this.state.db[key]; return d !== undefined ? d : seed; }
   curScr() { return this.props.scr || this.state.scr; }
+  aiEngine() {
+    if (this._aiEngine) return Promise.resolve(this._aiEngine);
+    if (!this._aiEnginePromise) this._aiEnginePromise = import('./mee-ai.js?v=9').then(m => { this._aiEngine = m.MeeAI; return m.MeeAI; });
+    return this._aiEnginePromise;
+  }
+  _vendorPool() {
+    let rows = this.state.db['vendor-master'] || this.state.db['vendor'] || null;
+    if (!Array.isArray(rows) || !rows.length) {
+      try { const b = this.K && this.K.bus && this.K.bus(); const v = b && b.get ? b.get('proc.vendors', null) : null; if (Array.isArray(v)) rows = v; } catch (e) {}
+    }
+    if (!Array.isArray(rows)) return [];
+    return rows.slice(0, 40).map(v => ({
+      code: v.no || v.code || '', name: v.a || v.name || '', type: v.vtype || v.type || '',
+      payTerm: v.payterm || '', credit: v.credit || '', rating: v.rate || v.rating || '',
+      status: v.s || '', contact: v.tel || '',
+    }));
+  }
+  async aiAdvise(r) {
+    const AI = await this.aiEngine();
+    if (!AI.ready) { this.toast('ยังไม่ได้ตั้งค่า Claude API — เปิด ITSA › บริหารเครื่องมือ AI › การเชื่อมต่อ'); return; }
+    const vendors = this._vendorPool();
+    if (!vendors.length) { this.toast('ยังไม่มีข้อมูลผู้ขาย — เปิด PROC-VM ก่อนหนึ่งครั้ง'); return; }
+    this.setState({ aiBusy: true, aiAdvice: null });
+    try {
+      const lines = (this._prLines ? this._prLines(r) : []).filter(l => l.item || l.desc);
+      const out = await AI.tasks.vendorAdvise({
+        poNo: r.no, currentVendor: r.vend || r.a || '', total: r.total, itemCount: r.items,
+        payTerm: r.payterm, shipTo: r.ship, lineItems: lines,
+      }, vendors);
+      this.setState({ aiBusy: false, aiAdvice: out });
+    } catch (e) { this.setState({ aiBusy: false, aiAdvice: { recommend: { vendor: '', reason: 'เรียก AI ไม่สำเร็จ: ' + (e.message || e) }, ranking: [], negotiation: [] } }); }
+  }
   curMode() { return this.state.mode; }
   isDirty() { const m = this.curMode(); return m === 'create' || m === 'edit'; }
   enterCreate() { this.setState({ mode: 'create', edit: null, draft: {} }); this._goScr('create'); }
@@ -433,7 +465,34 @@ class Component extends DCLogic {
         ], { marginBottom: 14, padding: '14px 16px' });
         const curSt = r.s || 'ใช้งาน';
         const statusEditor = K.card(T, [h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('span', { style: { display: 'flex', color: acc } }, K.Icon('gauge', 17)), h('div', null, h('div', { style: { fontSize: 13, fontWeight: 700 } }, 'สถานะ (Status)'), h('div', { style: { fontSize: 11, color: sub, marginTop: 2 } }, 'แก้ไขสถานะได้ในโหมดแก้ไขหรือโหมดสร้างเท่านั้น')), h('div', { style: { marginLeft: 'auto' } }, K.pill(T, curSt, this.statusHue(curSt))))], { marginBottom: 14, padding: '12px 16px' });
-        body = [hdr, ...secs, linesTable, statusEditor, actLegend(cfg.acts || ['Export'])];
+        const adv = this.state.aiAdvice;
+        const advCard = K.card(T, [
+          h('div', { key: 'h', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: adv ? 13 : 0 } },
+            h('span', { style: { width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: c.accSoft, color: acc, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, K.Icon('spark', 16)),
+            h('div', { style: { flex: 1, minWidth: 0 } },
+              h('div', { style: { fontSize: 13.5, fontWeight: 800 } }, 'Vendor Advisor — AI แนะนำผู้ขาย'),
+              h('div', { style: { fontSize: 11.5, color: sub, marginTop: 2 } }, 'เทียบราคา เงื่อนไขชำระ และประวัติผู้ขายจาก PROC-VM แล้วจัดอันดับให้')),
+            K.btn(T, this.state.aiBusy ? 'กำลังเทียบ…' : (adv ? 'เทียบอีกครั้ง' : 'ให้ AI แนะนำ'), true, 'spark', () => this.state.aiBusy ? null : this.aiAdvise(r))),
+          adv ? h('div', { key: 'b', style: { display: 'flex', flexDirection: 'column', gap: 13, paddingTop: 13, borderTop: '1px solid ' + c.line } },
+            adv.recommend ? h('div', { style: { display: 'flex', gap: 11, padding: '13px 14px', borderRadius: 10, background: c.accSoft, borderLeft: '3px solid ' + acc } },
+              h('span', { style: { flexShrink: 0, display: 'flex', color: acc, marginTop: 1 } }, K.Icon('check', 17)),
+              h('div', { style: { minWidth: 0 } },
+                h('div', { style: { fontSize: 13, fontWeight: 800, color: c.text } }, 'แนะนำ: ' + (adv.recommend.vendor || '—')),
+                h('div', { style: { fontSize: 12.5, color: c.text, opacity: .85, lineHeight: 1.6, marginTop: 3 } }, adv.recommend.reason || ''))) : null,
+            (adv.ranking || []).length ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 7 } },
+              (adv.ranking || []).map((x, i) => h('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 13px', borderRadius: 9, border: '1px solid ' + c.border, background: c.field } },
+                h('span', { style: { flexShrink: 0, width: 24, height: 24, borderRadius: 7, background: i === 0 ? acc : c.border, color: i === 0 ? '#fff' : sub, fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, String(i + 1)),
+                h('div', { style: { flex: 1, minWidth: 0 } },
+                  h('div', { style: { fontSize: 12.5, fontWeight: 700, color: c.text } }, x.vendor || '—'),
+                  h('div', { style: { fontSize: 11.5, color: sub, lineHeight: 1.5, marginTop: 2 } }, [x.pro, x.con].filter(Boolean).join(' · '))),
+                x.price ? h('span', { style: { flexShrink: 0, fontSize: 12.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: c.text } }, x.price) : null,
+                h('span', { style: { flexShrink: 0, fontSize: 12, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: acc, minWidth: 34, textAlign: 'right' } }, (Number(x.score) || 0) + '')))) : null,
+            (adv.negotiation || []).length ? h('div', null,
+              h('div', { style: { fontSize: 11.5, fontWeight: 700, color: sub, marginBottom: 6 } }, 'ประเด็นที่ควรเจรจา'),
+              h('div', { style: { display: 'flex', flexDirection: 'column', gap: 5 } },
+                (adv.negotiation || []).map((x, i) => h('div', { key: i, style: { display: 'flex', gap: 8, fontSize: 12.5, color: c.text, lineHeight: 1.55 } }, h('span', { style: { color: acc } }, '·'), h('span', null, x))))) : null) : null,
+        ], { marginBottom: 14, padding: '14px 16px' });
+        body = [hdr, ...secs, linesTable, advCard, statusEditor, actLegend(cfg.acts || ['Export'])];
       }
     } else {
       const canEdit = !!(cfg.form && cfg.roMap);
